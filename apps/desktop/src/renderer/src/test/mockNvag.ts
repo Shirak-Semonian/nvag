@@ -5,6 +5,7 @@ import type {
   DbObjectRef,
   ExportRequest,
   ExportResult,
+  GuardSeverity,
   NvagIpcApi,
   QueryChunk,
   QueryChunkEvent,
@@ -30,8 +31,8 @@ export interface MockNvagOptions {
   tableMetadata?: Record<string, TableMetadata>
   queryResults?: Record<string, QueryRunResponse>
   defaultQueryResult?: QueryRunResponse
-  /** SQL → redenen waarom environment-safety de query blokkeert. */
-  blockedQueries?: Record<string, string[]>
+  /** SQL → redenen waarom environment-safety de query blokkeert (F1-8: met severity). */
+  blockedQueries?: Record<string, string[] | { reasons: string[]; severity?: GuardSeverity }>
   failOpenConnectionIds?: string[]
   openFileResult?: QueryFileOpenResult
   saveFileResult?: QueryFileSaveResult
@@ -74,16 +75,27 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
   closedSessions: string[]
   queriedSql: string[]
   savedFiles: { content: string; path?: string }[]
+  /** Alle query:run-aanvragen (F1-8: om `confirmed` te kunnen asserten). */
+  runRequests: { sql: string; confirmed?: boolean }[]
+  /** Alle sessions:openSaved-aanvragen (F1-10). */
+  openSavedCalls: string[]
+  /** Alle sessions:useDatabase-aanvragen (F1-10). */
+  useDatabaseCalls: { connectionId: string; database: string }[]
 } {
   const savedConfigs: ConnectionConfig[] = [...(options.connections ?? [])]
   const openedSessions: string[] = []
   const closedSessions: string[] = []
   const queriedSql: string[] = []
   const savedFiles: { content: string; path?: string }[] = []
+  const runRequests: { sql: string; confirmed?: boolean }[] = []
+  const openSavedCalls: string[] = []
+  const useDatabaseCalls: { connectionId: string; database: string }[] = []
   const chunkListeners = new Set<(evt: QueryChunkEvent) => void>()
   const pendingRuns = new Map<string, QueryRunResponse>()
   let sessionSeq = 0
   let execSeq = 0
+  /** Database van een geopende sessie (useDatabase-mock; F1-10). */
+  let sessionDatabase = SERVER_INFO.currentDatabase
 
   const emit = (evt: QueryChunkEvent): void => {
     for (const listener of chunkListeners) listener(evt)
@@ -95,12 +107,18 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     closedSessions: string[]
     queriedSql: string[]
     savedFiles: { content: string; path?: string }[]
+    runRequests: { sql: string; confirmed?: boolean }[]
+    openSavedCalls: string[]
+    useDatabaseCalls: { connectionId: string; database: string }[]
   } = {
     savedConfigs,
     openedSessions,
     closedSessions,
     queriedSql,
     savedFiles,
+    runRequests,
+    openSavedCalls,
+    useDatabaseCalls,
 
     connections: {
       list: async () => [...savedConfigs],
@@ -127,19 +145,45 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         }
         openedSessions.push(config.id)
         sessionSeq += 1
-        return { sessionId: `session-${sessionSeq}`, serverInfo: SERVER_INFO }
+        return {
+          sessionId: `session-${sessionSeq}`,
+          serverInfo: { ...SERVER_INFO, currentDatabase: config.database ?? sessionDatabase }
+        }
       },
       close: async (sessionId: string) => {
         closedSessions.push(sessionId)
+      },
+      openSaved: async (connectionId: string) => {
+        openSavedCalls.push(connectionId)
+        const config = savedConfigs.find((c) => c.id === connectionId)
+        if (!config) throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+        if (options.failOpenConnectionIds?.includes(connectionId) === true) {
+          throw new Error(`SQLite: bestand niet gevonden: ${config.host}`)
+        }
+        openedSessions.push(connectionId)
+        sessionSeq += 1
+        return {
+          sessionId: `session-${sessionSeq}`,
+          serverInfo: { ...SERVER_INFO, currentDatabase: config.database ?? sessionDatabase }
+        }
+      },
+      useDatabase: async (connectionId: string, database: string) => {
+        useDatabaseCalls.push({ connectionId, database })
+        sessionDatabase = database
+        return { sessionId: `session-${sessionSeq}`, serverInfo: { ...SERVER_INFO, currentDatabase: database } }
       }
     },
 
     query: {
       run: async (req) => {
         queriedSql.push(req.sql)
-        const blocked = options.blockedQueries?.[req.sql]
-        if (blocked && blocked.length > 0) {
-          return { executionId: '', blocked }
+        runRequests.push({ sql: req.sql, confirmed: req.confirmed })
+        // Net als de echte IPC-handler: een bevestigde run passeert de guard.
+        const blocked = req.confirmed ? undefined : options.blockedQueries?.[req.sql]
+        if (blocked && (Array.isArray(blocked) ? blocked.length > 0 : blocked.reasons.length > 0)) {
+          const reasons = Array.isArray(blocked) ? blocked : blocked.reasons
+          const severity = Array.isArray(blocked) ? undefined : blocked.severity
+          return { executionId: '', blocked: reasons, ...(severity ? { guardSeverity: severity } : {}) }
         }
         execSeq += 1
         const executionId = `exec-${execSeq}`

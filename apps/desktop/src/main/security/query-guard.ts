@@ -31,9 +31,6 @@ const DANGEROUS_PATTERNS: GuardPattern[] = [
   { pattern: /\bDROP\s+(TABLE|VIEW|DATABASE|SCHEMA|INDEX|TRIGGER|PROCEDURE|FUNCTION|SEQUENCE)\b/i, reason: 'DROP-statement', severity: 'confirm' },
   { pattern: /\bTRUNCATE\b/i, reason: 'TRUNCATE-statement', severity: 'confirm' },
   { pattern: /\bALTER\s+(TABLE|DATABASE|SCHEMA|VIEW)\b/i, reason: 'ALTER-statement', severity: 'confirm' },
-  // Data-destructief zonder begrenzing — overal bevestiging.
-  { pattern: /\bDELETE\s+FROM\b/i, reason: 'DELETE-statement', severity: 'confirm' },
-  { pattern: /\bUPDATE\s+[\w"[\].]+\s+SET\b/i, reason: 'UPDATE-statement', severity: 'confirm' },
   // CREATE is niet destructief: buiten PROD een waarschuwing, op PROD bevestigen.
   { pattern: /\bCREATE\s+(DATABASE|TABLE|VIEW|INDEX|TRIGGER)\b/i, reason: 'CREATE-statement', severity: 'warn' }
 ]
@@ -111,8 +108,7 @@ export function checkQuery(sql: string, environment: Environment): GuardResult {
   }
 
   // Overige omgevingen: destructieve patronen bevestigen, lichtere waarschuwen.
-  const hasConfirm = DANGEROUS_PATTERNS.some(
-    ({ pattern, severity }) => severity === 'confirm' && pattern.test(stripped)
-  ) || hasUnsafeUpdateDelete(sql)
+  const hasConfirm = hasUnsafeUpdateDelete(sql) ||
+    DANGEROUS_PATTERNS.some(({ pattern, severity }) => severity === 'confirm' && pattern.test(stripped))
   return { allowed: false, severity: hasConfirm ? 'confirm' : 'warn', reasons }
 }

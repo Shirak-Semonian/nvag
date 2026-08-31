@@ -462,6 +462,18 @@ export interface NvagIpcApi {
   sessions: {
     open(config: ConnectionConfig, secret?: ConnectionSecret): Promise<{ sessionId: string; serverInfo: ServerInfo }>
     close(sessionId: string): Promise<void>
+    /**
+     * Snelle switch (eis 24): opent een sessie voor een opgeslagen verbinding
+     * met het vault-secret, zonder dat de renderer secrets hoeft te kennen.
+     * Wanneer de sessie al open is, wordt de bestaande sessie hergebruikt.
+     */
+    openSaved(connectionId: string): Promise<{ sessionId: string; serverInfo: ServerInfo }>
+    /**
+     * Wissel de database van de actieve sessie voor een tab (eis 24):
+     * in-place via USE (tsql/mysql) of reconnect met nieuwe database
+     * (postgres). Retourneert de bijgewerkte sessie-info.
+     */
+    useDatabase(connectionId: string, database: string): Promise<{ sessionId: string; serverInfo: ServerInfo }>
   }
 
   // Query-bestanden (openen/opslaan via dialoog in main process)

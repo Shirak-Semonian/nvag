@@ -12,7 +12,8 @@ function resetStore(): void {
     recentQueries: [],
     showConnectionDialog: false,
     connectionDialogMode: 'create',
-    editingConnectionId: null
+    editingConnectionId: null,
+    pendingGuard: null
   })
 }
 
@@ -232,10 +233,10 @@ describe('app store', () => {
     expect(tab?.result?.rowCount).toBe(1)
   })
 
-  it('toont een geblokkeerde query via environment-safety (F1-3)', async () => {
+  it('toont een bevestigingsdialoog voor een geblokkeerde query (F1-8)', async () => {
     const blocked = createMockNvag({
       connections: [sampleConnection()],
-      blockedQueries: { 'DELETE FROM klanten': ['DELETE zonder WHERE'] }
+      blockedQueries: { 'DELETE FROM klanten': { reasons: ['DELETE/UPDATE zonder WHERE'], severity: 'confirm' } }
     })
     window.nvag = blocked
     useAppStore.setState({
@@ -248,9 +249,93 @@ describe('app store', () => {
     })
 
     await useAppStore.getState().runQuery('tab-test')
-    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-test')
-    expect(tab?.result?.blocked).toEqual(['DELETE zonder WHERE'])
-    expect(tab?.result?.error).toContain('environment safety')
+    const state = useAppStore.getState()
+    expect(state.pendingGuard).not.toBeNull()
+    expect(state.pendingGuard?.reasons).toEqual(['DELETE/UPDATE zonder WHERE'])
+    expect(state.pendingGuard?.sql).toBe('DELETE FROM klanten')
+    expect(state.pendingGuard?.environment).toBe('DEV')
+    const tab = state.tabs.find((t) => t.id === 'tab-test')
+    expect(tab?.running).toBe(false)
+    expect(tab?.result).toBeNull()
+    // Nog niet uitgevoerd: alleen de eerste (geblokkeerde) run-aanvraag.
+    expect(blocked.queriedSql).toEqual(['DELETE FROM klanten'])
+    expect(blocked.runRequests).toEqual([{ sql: 'DELETE FROM klanten', confirmed: undefined }])
+  })
+
+  it('voert een bevestigde query alsnog uit via confirmGuardQuery (F1-8)', async () => {
+    const blocked = createMockNvag({
+      connections: [sampleConnection()],
+      blockedQueries: { 'DELETE FROM klanten': { reasons: ['DELETE/UPDATE zonder WHERE'], severity: 'confirm' } },
+      queryResults: { 'DELETE FROM klanten': { executionId: 'e9', columns: [], rows: [], truncated: false, rowCount: 3, durationMs: 2 } }
+    })
+    window.nvag = blocked
+    useAppStore.setState({
+      connections: [sampleConnection()],
+      openSessions: {
+        'conn-1': { config: sampleConnection(), sessionId: 's1', serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1' } }
+      },
+      tabs: [seedTab({ sql: 'DELETE FROM klanten' })],
+      activeTabId: 'tab-test'
+    })
+
+    await useAppStore.getState().runQuery('tab-test')
+    expect(useAppStore.getState().pendingGuard).not.toBeNull()
+
+    await useAppStore.getState().confirmGuardQuery()
+    const state = useAppStore.getState()
+    expect(state.pendingGuard).toBeNull()
+    const tab = state.tabs.find((t) => t.id === 'tab-test')
+    expect(tab?.result?.rowCount).toBe(3)
+    // Eerste run geblokkeerd, tweede met confirmed: true.
+    expect(blocked.runRequests.map((r) => r.confirmed)).toEqual([undefined, true])
+  })
+
+  it('annuleert de geblokkeerde query via cancelGuardQuery (F1-8)', async () => {
+    const blocked = createMockNvag({
+      connections: [sampleConnection()],
+      blockedQueries: { 'DROP TABLE klanten': { reasons: ['DROP-statement'], severity: 'confirm' } }
+    })
+    window.nvag = blocked
+    useAppStore.setState({
+      connections: [sampleConnection()],
+      openSessions: {
+        'conn-1': { config: sampleConnection(), sessionId: 's1', serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1' } }
+      },
+      tabs: [seedTab({ sql: 'DROP TABLE klanten' })],
+      activeTabId: 'tab-test'
+    })
+
+    await useAppStore.getState().runQuery('tab-test')
+    expect(useAppStore.getState().pendingGuard).not.toBeNull()
+    useAppStore.getState().cancelGuardQuery()
+    expect(useAppStore.getState().pendingGuard).toBeNull()
+    expect(blocked.runRequests).toHaveLength(1)
+  })
+
+  it('voert een warn-query uit met waarschuwing in het berichtenpaneel (F1-8)', async () => {
+    const blocked = createMockNvag({
+      connections: [sampleConnection()],
+      blockedQueries: { 'UPDATE a SET x = 1; UPDATE b SET y = 2;': { reasons: ['grote operatie'], severity: 'warn' } },
+      queryResults: {
+        'UPDATE a SET x = 1; UPDATE b SET y = 2;': { executionId: 'e8', columns: [], rows: [], truncated: false, rowCount: 0, durationMs: 1 }
+      }
+    })
+    window.nvag = blocked
+    useAppStore.setState({
+      connections: [sampleConnection()],
+      openSessions: {
+        'conn-1': { config: sampleConnection(), sessionId: 's1', serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1' } }
+      },
+      tabs: [seedTab({ sql: 'UPDATE a SET x = 1; UPDATE b SET y = 2;' })],
+      activeTabId: 'tab-test'
+    })
+
+    await useAppStore.getState().runQuery('tab-test')
+    const state = useAppStore.getState()
+    expect(state.pendingGuard).toBeNull()
+    expect(blocked.runRequests.map((r) => r.confirmed)).toEqual([undefined, true])
+    const tab = state.tabs.find((t) => t.id === 'tab-test')
+    expect(tab?.result?.messages?.some((m) => m.severity === 'warning' && m.text.includes('grote operatie'))).toBe(true)
   })
 
   it('registreert recente query’s na uitvoering en kan ze wissen (F1-3)', async () => {
@@ -327,5 +412,133 @@ describe('app store', () => {
     expect(tab?.filePath).toBe('/tmp/nieuw.sql')
     expect(tab?.title).toBe('nieuw.sql')
     expect(withFile.savedFiles).toEqual([{ content: 'SELECT 2;', path: undefined }])
+  })
+
+  // ------------------------------------------------------------------ F1-10
+  it('geeft een tab met verbinding de database uit de config als default (F1-10)', () => {
+    const conn = sampleConnection({ database: 'klanten' })
+    useAppStore.setState({ connections: [conn] })
+    useAppStore.getState().addTab({ connectionId: 'conn-1' })
+    const tab = useAppStore.getState().tabs[useAppStore.getState().tabs.length - 1]
+    expect(tab?.connectionId).toBe('conn-1')
+    expect(tab?.database).toBe('klanten')
+  })
+
+  it('dupliceert een tab inclusief database (F1-10)', () => {
+    useAppStore.setState({
+      tabs: [seedTab({ id: 'a', sql: 'SELECT 42;', connectionId: 'conn-1', database: 'analytics' })],
+      activeTabId: 'a'
+    })
+    useAppStore.getState().duplicateTab('a')
+    const copy = useAppStore.getState().tabs[1]
+    expect(copy?.database).toBe('analytics')
+    expect(copy?.connectionId).toBe('conn-1')
+  })
+
+  it('switcht snel van verbinding en opent de sessie via openSaved (F1-10)', async () => {
+    const connA = sampleConnection({ id: 'conn-a', name: 'A', database: 'dbA' })
+    const connB = sampleConnection({ id: 'conn-b', name: 'B', database: 'dbB' })
+    const withTwo = createMockNvag({ connections: [connA, connB] })
+    window.nvag = withTwo
+    useAppStore.setState({
+      connections: [connA, connB],
+      openSessions: {
+        'conn-a': {
+          config: connA,
+          sessionId: 's-a',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3', currentDatabase: 'dbA' }
+        }
+      },
+      tabs: [seedTab({ id: 'tab-1', connectionId: 'conn-a', database: 'dbA' })],
+      activeTabId: 'tab-1'
+    })
+
+    await useAppStore.getState().switchTabConnection('tab-1', 'conn-b')
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
+    expect(withTwo.openSavedCalls).toEqual(['conn-b'])
+    expect(tab?.connectionId).toBe('conn-b')
+    expect(tab?.database).toBe('dbB')
+    expect(useAppStore.getState().openSessions['conn-b']?.sessionId).toBeTruthy()
+    expect(tab?.dbSwitchError).toBeFalsy()
+  })
+
+  it('switcht niet van verbinding wanneer openSaved faalt en toont de fout (F1-10)', async () => {
+    const connA = sampleConnection({ id: 'conn-a', name: 'A', database: 'dbA' })
+    const connB = sampleConnection({ id: 'conn-b', name: 'B', database: 'dbB' })
+    const failing = createMockNvag({
+      connections: [connA, connB],
+      failOpenConnectionIds: ['conn-b']
+    })
+    window.nvag = failing
+    useAppStore.setState({
+      connections: [connA, connB],
+      openSessions: {
+        'conn-a': {
+          config: connA,
+          sessionId: 's-a',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3', currentDatabase: 'dbA' }
+        }
+      },
+      tabs: [seedTab({ id: 'tab-1', connectionId: 'conn-a', database: 'dbA' })],
+      activeTabId: 'tab-1'
+    })
+
+    await useAppStore.getState().switchTabConnection('tab-1', 'conn-b')
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
+    expect(tab?.connectionId).toBe('conn-a')
+    expect(tab?.dbSwitchError).toContain('bestand niet gevonden')
+  })
+
+  it('wisselt de database van een tab via useDatabase en werkt de sessie bij (F1-10)', async () => {
+    const conn = sampleConnection({ database: 'main' })
+    const withDb = createMockNvag({ connections: [conn] })
+    window.nvag = withDb
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-1': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3', currentDatabase: 'main' }
+        }
+      },
+      tabs: [seedTab({ id: 'tab-1', connectionId: 'conn-1', database: 'main' })],
+      activeTabId: 'tab-1'
+    })
+
+    await useAppStore.getState().setTabDatabase('tab-1', 'archive')
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
+    expect(withDb.useDatabaseCalls).toEqual([{ connectionId: 'conn-1', database: 'archive' }])
+    expect(tab?.database).toBe('archive')
+    expect(useAppStore.getState().openSessions['conn-1']?.serverInfo.currentDatabase).toBe('archive')
+    expect(tab?.dbSwitchError).toBeFalsy()
+  })
+
+  it('zet de database terug en toont een fout wanneer useDatabase faalt (F1-10)', async () => {
+    const conn = sampleConnection({ database: 'main' })
+    const failing = createMockNvag({ connections: [conn] })
+    const original = failing.sessions.useDatabase
+    failing.sessions.useDatabase = async () => {
+      throw new Error('USE mislukt')
+    }
+    window.nvag = failing
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-1': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3', currentDatabase: 'main' }
+        }
+      },
+      tabs: [seedTab({ id: 'tab-1', connectionId: 'conn-1', database: 'main' })],
+      activeTabId: 'tab-1'
+    })
+
+    await useAppStore.getState().setTabDatabase('tab-1', 'archive')
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
+    expect(tab?.database).toBe('main')
+    expect(tab?.dbSwitchError).toContain('USE mislukt')
+    expect(original).toBeDefined()
   })
 })

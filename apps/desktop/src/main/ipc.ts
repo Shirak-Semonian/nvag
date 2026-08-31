@@ -52,16 +52,35 @@ export function registerIpcHandlers(): void {
     return { ok: true }
   })
 
+  ipcMain.handle('sessions:openSaved', async (_e, connectionId: string) => {
+    return sessionManager.openSaved(connectionId)
+  })
+
+  ipcMain.handle('sessions:useDatabase', async (_e, connectionId: string, database: string) => {
+    return sessionManager.switchDatabase(connectionId, database)
+  })
+
   // ------------------------------------------------------------------ query
   ipcMain.handle(
     'query:run',
-    (event, req: { connectionId: string; sql: string; maxRows?: number; selection?: { start: number; end: number } }) => {
-      // Environment safety (ADR-009): alleen wanneer verbinding bekend is
+    (
+      event,
+      req: {
+        connectionId: string
+        sql: string
+        maxRows?: number
+        selection?: { start: number; end: number }
+        /** Environment-safety (F1-8): gebruiker bevestigde in de dialoog. */
+        confirmed?: boolean
+      }
+    ) => {
+      // Environment safety (ADR-009): alleen wanneer verbinding bekend is en
+      // de query niet expliciet is bevestigd via de dialoog (F1-8).
       const conn = connectionStore.get(req.connectionId)
-      if (conn) {
+      if (conn && !req.confirmed) {
         const guard = checkQuery(req.sql, conn.environment)
         if (!guard.allowed) {
-          return { executionId: '', blocked: guard.reasons }
+          return { executionId: '', blocked: guard.reasons, guardSeverity: guard.severity }
         }
       }
       // Verbindingsnaam meesturen voor de SQL-history (server-veld).

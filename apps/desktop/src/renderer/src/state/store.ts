@@ -3,6 +3,7 @@ import type {
   ConnectionConfig,
   ConnectionSecret,
   DbObjectRef,
+  Environment,
   ErrorPosition,
   HistoryEntry,
   QueryChunk,
@@ -21,6 +22,13 @@ export interface QueryTabState {
   title: string
   sql: string
   connectionId: string | null
+  /**
+   * Database van deze tab (eis 24). `null`/undefined = verbindingsdefault
+   * (config.database of de database van de geopende sessie).
+   */
+  database?: string | null
+  /** Fout bij het wisselen van verbinding/database (dropdown); toont in tab-context. */
+  dbSwitchError?: string | null
   result: QueryRunResponse | null
   running: boolean
   /** Actieve uitvoering (voor cancel); null wanneer niet bezig. */
@@ -39,6 +47,14 @@ export interface ConnectionWithSession {
   serverInfo: ServerInfo
 }
 
+/** Environment-safety (F1-8): query die op bevestiging wacht (ADR-009). */
+export interface GuardPending {
+  tabId: string
+  sql: string
+  reasons: string[]
+  environment: Environment
+}
+
 interface AppState {
   connections: ConnectionConfig[]
   /** Verbindingen met geopende sessie */
@@ -51,6 +67,8 @@ interface AppState {
   showConnectionDialog: boolean
   connectionDialogMode: 'create' | 'edit'
   editingConnectionId: string | null
+  /** Environment-safety (F1-8): query die op bevestiging wacht; null = geen dialoog. */
+  pendingGuard: GuardPending | null
 
   loadConnections: () => Promise<void>
   saveConnection: (config: ConnectionConfig, secret?: ConnectionSecret) => Promise<ConnectionConfig>
@@ -58,8 +76,13 @@ interface AppState {
   openSession: (config: ConnectionConfig, secret?: ConnectionSecret) => Promise<ServerInfo>
   closeSession: (connectionId: string) => Promise<void>
 
-  /** Nieuwe lege query-tab; met `opts` direct met sql/verbinding/titel gevuld. */
-  addTab: (opts?: { sql?: string; connectionId?: string | null; title?: string }) => void
+  /** Nieuwe lege query-tab; met `opts` direct met sql/verbinding/database/titel gevuld. */
+  addTab: (opts?: {
+    sql?: string
+    connectionId?: string | null
+    database?: string | null
+    title?: string
+  }) => void
   /** Nieuwe tab met een SELECT * FROM <tabel> (dubbelklik in Object Explorer). */
   openTableQuery: (connectionId: string, tableName: string, schema?: string) => void
   /** Script Object (F1-5): gegenereerde SQL in een nieuwe querytab. */
@@ -70,10 +93,22 @@ interface AppState {
   setActiveTab: (id: string) => void
   updateTabSql: (id: string, sql: string) => void
   setTabConnection: (id: string, connectionId: string | null) => void
+  /**
+   * Snelle verbindingsswitch (eis 24): wisselt de verbinding van een tab en
+   * opent de sessie automatisch via openSaved (vault-secret) wanneer die nog
+   * niet open is. Bij een fout blijft de tab op de oude verbinding.
+   */
+  switchTabConnection: (tabId: string, connectionId: string | null) => Promise<void>
+  /** Wisselt de database van een tab (USE op de sessie; eis 24). */
+  setTabDatabase: (tabId: string, database: string) => Promise<void>
   /** Voer query uit; met `sql` wordt die selectie uitgevoerd i.p.v. de hele tab. */
-  runQuery: (tabId: string, sql?: string) => Promise<void>
+  runQuery: (tabId: string, sql?: string, opts?: { confirmed?: boolean }) => Promise<void>
   /** Annuleer de actieve uitvoering van een tab. */
   cancelQuery: (tabId: string) => Promise<void>
+  /** F1-8: bevestigde de door de guard geblokkeerde query alsnog uitvoeren. */
+  confirmGuardQuery: () => Promise<void>
+  /** F1-8: annuleer de door de guard geblokkeerde query. */
+  cancelGuardQuery: () => void
 
   /** Open querybestand via dialoog → nieuwe tab; null bij annuleren. */
   openQueryFile: () => Promise<string | null>
@@ -198,6 +233,7 @@ export const useAppStore = create<AppState>((set, get) => {
     showConnectionDialog: false,
     connectionDialogMode: 'create',
     editingConnectionId: null,
+    pendingGuard: null,
 
   async loadConnections() {
     const list = await window.nvag.connections.list()
@@ -238,15 +274,18 @@ export const useAppStore = create<AppState>((set, get) => {
 
   addTab(opts) {
     const id = nextTabId()
+    const conn = opts?.connectionId
+      ? get().connections.find((c) => c.id === opts.connectionId)
+      : undefined
     const tab: QueryTabState = {
       id,
       title:
         opts?.title ??
-        (opts?.connectionId
-          ? (get().connections.find((c) => c.id === opts.connectionId)?.name ?? 'Query')
-          : `Query ${tabCounter++}`),
+        (conn ? conn.name : `Query ${tabCounter++}`),
       sql: opts?.sql ?? '',
       connectionId: opts?.connectionId ?? null,
+      // Eigen database per tab (eis 24); default = database uit de verbindingsconfig.
+      database: opts?.database ?? conn?.database ?? null,
       result: null,
       running: false,
       executionId: null,
@@ -257,7 +296,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
   async openScriptTab(connectionId, obj, kind) {
     const { sql, title } = await window.nvag.metadata.scriptObject(connectionId, obj, kind)
-    get().addTab({ sql, connectionId, title })
+    get().addTab({ sql, connectionId, title, database: obj.database })
   },
 
   openTableQuery(connectionId, tableName, schema) {
@@ -270,6 +309,7 @@ export const useAppStore = create<AppState>((set, get) => {
       title: tableName,
       sql,
       connectionId,
+      database: conn?.database ?? null,
       result: null,
       running: false,
       executionId: null,
@@ -286,6 +326,7 @@ export const useAppStore = create<AppState>((set, get) => {
       title: `${src.title} (kopie)`,
       sql: src.sql,
       connectionId: src.connectionId,
+      database: src.database,
       result: null,
       running: false,
       executionId: null,
@@ -315,15 +356,102 @@ export const useAppStore = create<AppState>((set, get) => {
   },
 
   setTabConnection(id, connectionId) {
-    set((s) => ({ tabs: s.tabs.map((t) => (t.id === id ? { ...t, connectionId } : t)) }))
+    const conn = connectionId ? get().connections.find((c) => c.id === connectionId) : undefined
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === id
+          ? { ...t, connectionId, database: conn?.database ?? null, dbSwitchError: null, result: null }
+          : t
+      )
+    }))
+  },
+
+  async switchTabConnection(tabId, connectionId) {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab || tab.connectionId === connectionId) return
+
+    // Snelle switch (eis 24): sessie automatisch openen wanneer die nog niet
+    // open is — via openSaved met het vault-secret (geen dialoog nodig).
+    let sessionInfo: { sessionId: string; serverInfo: ServerInfo } | null = null
+    if (connectionId) {
+      const existing = get().openSessions[connectionId]
+      if (existing) {
+        sessionInfo = { sessionId: existing.sessionId, serverInfo: existing.serverInfo }
+      } else {
+        try {
+          sessionInfo = await window.nvag.sessions.openSaved(connectionId)
+          const config = get().connections.find((c) => c.id === connectionId)
+          if (config) {
+            set((s) => ({
+              openSessions: {
+                ...s.openSessions,
+                [connectionId]: { config, sessionId: sessionInfo!.sessionId, serverInfo: sessionInfo!.serverInfo }
+              }
+            }))
+          }
+        } catch (err) {
+          const text = err instanceof Error ? err.message : String(err)
+          set((s) => ({
+            tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, dbSwitchError: text } : t))
+          }))
+          return
+        }
+      }
+    }
+
+    const conn = connectionId ? get().connections.find((c) => c.id === connectionId) : undefined
+    const database = sessionInfo?.serverInfo.currentDatabase ?? conn?.database ?? null
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId
+          ? { ...t, connectionId, database, dbSwitchError: null, result: null }
+          : t
+      )
+    }))
+  },
+
+  async setTabDatabase(tabId, database) {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab || tab.database === database) return
+    const previous = tab.database
+    set((s) => ({
+      tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, database, dbSwitchError: null } : t))
+    }))
+    if (!tab.connectionId) return
+    try {
+      const res = await window.nvag.sessions.useDatabase(tab.connectionId, database)
+      set((s) => {
+        const session = s.openSessions[tab.connectionId!]
+        if (!session) return {}
+        return {
+          openSessions: {
+            ...s.openSessions,
+            [tab.connectionId!]: { ...session, sessionId: res.sessionId, serverInfo: res.serverInfo }
+          }
+        }
+      })
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err)
+      // Terugzetten en de fout tonen in de tab-context (resultaat niet wissen).
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === tabId ? { ...t, database: previous, dbSwitchError: text } : t
+        )
+      }))
+    }
   },
 
   /**
    * Voert een query uit met streaming: `run` geeft executionId, chunks komen
    * binnen via `onChunk`, `start` laat de runner consumeren. De grid vult
    * zich progressief; bij `done`/`error` stopt de tab.
+   *
+   * Environment-safety (F1-8): wanneer de guard blokkeert op `confirm`-niveau
+   * (of op PROD) wordt de query in `pendingGuard` gezet en toont de renderer
+   * een bevestigingsdialoog; op `warn`-niveau wordt de query met een
+   * waarschuwing in het berichtenpaneel alsnog uitgevoerd.
    */
-  async runQuery(tabId, sql) {
+  async runQuery(tabId, sql, opts) {
     const tab = get().tabs.find((t) => t.id === tabId)
     const querySql = (sql ?? tab?.sql ?? '').trim()
     if (!tab || !tab.connectionId || tab.running) return
@@ -386,13 +514,43 @@ export const useAppStore = create<AppState>((set, get) => {
     }
 
     try {
-      const start = await window.nvag.query.run({
+      const environment = get().connections.find((c) => c.id === tab.connectionId)?.environment ?? 'DEV'
+      let start = await window.nvag.query.run({
         connectionId: tab.connectionId,
-        sql: querySql
+        sql: querySql,
+        confirmed: opts?.confirmed
       })
 
+      if (start.blocked && start.blocked.length > 0 && !opts?.confirmed) {
+        if (start.guardSeverity === 'warn') {
+          // Lichte categorie (bijv. grote operatie buiten PROD): waarschuwen
+          // en alsnog uitvoeren — de guard wordt met `confirmed` gepasseerd.
+          acc.messages.push({
+            severity: 'warning',
+            text: `Environment safety: ${start.blocked.join(', ')} — uitgevoerd met waarschuwing.`
+          })
+          start = await window.nvag.query.run({
+            connectionId: tab.connectionId,
+            sql: querySql,
+            confirmed: true
+          })
+        } else {
+          // Confirm-niveau (destructief, of PROD): bevestigingsdialoog tonen.
+          set({
+            pendingGuard: {
+              tabId,
+              sql: querySql,
+              reasons: start.blocked,
+              environment
+            }
+          })
+          patchTab({ running: false, executionId: null, startedAt: null })
+          return
+        }
+      }
+
       if (start.blocked && start.blocked.length > 0) {
-        const text = `Query geblokkeerd door environment safety (${start.blocked.join(', ')}). Bevestiging vereist.`
+        const text = `Query geblokkeerd door environment safety (${start.blocked.join(', ')}).`
         patchTab({
           result: {
             executionId: '',
@@ -442,6 +600,17 @@ export const useAppStore = create<AppState>((set, get) => {
     }
   },
 
+  async confirmGuardQuery() {
+    const pending = get().pendingGuard
+    if (!pending) return
+    set({ pendingGuard: null })
+    await get().runQuery(pending.tabId, pending.sql, { confirmed: true })
+  },
+
+  cancelGuardQuery() {
+    set({ pendingGuard: null })
+  },
+
   async cancelQuery(tabId) {
     const tab = get().tabs.find((t) => t.id === tabId)
     if (!tab?.running || !tab.executionId) return
@@ -457,6 +626,7 @@ export const useAppStore = create<AppState>((set, get) => {
       title: res.name ?? baseName(res.path),
       sql: res.content,
       connectionId: null,
+      database: null,
       result: null,
       running: false,
       executionId: null,
@@ -534,6 +704,7 @@ export const useAppStore = create<AppState>((set, get) => {
       title: `History ${entry.id}`,
       sql: entry.sql,
       connectionId: entry.connectionId,
+      database: entry.database || null,
       result: null,
       running: false,
       executionId: null,

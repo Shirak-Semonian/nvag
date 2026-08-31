@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import type { DatabaseInfo } from '@nvag/contracts'
 import { ObjectExplorer } from './components/ObjectExplorer'
 import { QueryEditor } from './components/QueryEditor'
 import { ResultsGrid, MessagesPanel } from './components/ResultsGrid'
 import { HistoryPanel } from './components/HistoryPanel'
 import { ConnectionDialog } from './components/ConnectionDialog'
+import { QueryGuardDialog } from './components/QueryGuardDialog'
 import { EnvBadge, StatusBar } from './components/StatusBar'
 import { useAppStore, getDialectForProvider } from './state/store'
 
@@ -35,7 +37,8 @@ function App(): React.JSX.Element {
   const duplicateTab = useAppStore((s) => s.duplicateTab)
   const closeTab = useAppStore((s) => s.closeTab)
   const setActiveTab = useAppStore((s) => s.setActiveTab)
-  const setTabConnection = useAppStore((s) => s.setTabConnection)
+  const switchTabConnection = useAppStore((s) => s.switchTabConnection)
+  const setTabDatabase = useAppStore((s) => s.setTabDatabase)
   const runQuery = useAppStore((s) => s.runQuery)
   const cancelQuery = useAppStore((s) => s.cancelQuery)
   const openQueryFile = useAppStore((s) => s.openQueryFile)
@@ -46,12 +49,35 @@ function App(): React.JSX.Element {
 
   const [bottomTab, setBottomTab] = useState<BottomTab>('results')
   const [now, setNow] = useState(() => Date.now())
+  /** Beschikbare databases van de actieve verbinding (database-dropdown, eis 24). */
+  const [databases, setDatabases] = useState<DatabaseInfo[]>([])
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
 
   useEffect(() => {
     loadConnections()
   }, [loadConnections])
+
+  // Database-dropdown (eis 24): laadt de databases van de actieve verbinding.
+  useEffect(() => {
+    let cancelled = false
+    const connId = activeTab?.connectionId
+    if (connId && openSessions[connId]) {
+      window.nvag.metadata
+        .listDatabases(connId)
+        .then((list) => {
+          if (!cancelled) setDatabases(list)
+        })
+        .catch(() => {
+          if (!cancelled) setDatabases([])
+        })
+    } else {
+      setDatabases([])
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab?.connectionId, openSessions, activeTabId])
 
   // Execution timer: tikt alleen zolang een query draait (SAL-17).
   useEffect(() => {
@@ -65,7 +91,9 @@ function App(): React.JSX.Element {
     ? connections.find((c) => c.id === activeTab.connectionId)
     : undefined
   const activeSession = activeTab?.connectionId ? openSessions[activeTab.connectionId] : undefined
-  const database = activeConn?.database ?? activeSession?.serverInfo.currentDatabase ?? 'main'
+  // Eigen database per tab (eis 24); fallback naar verbindingsdefault.
+  const database =
+    activeTab?.database ?? activeConn?.database ?? activeSession?.serverInfo.currentDatabase ?? 'main'
   const schema = activeConn?.providerId === 'sqlite' ? 'main' : undefined
   const elapsedMs =
     activeTab?.running && activeTab.startedAt != null
@@ -161,7 +189,7 @@ function App(): React.JSX.Element {
                 </span>
                 <span className="tab-context-sep">·</span>
                 <span className="tab-context-item">
-                  db: {activeConn?.database ?? activeSession?.serverInfo.currentDatabase ?? '—'}
+                  db: {activeTab.database ?? activeConn?.database ?? activeSession?.serverInfo.currentDatabase ?? '—'}
                 </span>
                 <span className="tab-context-sep">·</span>
                 <span className="tab-context-item">schema: {schema ?? '—'}</span>
@@ -170,6 +198,11 @@ function App(): React.JSX.Element {
                   gebruiker: {activeSession?.serverInfo.currentUser ?? activeConn?.username ?? '—'}
                 </span>
                 {activeConn && <EnvBadge environment={activeConn.environment} />}
+                {activeTab.dbSwitchError && (
+                  <span className="tab-context-error" title={activeTab.dbSwitchError}>
+                    ⚠ {activeTab.dbSwitchError}
+                  </span>
+                )}
                 {activeTab.filePath && (
                   <span className="tab-context-file">
                     📄 {activeTab.filePath}
@@ -181,12 +214,27 @@ function App(): React.JSX.Element {
               <div className="editor-toolbar">
                 <select
                   value={activeTab.connectionId ?? ''}
-                  onChange={(e) => setTabConnection(activeTab.id, e.target.value || null)}
+                  onChange={(e) => void switchTabConnection(activeTab.id, e.target.value || null)}
+                  title="Verbonden server van deze tab (kiezen opent de sessie)"
                 >
                   <option value="">— geen verbinding —</option>
                   {connections.map((c) => (
-                    <option key={c.id} value={c.id} disabled={!openSessions[c.id]}>
-                      {c.name} {openSessions[c.id] ? '' : '(niet verbonden)'}
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="database-select"
+                  value={activeTab.database ?? ''}
+                  onChange={(e) => void setTabDatabase(activeTab.id, e.target.value)}
+                  disabled={!activeTab.connectionId || !openSessions[activeTab.connectionId]}
+                  title="Database van deze tab"
+                >
+                  <option value="">— database —</option>
+                  {databases.map((d) => (
+                    <option key={d.name} value={d.name}>
+                      {d.name}
                     </option>
                   ))}
                 </select>
@@ -326,6 +374,7 @@ function App(): React.JSX.Element {
       </div>
       <StatusBar />
       <ConnectionDialog />
+      <QueryGuardDialog />
     </div>
   )
 }

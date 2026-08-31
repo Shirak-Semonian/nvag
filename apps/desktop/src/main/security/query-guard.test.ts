@@ -20,7 +20,6 @@ describe('query-guard (ADR-009, F1-8)', () => {
     expect(r.allowed).toBe(false)
     expect(r.severity).toBe('confirm')
     expect(r.reasons).toContain('DELETE/UPDATE zonder WHERE')
-    expect(r.reasons).toContain('UPDATE-statement')
   })
 
   it('blokkeert DROP, TRUNCATE en ALTER met confirm', () => {
@@ -54,7 +53,8 @@ describe('query-guard (ADR-009, F1-8)', () => {
   })
 
   it('detecteert een batch met meerdere schrijvende statements als grote operatie', () => {
-    const sql = 'UPDATE a SET x = 1 WHERE id = 1; UPDATE b SET y = 2;'
+    // Beide statements zijn begrensd (WHERE) — de batch zelf is de grote operatie.
+    const sql = 'UPDATE a SET x = 1 WHERE id = 1; UPDATE b SET y = 2 WHERE id = 2;'
     const dev = checkQuery(sql, 'DEV')
     expect(dev.allowed).toBe(false)
     expect(dev.severity).toBe('warn')

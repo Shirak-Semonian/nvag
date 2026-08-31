@@ -9,6 +9,7 @@ import type {
 } from '@nvag/contracts'
 import { useAppStore } from '../state/store'
 import { ObjectViewer, type ObjectViewerSelection } from './ObjectViewer'
+import { EnvBadge } from './StatusBar'
 
 type NodeKind = 'server' | 'folder' | 'database' | 'schema' | 'table' | 'view'
 
@@ -22,6 +23,8 @@ interface TreeNode {
   loaded: boolean
   /** Voor tabel/view: geparste context (dubbelklik SELECT, klik details). */
   ref?: { connId: string; db: string; schema?: string; name: string }
+  /** Omgeving van de server-connectie (F1-8: kleurbadge in object explorer). */
+  environment?: string
 }
 
 export function ObjectExplorer(): React.JSX.Element {
@@ -41,6 +44,7 @@ export function ObjectExplorer(): React.JSX.Element {
       label: conn.name,
       icon: openSessions[conn.id] ? '🟢' : '⚪',
       kind: 'server',
+      environment: conn.environment,
       children: openSessions[conn.id]
         ? [{ key: `dbs:${conn.id}`, label: 'Databases', icon: '🗄️', kind: 'folder', children: [], loaded: false }]
         : [],
@@ -180,6 +184,7 @@ export function ObjectExplorer(): React.JSX.Element {
             <span className="tree-arrow">{expandable ? (isOpen ? '▾' : '▸') : ''}</span>
             <span className="tree-icon">{node.icon}</span>
             <span className="tree-label">{node.label}</span>
+            {node.environment && <EnvBadge environment={node.environment} />}
           </div>
           {isOpen && node.children.length > 0 && (
             <div className="tree-children">{renderNodes(node.children, depth + 1)}</div>
