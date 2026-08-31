@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ConnectionConfig } from '@nvag/contracts'
+import type { ConnectionConfig, ProviderDescriptor } from '@nvag/contracts'
 import { useAppStore } from '../state/store'
 
 const EMPTY: Omit<ConnectionConfig, 'id'> = {
@@ -28,9 +28,11 @@ export function ConnectionDialog(): React.JSX.Element | null {
   const [password, setPassword] = useState('')
   const [testMsg, setTestMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [providers, setProviders] = useState<ProviderDescriptor[]>([])
 
   useEffect(() => {
     if (show) {
+      void window.nvag.providers.list().then(setProviders).catch(() => setProviders([]))
       if (editing) {
         setForm({ ...editing })
       } else {
@@ -91,14 +93,44 @@ export function ConnectionDialog(): React.JSX.Element | null {
           </label>
           <label>
             Provider
-            <select value={form.providerId} onChange={(e) => set({ providerId: e.target.value })}>
-              <option value="sqlite">SQLite (bestand)</option>
+            <select
+              value={form.providerId}
+              onChange={(e) => {
+                const p = providers.find((x) => x.id === e.target.value)
+                set({
+                  providerId: e.target.value,
+                  ...(p && !form.port ? { port: p.defaultPort || undefined } : {})
+                })
+              }}
+            >
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName} ({p.dialect})
+                </option>
+              ))}
             </select>
           </label>
           <label>
-            Databasepad (host)
-            <input value={form.host} onChange={(e) => set({ host: e.target.value })} placeholder="/pad/naar/test.db" />
+            {form.providerId === 'sqlite' ? 'Databasepad (host)' : 'Host'}
+            <input value={form.host} onChange={(e) => set({ host: e.target.value })} placeholder={form.providerId === 'sqlite' ? '/pad/naar/test.db' : 'localhost'} />
           </label>
+          {form.providerId !== 'sqlite' && (
+            <label>
+              Poort
+              <input
+                type="number"
+                value={form.port ?? ''}
+                onChange={(e) => set({ port: e.target.value ? Number(e.target.value) : undefined })}
+                placeholder={String(providers.find((p) => p.id === form.providerId)?.defaultPort ?? '')}
+              />
+            </label>
+          )}
+          {form.providerId !== 'sqlite' && (
+            <label>
+              Database (optioneel)
+              <input value={form.database ?? ''} onChange={(e) => set({ database: e.target.value })} placeholder="standaard database/schema" />
+            </label>
+          )}
           {form.providerId === 'sqlite' && (
             <label className="checkbox-row">
               <input

@@ -30,6 +30,7 @@ import * as performance from './performance'
 import * as search from './database-search'
 import * as importer from './importer'
 import * as dashboard from './dashboard'
+import { registry } from './registry'
 
 function audit(action: Parameters<typeof auditStore.add>[0]['action'], detail: string, extra: { server?: string; database?: string; success?: boolean; error?: string } = {}) {
   try {
@@ -40,6 +41,19 @@ function audit(action: Parameters<typeof auditStore.add>[0]['action'], detail: s
 }
 
 export function registerIpcHandlers(): void {
+  // ------------------------------------------------------------------ providers (F2-9)
+  ipcMain.handle('providers:list', () => {
+    return registry
+      .list()
+      .map((p) => ({
+        id: p.id,
+        displayName: p.displayName,
+        dialect: p.capabilities.dialect,
+        defaultPort: p.defaultPort
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName))
+  })
+
   // ------------------------------------------------------------------ connections
   ipcMain.handle('connections:list', () => connectionStore.list())
 

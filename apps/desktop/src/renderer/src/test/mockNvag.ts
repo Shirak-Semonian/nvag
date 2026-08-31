@@ -120,6 +120,10 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     openSavedCalls,
     useDatabaseCalls,
 
+    providers: {
+      list: async () => [{ id: 'sqlite', displayName: 'SQLite', dialect: 'sqlite', defaultPort: 0 }]
+    },
+
     connections: {
       list: async () => [...savedConfigs],
       save: async (config: ConnectionConfig, _secret?: ConnectionSecret) => {

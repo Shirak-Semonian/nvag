@@ -525,6 +525,19 @@ const DIALECTS: Record<SqlDialectId, SqlDialect> = {
       if (m === null) return `OFFSET ${o}`
       return `LIMIT ${m} OFFSET ${o}`
     }
+  }),
+  databricks: makeDialect({
+    id: 'databricks',
+    openQuote: '`',
+    closeQuote: '`',
+    literalQuote: "'",
+    buildLimit: (maxRows, offset) => {
+      const { maxRows: m, offset: o } = normalizeLimit(maxRows, offset)
+      if (m === null && o === null) return ''
+      if (m !== null && o === null) return `LIMIT ${m}`
+      if (m === null) return `OFFSET ${o}`
+      return `LIMIT ${m} OFFSET ${o}`
+    }
   })
 }
 
@@ -855,6 +868,7 @@ function identityClause(dialect: SqlDialectId): string {
       return ' GENERATED ALWAYS AS IDENTITY'
     case 'mysql':
     case 'snowflake':
+    case 'databricks':
       return ' AUTO_INCREMENT'
   }
 }
@@ -1024,7 +1038,7 @@ export function quoteValue(dialect: SqlDialectId, value: unknown): string {
   if (typeof value === 'number' || typeof value === 'bigint') return String(value)
   if (typeof value === 'boolean') {
     // SQLite/TSQL/MySQL kennen geen TRUE/FALSE-literal in alle contexten.
-    return dialect === 'postgres' || dialect === 'db2' || dialect === 'oracle' || dialect === 'snowflake'
+    return dialect === 'postgres' || dialect === 'db2' || dialect === 'oracle' || dialect === 'snowflake' || dialect === 'databricks'
       ? value ? 'TRUE' : 'FALSE'
       : value ? '1' : '0'
   }

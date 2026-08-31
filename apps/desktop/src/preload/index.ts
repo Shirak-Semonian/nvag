@@ -16,6 +16,7 @@ import type {
   NvagIpcApi,
   ProcInfo,
   ProviderCapabilities,
+  ProviderDescriptor,
   QueryChunkEvent,
   QueryFileOpenResult,
   QueryFileSaveResult,
@@ -42,6 +43,9 @@ function handle<T>(channel: string): (...args: unknown[]) => Promise<T> {
 }
 
 const api: NvagIpcApi = {
+  providers: {
+    list: handle<ProviderDescriptor[]>('providers:list')
+  },
   connections: {
     list: handle<ConnectionConfig[]>('connections:list'),
     save: handle<ConnectionConfig>('connections:save'),

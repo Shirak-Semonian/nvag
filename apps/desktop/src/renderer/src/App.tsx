@@ -8,12 +8,12 @@ import { ConnectionDialog } from './components/ConnectionDialog'
 import { QueryGuardDialog } from './components/QueryGuardDialog'
 import { TableEditConfirmDialog } from './components/TableEditConfirmDialog'
 import { TableDataPanel } from './components/TableDataPanel'
-import { SearchPanel, SnippetsPanel, ImportPanel, AuditPanel, DashboardPanel } from './components/F2Panels'
+import { SearchPanel, SnippetsPanel, ImportPanel, AuditPanel, DashboardPanel, PerformancePanel } from './components/F2Panels'
 import { AdminDialog } from './components/AdminDialog'
 import { EnvBadge, StatusBar } from './components/StatusBar'
 import { useAppStore, getDialectForProvider } from './state/store'
 
-type BottomTab = 'results' | 'messages' | 'history' | 'search' | 'snippets' | 'import' | 'audit' | 'dashboard'
+type BottomTab = 'results' | 'messages' | 'history' | 'search' | 'snippets' | 'import' | 'audit' | 'dashboard' | 'performance'
 
 /** Kort een SQL-tekst af voor de recente-query's-dropdown. */
 function shortSql(sql: string): string {
@@ -453,6 +453,15 @@ function App(): React.JSX.Element {
                   >
                     Dashboard
                   </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'performance'}
+                    className={`results-tab ${bottomTab === 'performance' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('performance')}
+                  >
+                    Prestaties
+                  </button>
                 </div>
                 <div className="results-content">
                   {bottomTab === 'results' ? (
@@ -473,6 +482,8 @@ function App(): React.JSX.Element {
                     <ImportPanel connectionId={activeTab.connectionId} />
                   ) : bottomTab === 'audit' ? (
                     <AuditPanel />
+                  ) : bottomTab === 'performance' ? (
+                    <PerformancePanel connectionId={activeTab.connectionId} sql={activeTab.sql} />
                   ) : (
                     <DashboardPanel connectionId={activeTab.connectionId} />
                   )}

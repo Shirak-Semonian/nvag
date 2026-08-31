@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import type { SearchMatch } from '@nvag/contracts'
+import type { ExplainPlanNode, ExplainResult, QueryPerformanceStats, SearchMatch } from '@nvag/contracts'
 import { useAppStore } from '../state/store'
 
 // ---------------------------------------------------------------------------
@@ -346,6 +346,118 @@ export function AuditPanel(): React.JSX.Element {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// F2-4: Query Performance
+// ---------------------------------------------------------------------------
+
+export function PerformancePanel({ connectionId, sql }: { connectionId: string | null; sql: string }): React.JSX.Element {
+  const [stats, setStats] = useState<QueryPerformanceStats & { explain?: ExplainResult } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = async (withSql: boolean): Promise<void> => {
+    if (!connectionId) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await window.nvag.performance.getStats(connectionId, withSql && sql.trim() ? sql : undefined)
+      setStats(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (connectionId) void run(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId])
+
+  return (
+    <div className="f2-panel">
+      <div className="f2-panel-row">
+        <span className="result-meta">Query Performance (F2-4)</span>
+        <span className="f2-panel-spacer" />
+        <button onClick={() => void run(false)} disabled={busy || !connectionId}>
+          Laatste query
+        </button>
+        <button
+          className="primary"
+          onClick={() => void run(true)}
+          disabled={busy || !connectionId || !sql.trim()}
+          title={sql.trim() ? 'EXPLAIN-analyse van de huidige SQL draaien' : 'Geen SQL in de editor'}
+        >
+          {busy ? 'Bezig…' : 'EXPLAIN (huidige SQL)'}
+        </button>
+      </div>
+      {error && <div className="msg-error">Fout: {error}</div>}
+      {stats && (
+        <>
+          <table className="dashboard-db-table">
+            <tbody>
+              <tr>
+                <td>Verstreken tijd</td>
+                <td>{stats.elapsedMs} ms</td>
+              </tr>
+              <tr>
+                <td>Rijen geretourneerd</td>
+                <td>{stats.rowsReturned}</td>
+              </tr>
+              {stats.rowsRead !== undefined && (
+                <tr>
+                  <td>Rijen gelezen</td>
+                  <td>{stats.rowsRead}</td>
+                </tr>
+              )}
+              {stats.cpuMs !== undefined && (
+                <tr>
+                  <td>CPU-tijd</td>
+                  <td>{stats.cpuMs} ms</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {stats.explain && (
+            <details className="table-data-sql" open>
+              <summary>
+                Execution Plan ({stats.explain.dialect}
+                {stats.explain.plan ? ` — ${stats.explain.plan.length} operator(s)` : ''})
+              </summary>
+              {stats.explain.plan && stats.explain.plan.length > 0 ? (
+                <PlanTree nodes={stats.explain.plan} depth={0} />
+              ) : (
+                <pre>{stats.explain.raw}</pre>
+              )}
+            </details>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Eenvoudige boomweergave van een execution plan (F3-1 basis). */
+export function PlanTree({ nodes, depth }: { nodes: ExplainPlanNode[]; depth: number }): React.JSX.Element {
+  return (
+    <div className="plan-tree">
+      {nodes.map((n, i) => (
+        <div key={i} className="plan-node" style={{ marginLeft: depth * 16 }}>
+          <span className="plan-operator">
+            {n.operator}
+            {n.detail ? ` (${n.detail})` : ''}
+          </span>
+          <span className="plan-meta">
+            {n.rows !== undefined ? ` ~${n.rows} rijen` : ''}
+            {n.cost !== undefined ? ` · kost ${n.cost}` : ''}
+          </span>
+          {n.children.length > 0 && <PlanTree nodes={n.children} depth={depth + 1} />}
+        </div>
+      ))}
     </div>
   )
 }

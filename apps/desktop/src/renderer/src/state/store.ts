@@ -262,7 +262,11 @@ const PROVIDER_DIALECT: Record<string, SqlDialectId> = {
   postgresql: 'postgres',
   mysql: 'mysql',
   mariadb: 'mysql',
-  db2: 'db2'
+  db2: 'db2',
+  oracle: 'oracle',
+  snowflake: 'snowflake',
+  azure: 'tsql',
+  databricks: 'databricks'
 }
 
 export function getDialectForProvider(providerId: string): SqlDialectId {

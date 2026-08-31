@@ -294,6 +294,7 @@ export type SqlDialectId =
   | 'db2'
   | 'oracle'
   | 'snowflake'
+  | 'databricks'
 
 export interface ProviderCapabilities {
   supportsSchemas: boolean // MySQL/MariaDB: geen schemas (db = schema)
@@ -391,6 +392,12 @@ export interface ProviderRegistry {
 // ---------------------------------------------------------------------------
 
 export interface NvagIpcApi {
+  // Providers (F2-9: dynamische lijst uit de registry)
+  providers: {
+    /** Beschikbare providers (id + displayName + dialect). */
+    list(): Promise<ProviderDescriptor[]>
+  }
+
   // Connections
   connections: {
     list(): Promise<ConnectionConfig[]>
@@ -621,6 +628,14 @@ export interface NewSnippetEntry {
   folder: string
   title: string
   sql: string
+}
+
+/** Beperkte provider-beschrijving voor de UI (F2-9). */
+export interface ProviderDescriptor {
+  id: string
+  displayName: string
+  dialect: SqlDialectId
+  defaultPort: number
 }
 
 export interface QueryFileOpenResult {

@@ -63,6 +63,11 @@ const DIALECT_KEYWORDS: Record<SqlDialectId, string[]> = {
   snowflake: [
     'LIMIT', 'OFFSET', 'QUALIFY', 'LATERAL', 'FLATTEN', 'VARIANT', 'OBJECT',
     'ARRAY', 'COPY INTO', 'STAGE', 'WAREHOUSE', 'CURRENT_DATE()', 'RANDOM()'
+  ],
+  databricks: [
+    'LIMIT', 'OFFSET', 'ILIKE', 'RLIKE', 'BROADCAST', 'CLUSTER BY', 'DISTRIBUTE BY',
+    'SORT BY', 'LATERAL VIEW', 'EXPLODE', 'STRUCT', 'ARRAY', 'MAP', 'DELTA',
+    'USING DELTA', 'LOCATION', 'OPTIMIZE', 'ZORDER', 'WITH', 'RECURSIVE'
   ]
 }
 

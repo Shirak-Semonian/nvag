@@ -36,7 +36,7 @@ import type {
   TriggerInfo,
   ViewInfo
 } from '@nvag/contracts'
-import { buildLimit, containsKeyword, quoteIdentifier, splitStatements } from '@nvag/sql-dialect'
+import { buildLimit, containsKeyword, splitStatements } from '@nvag/sql-dialect'
 
 export interface MySqlSessionHandle {
   conn: Awaited<ReturnType<typeof createConnection>>
@@ -156,7 +156,7 @@ export function createMySqlProvider(): DatabaseProvider {
       return rows.map((row) => ({ name: row.name }))
     },
 
-    async listSchemas(session: DbSession, db: string): Promise<SchemaInfo[]> {
+    async listSchemas(_session: DbSession, db: string): Promise<SchemaInfo[]> {
       // MySQL: database = schema; één entry per database.
       return [{ name: db }]
     },

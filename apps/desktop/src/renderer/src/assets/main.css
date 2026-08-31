@@ -1561,3 +1561,19 @@ button.danger:hover:not(:disabled) {
   max-height: 120px;
   overflow: auto;
 }
+
+/* F2-4: prestaties / execution plan */
+.plan-node {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 2px 0;
+}
+.plan-operator {
+  font-weight: 600;
+}
+.plan-meta {
+  color: var(--muted, #9a9a9a);
+  font-size: 11px;
+}

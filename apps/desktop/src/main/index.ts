@@ -38,14 +38,14 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.nvag.desktop')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  registerBuiltinProviders()
+  await registerBuiltinProviders()
   bootstrapApp()
   createWindow()
 
