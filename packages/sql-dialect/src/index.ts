@@ -1014,6 +1014,184 @@ export function scriptDelete(
   return `DELETE FROM ${name}\n-- Let op: geen primary key gevonden; vul zelf een WHERE in\nWHERE <voorwaarde>;`
 }
 
+// ---------------------------------------------------------------------------
+// F2-1: Table Data Viewer/Editor — waarde-quoting en DML met echte waarden
+// ---------------------------------------------------------------------------
+
+/** Quote een runtime-waarde als SQL-literal (dialect-correct). */
+export function quoteValue(dialect: SqlDialectId, value: unknown): string {
+  if (value === null || value === undefined) return 'NULL'
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value)
+  if (typeof value === 'boolean') {
+    // SQLite/TSQL/MySQL kennen geen TRUE/FALSE-literal in alle contexten.
+    return dialect === 'postgres' || dialect === 'db2' || dialect === 'oracle' || dialect === 'snowflake'
+      ? value ? 'TRUE' : 'FALSE'
+      : value ? '1' : '0'
+  }
+  if (value instanceof Date) return quoteLiteral(dialect, value.toISOString())
+  if (value instanceof Uint8Array) {
+    // Binair: SQLite X'hex', T-SQL 0x..., overige als string-hex.
+    const hex = Buffer.from(value).toString('hex')
+    if (dialect === 'sqlite') return `X'${hex}'`
+    if (dialect === 'tsql') return `0x${hex}`
+    return quoteLiteral(dialect, hex)
+  }
+  return quoteLiteral(dialect, String(value))
+}
+
+/** UPDATE met echte waarden: SET kolom = waarde ... WHERE pk = waarde. */
+export function buildUpdateByPk(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  pkColumns: string[],
+  pkValues: Record<string, unknown>,
+  changes: Record<string, unknown>
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  const settable = Object.keys(changes).filter((c) => !pkColumns.includes(c))
+  const setClause = (settable.length > 0 ? settable : Object.keys(changes))
+    .map((c) => `${d.quoteIdentifier(c)} = ${quoteValue(dialect, changes[c])}`)
+    .join(', ')
+  const where =
+    pkColumns.length > 0
+      ? pkColumns.map((c) => `${d.quoteIdentifier(c)} = ${quoteValue(dialect, pkValues[c])}`).join(' AND ')
+      : '<voorwaarde>'
+  return `UPDATE ${name}\nSET ${setClause}\nWHERE ${where};`
+}
+
+/** INSERT met echte waarden: INSERT INTO t (kolommen) VALUES (waarde, ...). */
+export function buildInsertValues(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  values: Record<string, unknown>
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  const entries = Object.entries(values)
+  if (entries.length === 0) {
+    return `INSERT INTO ${name}\nDEFAULT VALUES;`
+  }
+  const cols = entries.map(([c]) => d.quoteIdentifier(c)).join(', ')
+  const vals = entries.map(([, v]) => quoteValue(dialect, v)).join(', ')
+  return `INSERT INTO ${name} (${cols})\nVALUES (${vals});`
+}
+
+/** DELETE met echte PK-waarden. */
+export function buildDeleteByPk(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  pkColumns: string[],
+  pkValues: Record<string, unknown>
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  const where =
+    pkColumns.length > 0
+      ? pkColumns.map((c) => `${d.quoteIdentifier(c)} = ${quoteValue(dialect, pkValues[c])}`).join(' AND ')
+      : '<voorwaarde>'
+  return `DELETE FROM ${name}\nWHERE ${where};`
+}
+
+// ---------------------------------------------------------------------------
+// F2-3: Database Administration — DDL-generatie
+// ---------------------------------------------------------------------------
+
+/** CREATE TABLE met expliciete kolomdefinities (admin, F2-3). */
+export function buildCreateTableFromColumns(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  columns: { name: string; dataType: string; length?: number; precision?: number; scale?: number; nullable?: boolean; primaryKey?: boolean; defaultValue?: string }[]
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  const pkCols = columns.filter((c) => c.primaryKey).map((c) => c.name)
+  const lines: string[] = []
+  for (const col of columns) {
+    let type = col.dataType.toUpperCase() || 'TEXT'
+    if (col.length !== undefined && col.length !== null) type = `${type}(${col.length})`
+    else if (col.precision !== undefined && col.precision !== null) {
+      type = col.scale !== undefined && col.scale !== null ? `${type}(${col.precision},${col.scale})` : `${type}(${col.precision})`
+    }
+    let def = `${d.quoteIdentifier(col.name)} ${type}`
+    if (col.primaryKey && pkCols.length === 1) def += ' PRIMARY KEY'
+    if (col.defaultValue !== undefined && col.defaultValue !== null && col.defaultValue !== '') {
+      def += ` DEFAULT ${col.defaultValue}`
+    }
+    if (col.nullable === false && !(col.primaryKey && pkCols.length === 1)) def += ' NOT NULL'
+    lines.push(def)
+  }
+  if (pkCols.length > 1) {
+    lines.push(`PRIMARY KEY (${pkCols.map((c) => d.quoteIdentifier(c)).join(', ')})`)
+  }
+  return `CREATE TABLE ${name} (\n  ${lines.join(',\n  ')}\n);`
+}
+
+/** DROP-object DDL (tabel/view/schema/database/index/...). */
+export function buildDrop(
+  dialect: SqlDialectId,
+  objectType: 'TABLE' | 'VIEW' | 'SCHEMA' | 'DATABASE' | 'INDEX' | 'TRIGGER' | 'SEQUENCE' | 'PROCEDURE' | 'FUNCTION',
+  name: string,
+  options?: { schema?: string | null; table?: string }
+): string {
+  const d = DIALECTS[dialect]
+  if (objectType === 'INDEX' && options?.table) {
+    const tableName = d.quoteQualifiedName(options.schema, options.table)
+    if (dialect === 'tsql' || dialect === 'mysql') {
+      return `DROP INDEX ${d.quoteIdentifier(name)} ON ${tableName};`
+    }
+    return `DROP INDEX ${d.quoteIdentifier(name)} ON ${tableName};`
+  }
+  const qualified = d.quoteQualifiedName(options?.schema ?? null, name)
+  return `DROP ${objectType} ${qualified};`
+}
+
+/** CREATE INDEX DDL (admin, F2-3). */
+export function buildCreateIndex(
+  dialect: SqlDialectId,
+  schema: string | null | undefined,
+  table: string,
+  indexName: string,
+  columns: string[],
+  unique?: boolean
+): string {
+  const d = DIALECTS[dialect]
+  const tableName = d.quoteQualifiedName(schema, table)
+  const uniq = unique ? 'UNIQUE ' : ''
+  return `CREATE ${uniq}INDEX ${d.quoteIdentifier(indexName)} ON ${tableName} (${columns
+    .map((c) => d.quoteIdentifier(c))
+    .join(', ')});`
+}
+
+/** CREATE VIEW DDL (admin, F2-3). */
+export function buildCreateView(
+  dialect: SqlDialectId,
+  schema: string | null | undefined,
+  name: string,
+  selectSql: string
+): string {
+  const d = DIALECTS[dialect]
+  const qualified = d.quoteQualifiedName(schema, name)
+  return `CREATE VIEW ${qualified} AS\n${selectSql};`
+}
+
+/** CREATE SCHEMA DDL (admin, F2-3; SQLite/MySQL hebben geen schemas). */
+export function buildCreateSchema(dialect: SqlDialectId, name: string): string {
+  const d = DIALECTS[dialect]
+  if (dialect === 'mysql') return `CREATE DATABASE ${d.quoteIdentifier(name)};`
+  return `CREATE SCHEMA ${d.quoteIdentifier(name)};`
+}
+
+/** CREATE DATABASE DDL (admin, F2-3; dialect-idiomen). */
+export function buildCreateDatabase(dialect: SqlDialectId, name: string): string {
+  const d = DIALECTS[dialect]
+  return `CREATE DATABASE ${d.quoteIdentifier(name)};`
+}
+
 /**
  * Script Object-dispatch (F1-5): genereer dialect-correcte SQL voor een tabel.
  * INSERT laat identity-kolommen buiten de kolomlijst; UPDATE/DELETE gebruiken

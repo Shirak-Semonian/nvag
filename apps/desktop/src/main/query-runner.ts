@@ -24,6 +24,7 @@ import type {
 import { registry } from './registry'
 import { sessionManager } from './session-manager'
 import type { HistoryStore } from './history-store'
+import type { AuditStore } from './audit-store'
 
 export interface RunRequest {
   connectionId: string
@@ -61,6 +62,9 @@ export class QueryRunner {
 
   /** SQL-history (eis 19); geïnjecteerd vanuit ipc-bootstrap. */
   historyStore: HistoryStore | null = null
+
+  /** Auditlog (F2-8, eis 26); geïnjecteerd vanuit ipc-bootstrap. */
+  auditStore: AuditStore | null = null
 
   /**
    * Registreert een uitvoering; consumeert nog niets.
@@ -189,6 +193,23 @@ export class QueryRunner {
           })
         } catch {
           // History is best-effort; een fout hier mag de query niet breken.
+        }
+      }
+
+      // Auditlog (F2-8, eis 26): query-uitvoering, best-effort.
+      const audit = this.auditStore
+      if (audit) {
+        try {
+          audit.add({
+            action: 'query.executed',
+            server: req.server ?? req.connectionId,
+            database: session.database ?? '',
+            detail: `Query ${error ? 'mislukt' : active.cancelRequested ? 'geannuleerd' : 'uitgevoerd'}: ${req.sql.slice(0, 300)}${req.sql.length > 300 ? '…' : ''}`,
+            success: !error && !active.cancelRequested,
+            ...(error ? { error } : {})
+          })
+        } catch {
+          // Audit is best-effort.
         }
       }
     }

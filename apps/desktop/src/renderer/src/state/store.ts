@@ -1,18 +1,28 @@
 import { create } from 'zustand'
 import type {
+  AdminUserInfo,
+  AuditEntry,
   ConnectionConfig,
   ConnectionSecret,
+  DashboardData,
   DbObjectRef,
   Environment,
   ErrorPosition,
   HistoryEntry,
+  ImportPreview,
+  ProviderCapabilities,
+  QueryCellValue,
   QueryChunk,
   QueryMessage,
   QueryResultSet,
   QueryRunResponse,
   ScriptKind,
+  SearchMatch,
   ServerInfo,
-  SqlDialectId
+  SnippetEntry,
+  SqlDialectId,
+  TableDataResult,
+  TransactionState
 } from '@nvag/contracts'
 import { buildSelectStar } from '@nvag/sql-dialect'
 import { loadRecentQueries, persistRecentQueries, type RecentQueryEntry } from './recentQueries'
@@ -39,6 +49,36 @@ export interface QueryTabState {
   filePath?: string
   /** Bewerkingsvlag: true zodra SQL afwijkt van het bestand op schijf. */
   dirty?: boolean
+
+  // F2-1: Table Data Viewer/Editor (eis 8)
+  kind?: 'query' | 'table-data'
+  /** Tabelcontext voor een table-data tab. */
+  tableData?: {
+    database: string
+    schema: string
+    table: string
+    data: TableDataResult | null
+    /** Nieuwe-rij-modus (insert-ready). */
+    inserting: boolean
+    /** Wachtende bewerking die op bevestiging wacht (guard). */
+    pendingEdit: { kind: 'update' | 'insert' | 'delete'; sql: string; reason: string[] } | null
+    /** Laatste bewerkingsresultaat (voor feedback). */
+    lastEditMessage: string | null
+    /** Laatst uitgevoerde/gegenereerde SQL (zichtbaar voor de gebruiker). */
+    lastSql: string | null
+  }
+}
+
+/** Bewerkingsverzoek dat op bevestiging wacht (F2-1 guard). */
+export interface TableEditPending {
+  tabId: string
+  kind: 'update' | 'insert' | 'delete'
+  sql: string
+  reasons: string[]
+  environment: Environment
+  /** Oorspronkelijke bewerkingswaarden (voor de bevestigde heruitvoering). */
+  values: Record<string, QueryCellValue>
+  pkValues: Record<string, QueryCellValue>
 }
 
 export interface ConnectionWithSession {
@@ -69,6 +109,30 @@ interface AppState {
   editingConnectionId: string | null
   /** Environment-safety (F1-8): query die op bevestiging wacht; null = geen dialoog. */
   pendingGuard: GuardPending | null
+  /** F2-1: tabelbewerking die op bevestiging wacht (guard). */
+  pendingTableEdit: TableEditPending | null
+  /** F2-2: transactiestatus per verbinding (eis 23). */
+  transactionState: Record<string, TransactionState>
+  /** F2-6: snippets + folders (eis 20). */
+  snippets: SnippetEntry[]
+  snippetFolders: string[]
+  snippetFilterFolder: string
+  /** F2-5: zoekresultaten (eis 13). */
+  searchResults: SearchMatch[]
+  searching: boolean
+  /** F2-7: import (eis 17). */
+  importPreview: ImportPreview | null
+  importFilePath: string | null
+  importGeneratedSql: string
+  importBusy: boolean
+  /** F2-8: auditlog (eis 26). */
+  auditEntries: AuditEntry[]
+  /** F2-10: dashboard (eis 25). */
+  dashboard: DashboardData | null
+  /** F2-3: admin-dialoog (eis 9). */
+  showAdminDialog: boolean
+  adminCapabilities: ProviderCapabilities | null
+  adminUsers: AdminUserInfo[]
 
   loadConnections: () => Promise<void>
   saveConnection: (config: ConnectionConfig, secret?: ConnectionSecret) => Promise<ConnectionConfig>
@@ -130,6 +194,55 @@ interface AppState {
 
   openConnectionDialog: (mode: 'create' | 'edit', connectionId?: string) => void
   closeConnectionDialog: () => void
+
+  // F2-1: Table Data Viewer/Editor (eis 8)
+  openTableDataTab: (connectionId: string, database: string, schema: string, table: string) => void
+  loadTableRows: (tabId: string) => Promise<void>
+  /** Bewerking op een cel/rij; bij guard-blokkade naar pendingTableEdit. */
+  saveTableEdit: (
+    tabId: string,
+    kind: 'update' | 'insert' | 'delete',
+    values: Record<string, QueryCellValue>,
+    pkValues: Record<string, QueryCellValue>
+  ) => Promise<void>
+  /** F2-1: bevestigde bewerking alsnog uitvoeren (guard-dialoog). */
+  confirmTableEdit: () => Promise<void>
+  cancelTableEdit: () => void
+
+  // F2-2: Transactions (eis 23)
+  beginTransaction: (connectionId: string) => Promise<void>
+  commitTransaction: (connectionId: string) => Promise<void>
+  rollbackTransaction: (connectionId: string) => Promise<void>
+  refreshTransactionState: (connectionId: string) => Promise<void>
+
+  // F2-5: Database Search (eis 13)
+  runDatabaseSearch: (connectionId: string, query: string) => Promise<void>
+  /** Vanuit zoekresultaat een object openen (nieuwe querytab). */
+  openSearchMatch: (connectionId: string, match: SearchMatch) => void
+
+  // F2-6: Snippets/Favorites (eis 20)
+  loadSnippets: (folder?: string) => Promise<void>
+  saveSnippet: (entry: { folder: string; title: string; sql: string }) => Promise<void>
+  removeSnippet: (id: number) => Promise<void>
+  /** Voegt een snippet in de actieve editor-tab in. */
+  insertSnippetIntoEditor: (tabId: string, sql: string) => void
+
+  // F2-7: Import (eis 17)
+  pickImportFile: () => Promise<void>
+  generateImportSql: (connectionId: string, table: string, schema: string | undefined, mapping: Record<number, string>, rowLimit: number) => Promise<void>
+  executeImportSql: (connectionId: string, confirmed?: boolean) => Promise<void>
+
+  // F2-8: Audit (eis 26)
+  loadAudit: () => Promise<void>
+  clearAudit: () => Promise<void>
+
+  // F2-10: Dashboard (eis 25)
+  loadDashboard: (connectionId: string) => Promise<void>
+
+  // F2-3: Admin (eis 9)
+  openAdminDialog: () => void
+  closeAdminDialog: () => void
+  loadAdminState: (connectionId: string) => Promise<void>
 }
 
 let tabCounter = 1
@@ -234,6 +347,22 @@ export const useAppStore = create<AppState>((set, get) => {
     connectionDialogMode: 'create',
     editingConnectionId: null,
     pendingGuard: null,
+    pendingTableEdit: null,
+    transactionState: {},
+    snippets: [],
+    snippetFolders: ['Algemeen'],
+    snippetFilterFolder: 'Algemeen',
+    searchResults: [],
+    searching: false,
+    importPreview: null,
+    importFilePath: null,
+    importGeneratedSql: '',
+    importBusy: false,
+    auditEntries: [],
+    dashboard: null,
+    showAdminDialog: false,
+    adminCapabilities: null,
+    adminUsers: [],
 
   async loadConnections() {
     const list = await window.nvag.connections.list()
@@ -758,6 +887,334 @@ export const useAppStore = create<AppState>((set, get) => {
 
   closeConnectionDialog() {
     set({ showConnectionDialog: false })
+  },
+
+  // ------------------------------------------------------------------ F2-1
+  openTableDataTab(connectionId, database, schema, table) {
+    const id = nextTabId()
+    const conn = get().connections.find((c) => c.id === connectionId)
+    const tab: QueryTabState = {
+      id,
+      title: `${table} — gegevens`,
+      sql: '',
+      connectionId,
+      database,
+      result: null,
+      running: false,
+      executionId: null,
+      startedAt: null,
+      kind: 'table-data',
+      tableData: {
+        database,
+        schema,
+        table,
+        data: null,
+        inserting: false,
+        pendingEdit: null,
+        lastEditMessage: null,
+        lastSql: null
+      }
+    }
+    set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
+    if (conn && get().openSessions[connectionId]) {
+      void get().loadTableRows(id)
+    }
+  },
+
+  async loadTableRows(tabId) {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab?.connectionId || !tab.tableData) return
+    try {
+      const data = await window.nvag.tableData.getRows(
+        tab.connectionId,
+        tab.tableData.database,
+        tab.tableData.schema,
+        tab.tableData.table,
+        100
+      )
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === tabId && t.tableData
+            ? { ...t, tableData: { ...t.tableData, data, inserting: false } }
+            : t
+        )
+      }))
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err)
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === tabId && t.tableData
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Fout: ${text}` } }
+            : t
+        )
+      }))
+    }
+  },
+
+  async saveTableEdit(tabId, kind, values, pkValues) {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab?.connectionId || !tab.tableData) return
+    const tableData = tab.tableData
+    const req = {
+      connectionId: tab.connectionId,
+      database: tableData.database,
+      schema: tableData.schema,
+      table: tableData.table,
+      kind,
+      values,
+      pkValues
+    }
+    try {
+      const result = await window.nvag.tableData.edit(req)
+      if (result.blocked && result.blocked.length > 0) {
+        const environment = get().connections.find((c) => c.id === tab.connectionId)?.environment ?? 'DEV'
+        set({
+          pendingTableEdit: {
+            tabId,
+            kind,
+            sql: result.sql,
+            reasons: result.blocked,
+            environment,
+            values,
+            pkValues
+          }
+        })
+        return
+      }
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === tabId && t.tableData
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `✅ ${result.rowCount} rij(en) ${kind === 'insert' ? 'toegevoegd' : kind === 'delete' ? 'verwijderd' : 'bijgewerkt'}.`, lastSql: result.sql } }
+            : t
+        )
+      }))
+      await get().loadTableRows(tabId)
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err)
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === tabId && t.tableData
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Fout: ${text}` } }
+            : t
+        )
+      }))
+    }
+  },
+
+  async confirmTableEdit() {
+    const pending = get().pendingTableEdit
+    if (!pending) return
+    set({ pendingTableEdit: null })
+    const tab = get().tabs.find((t) => t.id === pending.tabId)
+    if (!tab?.connectionId || !tab.tableData) return
+    const tableData = tab.tableData
+    try {
+      const result = await window.nvag.tableData.edit({
+        connectionId: tab.connectionId,
+        database: tableData.database,
+        schema: tableData.schema,
+        table: tableData.table,
+        kind: pending.kind,
+        values: pending.values,
+        pkValues: pending.pkValues,
+        confirmed: true
+      })
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === pending.tabId && t.tableData
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `✅ ${result.rowCount} rij(en) ${pending.kind === 'insert' ? 'toegevoegd' : pending.kind === 'delete' ? 'verwijderd' : 'bijgewerkt'}.`, lastSql: result.sql } }
+            : t
+        )
+      }))
+      await get().loadTableRows(pending.tabId)
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err)
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === pending.tabId && t.tableData
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Fout: ${text}` } }
+            : t
+        )
+      }))
+    }
+  },
+
+  cancelTableEdit() {
+    set((s) => ({
+      pendingTableEdit: null,
+      tabs: s.tabs.map((t) =>
+        t.tableData ? { ...t, tableData: { ...t.tableData, pendingEdit: null } } : t
+      )
+    }))
+  },
+
+  // ------------------------------------------------------------------ F2-2
+  async beginTransaction(connectionId) {
+    const status = await window.nvag.transactions.begin(connectionId)
+    set((s) => ({ transactionState: { ...s.transactionState, [connectionId]: status.state } }))
+  },
+
+  async commitTransaction(connectionId) {
+    const status = await window.nvag.transactions.commit(connectionId)
+    set((s) => ({ transactionState: { ...s.transactionState, [connectionId]: status.state } }))
+  },
+
+  async rollbackTransaction(connectionId) {
+    const status = await window.nvag.transactions.rollback(connectionId)
+    set((s) => ({ transactionState: { ...s.transactionState, [connectionId]: status.state } }))
+  },
+
+  async refreshTransactionState(connectionId) {
+    try {
+      const status = await window.nvag.transactions.status(connectionId)
+      set((s) => ({ transactionState: { ...s.transactionState, [connectionId]: status.state } }))
+    } catch {
+      // geen sessie: status none
+      set((s) => ({ transactionState: { ...s.transactionState, [connectionId]: 'none' } }))
+    }
+  },
+
+  // ------------------------------------------------------------------ F2-5
+  async runDatabaseSearch(connectionId, query) {
+    set({ searching: true })
+    try {
+      const results = await window.nvag.search.search(connectionId, query, { limit: 200 })
+      set({ searchResults: results, searching: false })
+    } catch (err) {
+      set({ searchResults: [], searching: false })
+      void err
+    }
+  },
+
+  openSearchMatch(connectionId, match) {
+    // Open een querytab voor het object op de actieve verbinding.
+    const sql =
+      match.objectType === 'table' || match.objectType === 'view'
+        ? `SELECT * FROM ${match.schema ? `"${match.schema}".` : ''}"${match.object}" LIMIT 100`
+        : `-- ${match.objectType}: ${match.object}`
+    get().addTab({ sql, connectionId, title: match.object })
+  },
+
+  // ------------------------------------------------------------------ F2-6
+  async loadSnippets(folder) {
+    const folders = await window.nvag.snippets.listFolders()
+    const filter = folder ?? get().snippetFilterFolder
+    const snippets = await window.nvag.snippets.list(filter)
+    set({ snippets, snippetFolders: folders, snippetFilterFolder: filter })
+  },
+
+  async saveSnippet(entry) {
+    await window.nvag.snippets.save(entry)
+    await get().loadSnippets()
+  },
+
+  async removeSnippet(id) {
+    await window.nvag.snippets.remove(id)
+    await get().loadSnippets()
+  },
+
+  insertSnippetIntoEditor(tabId, sql) {
+    const tab = get().tabs.find((t) => t.id === tabId)
+    if (!tab) return
+    const current = tab.sql
+    const next = current.length > 0 ? `${current}\n${sql}\n` : `${sql}\n`
+    get().updateTabSql(tabId, next)
+  },
+
+  // ------------------------------------------------------------------ F2-7
+  async pickImportFile() {
+    const picked = await window.nvag.import.pickFile()
+    if (picked.canceled || !picked.filePath || !picked.format) return
+    set({ importBusy: true, importGeneratedSql: '' })
+    try {
+      const preview = await window.nvag.import.preview({ filePath: picked.filePath, format: picked.format })
+      set({ importPreview: preview, importFilePath: picked.filePath, importBusy: false })
+    } catch (err) {
+      set({ importBusy: false })
+      void err
+    }
+  },
+
+  async generateImportSql(connectionId, table, schema, mapping, rowLimit) {
+    const preview = get().importPreview
+    const filePath = get().importFilePath
+    if (!preview || !filePath) return
+    set({ importBusy: true })
+    try {
+      const result = await window.nvag.import.generate({
+        connectionId,
+        filePath,
+        format: preview.format,
+        table,
+        schema,
+        mapping,
+        rowLimit
+      })
+      set({ importGeneratedSql: result.sql, importBusy: false })
+    } catch (err) {
+      set({ importBusy: false })
+      void err
+    }
+  },
+
+  async executeImportSql(connectionId, confirmed) {
+    const sql = get().importGeneratedSql
+    if (!sql) return
+    const result = await window.nvag.import.execute(connectionId, sql, confirmed)
+    if (result.blocked && result.blocked.length > 0 && !confirmed) {
+      // Toon guard-blokkade via hetzelfde dialoogmechanisme als query's.
+      set({
+        pendingGuard: {
+          tabId: get().activeTabId ?? '',
+          sql,
+          reasons: result.blocked,
+          environment: get().connections.find((c) => c.id === connectionId)?.environment ?? 'DEV'
+        }
+      })
+      return
+    }
+    if (result.ok) {
+      set({ importGeneratedSql: '' })
+    }
+  },
+
+  // ------------------------------------------------------------------ F2-8
+  async loadAudit() {
+    const entries = await window.nvag.audit.list(200)
+    set({ auditEntries: entries })
+  },
+
+  async clearAudit() {
+    await window.nvag.audit.clear()
+    set({ auditEntries: [] })
+  },
+
+  // ------------------------------------------------------------------ F2-10
+  async loadDashboard(connectionId) {
+    const dashboard = await window.nvag.dashboard.get(connectionId)
+    set({ dashboard })
+  },
+
+  // ------------------------------------------------------------------ F2-3
+  openAdminDialog() {
+    set({ showAdminDialog: true })
+  },
+
+  closeAdminDialog() {
+    set({ showAdminDialog: false })
+  },
+
+  async loadAdminState(connectionId) {
+    if (!connectionId) return
+    try {
+      const [caps, users] = await Promise.all([
+        window.nvag.admin.capabilities(connectionId),
+        window.nvag.admin.listUsers(connectionId)
+      ])
+      set({ adminCapabilities: caps, adminUsers: users })
+    } catch {
+      // zonder sessie geen admin-state
+    }
   }
   }
 })

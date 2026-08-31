@@ -17,6 +17,7 @@ import type {
   ServerInfo
 } from '@nvag/contracts'
 import { registry } from './registry'
+import { transactionManager } from './transactions'
 
 export interface OpenSessionResult {
   sessionId: string
@@ -138,6 +139,8 @@ export class SessionManager {
       if (this.byConnectionId.get(session.connectionId) === sessionId) {
         this.byConnectionId.delete(session.connectionId)
       }
+      // Transactiestatus van de verbinding wissen (F2-2, eis 23).
+      transactionManager.clear(session.connectionId)
     }
   }
 

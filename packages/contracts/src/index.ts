@@ -489,9 +489,138 @@ export interface NvagIpcApi {
     clear(): Promise<void>
   }
 
+  // F2-1: Table Data Viewer/Editor (eis 8)
+  tableData: {
+    /** Haalt rijen op van een tabel (SELECT Top N). */
+    getRows(
+      connectionId: string,
+      database: string,
+      schema: string,
+      table: string,
+      maxRows?: number
+    ): Promise<TableDataResult>
+    /**
+     * Voert een gegenereerde UPDATE/INSERT/DELETE uit op basis van de
+     * primary key. De gegenereerde SQL wordt geretourneerd (zichtbaar);
+     * bij een guard-blokkade wordt `blocked` gevuld en niets uitgevoerd.
+     */
+    edit(req: TableEditRequest): Promise<
+      TableEditResult & { blocked?: string[]; guardSeverity?: GuardSeverity }
+    >
+  }
+
+  // F2-2: Transactions (eis 23)
+  transactions: {
+    /** START TRANSACTION / BEGIN op de sessie van een verbinding. */
+    begin(connectionId: string): Promise<TransactionStatus>
+    commit(connectionId: string): Promise<TransactionStatus>
+    rollback(connectionId: string): Promise<TransactionStatus>
+    /** Huidige transactiestatus per verbinding. */
+    status(connectionId: string): Promise<TransactionStatus>
+  }
+
+  // F2-3: Database Administration (eis 9)
+  admin: {
+    createDatabase(connectionId: string, name: string): Promise<{ ok: boolean; sql: string }>
+    dropDatabase(connectionId: string, name: string): Promise<{ ok: boolean; sql: string }>
+    createSchema(connectionId: string, database: string, name: string): Promise<{ ok: boolean; sql: string }>
+    dropSchema(connectionId: string, database: string, name: string): Promise<{ ok: boolean; sql: string }>
+    createTable(req: AdminTableCreateRequest): Promise<{ ok: boolean; sql: string }>
+    dropTable(connectionId: string, database: string, schema: string, table: string): Promise<{ ok: boolean; sql: string }>
+    createView(connectionId: string, database: string, schema: string, name: string, sql: string): Promise<{ ok: boolean; sql: string }>
+    dropView(connectionId: string, database: string, schema: string, name: string): Promise<{ ok: boolean; sql: string }>
+    createIndex(req: AdminIndexCreateRequest): Promise<{ ok: boolean; sql: string }>
+    dropIndex(connectionId: string, database: string, schema: string, table: string, index: string): Promise<{ ok: boolean; sql: string }>
+    listUsers(connectionId: string): Promise<AdminUserInfo[]>
+    createUser(req: AdminUserRequest): Promise<{ ok: boolean; sql: string }>
+    dropUser(connectionId: string, name: string): Promise<{ ok: boolean; sql: string }>
+    /** Capabilities van de provider (voor UI-gating). */
+    capabilities(connectionId: string): Promise<ProviderCapabilities>
+  }
+
+  // F2-4: Query Performance (eis 11)
+  performance: {
+    /**
+     * Statistieken voor de laatst uitgevoerde query van een tab (of een
+     * EXPLAIN-run). Wanneer `sql` is meegegeven, draait de provider een
+     * EXPLAIN-achtige analyse en retourneert de ruwe output.
+     */
+    getStats(
+      connectionId: string,
+      sql?: string,
+      maxRows?: number
+    ): Promise<QueryPerformanceStats & { explain?: ExplainResult }>
+  }
+
+  // F2-5: Database Search (eis 13)
+  search: {
+    /**
+     * Doorzoekt objecten (tabellen/views/procs/functies/kolommen) en tekst
+     * in definities via de metadata cache.
+     */
+    search(
+      connectionId: string,
+      query: string,
+      options?: { database?: string; limit?: number }
+    ): Promise<SearchMatch[]>
+  }
+
+  // F2-6: Snippets/Favorites (eis 20)
+  snippets: {
+    list(folder?: string): Promise<SnippetEntry[]>
+    save(entry: NewSnippetEntry): Promise<SnippetEntry>
+    remove(id: number): Promise<void>
+    listFolders(): Promise<string[]>
+  }
+
+  // F2-7: Import (eis 17)
+  import: {
+    /** Kiest een bestand via dialoog en retourneert pad + formaat. */
+    pickFile(): Promise<{ canceled: boolean; filePath?: string; format?: ImportFileFormat }>
+    /** Parseert het bestand en retourneert een preview (kolommen + eerste rijen). */
+    preview(req: ImportParseRequest): Promise<ImportPreview>
+    /**
+     * Genereert INSERT-SQL uit het bestand met kolom-mapping.
+     * `rowLimit` 0 = alle rijen.
+     */
+    generate(req: ImportGenerateRequest): Promise<ImportGenerateResult>
+    /** Voert de gegenereerde INSERTs direct uit (met guard-check). */
+    execute(
+      connectionId: string,
+      sql: string,
+      confirmed?: boolean
+    ): Promise<{ ok: boolean; rowCount: number; blocked?: string[]; guardSeverity?: GuardSeverity }>
+  }
+
+  // F2-8: Logging & Audit (eis 26)
+  audit: {
+    list(limit?: number): Promise<AuditEntry[]>
+    clear(): Promise<void>
+  }
+
+  // F2-10: Dashboard (eis 25)
+  dashboard: {
+    get(connectionId: string): Promise<DashboardData>
+  }
+
   app: {
     getVersion(): Promise<string>
   }
+}
+
+export interface SnippetEntry {
+  id: number
+  folder: string
+  title: string
+  sql: string
+  /** Sorteer-/gebruiksdatum (ISO). */
+  updatedAt: string
+}
+
+export interface NewSnippetEntry {
+  folder: string
+  title: string
+  sql: string
 }
 
 export interface QueryFileOpenResult {
@@ -606,4 +735,253 @@ export interface QueryRunResponse {
   results?: QueryResultSet[]
   /** Structured messages-paneel: errors, warnings, info. */
   messages?: QueryMessage[]
+}
+
+// ---------------------------------------------------------------------------
+// Fase 2 — Beheer & productiviteit
+// ---------------------------------------------------------------------------
+
+// F2-1: Table Data Viewer/Editor (eis 8)
+// ---------------------------------------------------------------------------
+
+export interface TableDataResult {
+  columns: QueryColumn[]
+  rows: QueryRow[]
+  truncated: boolean
+  rowCount: number
+  /** Primary key-kolommen (voor UPDATE/DELETE-generatie). */
+  primaryKey: string[]
+  /** Bewerkbare kolommen (niet identity, niet computed). */
+  editableColumns: string[]
+}
+
+export type TableEditKind = 'update' | 'insert' | 'delete'
+
+export interface TableEditRequest {
+  connectionId: string
+  database: string
+  schema?: string
+  table: string
+  kind: TableEditKind
+  /** Kolom → waarde voor INSERT; kolom → nieuwe waarde voor UPDATE. */
+  values: Record<string, QueryCellValue>
+  /** Kolom → oorspronkelijke PK-waarde voor UPDATE/DELETE. */
+  pkValues: Record<string, QueryCellValue>
+  /** Environment-safety (F2-1): gebruiker bevestigde de gegenereerde SQL. */
+  confirmed?: boolean
+}
+
+export interface TableEditResult {
+  rowCount: number
+  /** De SQL die is uitgevoerd (zichtbaar voor de gebruiker). */
+  sql: string
+}
+
+// F2-2: Transactions (eis 23)
+// ---------------------------------------------------------------------------
+
+export type TransactionState = 'none' | 'active'
+
+export interface TransactionStatus {
+  connectionId: string
+  state: TransactionState
+}
+
+// F2-3: Database Administration (eis 9)
+// ---------------------------------------------------------------------------
+
+export interface AdminColumnDef {
+  name: string
+  dataType: string
+  length?: number
+  precision?: number
+  scale?: number
+  nullable?: boolean
+  primaryKey?: boolean
+  defaultValue?: string
+}
+
+export interface AdminIndexDef {
+  name: string
+  table: string
+  schema?: string
+  columns: string[]
+  unique?: boolean
+}
+
+export interface AdminUserInfo {
+  name: string
+  /** Rolnaam voor gebruikers-rollen (indien van toepassing). */
+  role?: string
+  canLogin?: boolean
+}
+
+export interface AdminRequest {
+  connectionId: string
+  database?: string
+  schema?: string
+  object?: string
+  name?: string
+}
+
+export interface AdminTableCreateRequest {
+  connectionId: string
+  database: string
+  schema?: string
+  table: string
+  columns: AdminColumnDef[]
+}
+
+export interface AdminIndexCreateRequest {
+  connectionId: string
+  database: string
+  schema?: string
+  index: AdminIndexDef
+}
+
+export interface AdminUserRequest {
+  connectionId: string
+  name: string
+  password?: string
+}
+
+// F2-4: Query Performance (eis 11)
+// ---------------------------------------------------------------------------
+
+/** Extra statistieken die providers waar mogelijk vullen (F2-4). */
+export interface QueryPerformanceStats {
+  elapsedMs: number
+  rowsReturned: number
+  /** Aantal gelezen rijen (indien provider dit rapporteert). */
+  rowsRead?: number
+  /** CPU-tijd in ms (indien beschikbaar). */
+  cpuMs?: number
+  /** Provider-specifieke extra statistieken (bijv. EXPLAIN-resultaat). */
+  extra?: Record<string, string | number | boolean>
+}
+
+export interface ExplainResult {
+  /** Dialect (voor de parser/visualisatie). */
+  dialect: SqlDialectId
+  /** Ruwe output van de provider (bijv. EXPLAIN FORMAT=JSON-string). */
+  raw: string
+  /** Gestructureerde operators (F3-1): boom van operatorknooppunten. */
+  plan?: ExplainPlanNode[]
+}
+
+export interface ExplainPlanNode {
+  operator: string
+  detail?: string
+  cost?: number
+  rows?: number
+  width?: number
+  children: ExplainPlanNode[]
+}
+
+// F2-5: Database Search (eis 13)
+// ---------------------------------------------------------------------------
+
+export interface SearchMatch {
+  objectType: 'table' | 'view' | 'procedure' | 'function' | 'column' | 'definition'
+  database: string
+  schema?: string
+  object: string
+  /** Waar de match is gevonden (objectnaam, kolomnaam of definitie-tekst). */
+  field: 'name' | 'column' | 'definition'
+  /** Klein fragment rond de match (voor weergave). */
+  snippet?: string
+}
+
+// F2-7: Import (eis 17)
+// ---------------------------------------------------------------------------
+
+export type ImportFileFormat = 'csv' | 'json' | 'xlsx' | 'xml'
+
+export interface ImportParseRequest {
+  /** Pad naar het bronbestand (gekozen via dialoog in main process). */
+  filePath: string
+  format: ImportFileFormat
+}
+
+export interface ImportColumnDef {
+  name: string
+  dataType?: string
+}
+
+export interface ImportPreview {
+  fileName: string
+  format: ImportFileFormat
+  columns: ImportColumnDef[]
+  /** Eerste N rijen als platte waardes in kolomvolgorde. */
+  rows: unknown[][]
+  totalRows: number
+  /** Unieke kolomnamen (na normalisatie van duplicaten). */
+  uniqueColumns: string[]
+}
+
+export interface ImportGenerateRequest {
+  filePath: string
+  format: ImportFileFormat
+  /** Verbinding (voor het dialect van de gegenereerde SQL). */
+  connectionId: string
+  /** Doeltabel. */
+  table: string
+  schema?: string
+  /** Kolom-mapping: bronkolom (index) → doelkolomnaam. */
+  mapping: Record<number, string>
+  /** Alleen eerste N rijen (0 = alles). */
+  rowLimit?: number
+}
+
+export interface ImportGenerateResult {
+  sql: string
+  rowCount: number
+}
+
+// F2-8: Logging & Audit (eis 26)
+// ---------------------------------------------------------------------------
+
+export type AuditAction =
+  | 'connection.created'
+  | 'connection.removed'
+  | 'session.opened'
+  | 'query.executed'
+  | 'query.exported'
+  | 'table.edit'
+  | 'import.executed'
+  | 'admin.ddl'
+  | 'transaction.commit'
+  | 'transaction.rollback'
+
+export interface AuditEntry {
+  id: number
+  /** ISO-tijdstip (UTC). */
+  at: string
+  action: AuditAction
+  /** Verbindingsnaam of '—'. */
+  server?: string
+  database?: string
+  /** Korte beschrijving (SQL is geredigeerd; secrets worden verwijderd). */
+  detail: string
+  success: boolean
+  /** Fouttekst (indien aanwezig; secrets geredigeerd). */
+  error?: string
+}
+
+// F2-10: Dashboard (eis 25)
+// ---------------------------------------------------------------------------
+
+export interface DatabaseSizeInfo extends DatabaseInfo {
+  sizeBytes?: number
+  /** Aantal tabellen (indien beschikbaar). */
+  tableCount?: number
+}
+
+export interface DashboardData {
+  serverInfo: ServerInfo
+  databases: DatabaseSizeInfo[]
+  /** Actieve queries (waar ondersteund; anders leeg). */
+  activeQueries: unknown[]
+  /** Provider-specifieke extra gegevens. */
+  extra?: Record<string, string | number | boolean>
 }

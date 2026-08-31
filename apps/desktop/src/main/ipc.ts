@@ -3,9 +3,19 @@
  * (ADR: renderer is dom, alle logica in main process)
  */
 
-import { ipcMain } from 'electron'
-import type { ConnectionConfig, ConnectionSecret, DbObjectRef, ScriptKind } from '@nvag/contracts'
-import { connectionStore, historyStore } from './ipc-bootstrap'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
+import type {
+  AdminIndexCreateRequest,
+  AdminTableCreateRequest,
+  AdminUserRequest,
+  ConnectionConfig,
+  ConnectionSecret,
+  DbObjectRef,
+  ImportFileFormat,
+  ScriptKind,
+  TableEditRequest
+} from '@nvag/contracts'
+import { connectionStore, historyStore, snippetStore, auditStore } from './ipc-bootstrap'
 import { sessionManager } from './session-manager'
 import { queryRunner } from './query-runner'
 import * as metadata from './metadata-service'
@@ -13,6 +23,21 @@ import * as queryFiles from './query-files'
 import { exportResults, saveCsv } from './results-export'
 import type { ExportRequest } from '@nvag/contracts'
 import { checkQuery } from './security/query-guard'
+import * as tableData from './table-data'
+import { transactionManager } from './transactions'
+import * as admin from './database-admin'
+import * as performance from './performance'
+import * as search from './database-search'
+import * as importer from './importer'
+import * as dashboard from './dashboard'
+
+function audit(action: Parameters<typeof auditStore.add>[0]['action'], detail: string, extra: { server?: string; database?: string; success?: boolean; error?: string } = {}) {
+  try {
+    auditStore.add({ action, detail, server: extra.server, database: extra.database, success: extra.success ?? true, error: extra.error })
+  } catch {
+    // audit is best-effort
+  }
+}
 
 export function registerIpcHandlers(): void {
   // ------------------------------------------------------------------ connections
@@ -21,12 +46,17 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'connections:save',
     (_e, config: ConnectionConfig, secret?: ConnectionSecret) => {
-      return connectionStore.save(config, secret)
+      const isNew = !connectionStore.get(config.id)
+      const saved = connectionStore.save(config, secret)
+      audit(isNew ? 'connection.created' : 'admin.ddl', `${isNew ? 'Verbinding aangemaakt' : 'Verbinding bijgewerkt'}: ${config.name} (${config.providerId})`, { server: config.name })
+      return saved
     }
   )
 
   ipcMain.handle('connections:remove', (_e, id: string) => {
+    const conn = connectionStore.get(id)
     connectionStore.remove(id)
+    audit('connection.removed', `Verbinding verwijderd: ${conn?.name ?? id}`, { server: conn?.name })
     return { ok: true }
   })
 
@@ -43,7 +73,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'sessions:open',
     async (_e, config: ConnectionConfig, secret?: ConnectionSecret) => {
-      return sessionManager.open(config, secret)
+      const result = await sessionManager.open(config, secret)
+      audit('session.opened', `Sessie geopend: ${config.name}`, { server: config.name, database: config.database })
+      return result
     }
   )
 
@@ -53,7 +85,10 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('sessions:openSaved', async (_e, connectionId: string) => {
-    return sessionManager.openSaved(connectionId)
+    const result = await sessionManager.openSaved(connectionId)
+    const conn = connectionStore.get(connectionId)
+    audit('session.opened', `Sessie geopend (saved): ${conn?.name ?? connectionId}`, { server: conn?.name })
+    return result
   })
 
   ipcMain.handle('sessions:useDatabase', async (_e, connectionId: string, database: string) => {
@@ -107,7 +142,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'query:exportResults',
     async (event, req: ExportRequest) => {
-      return exportResults(req, event.sender)
+      const result = await exportResults(req, event.sender)
+      if (!result.canceled && result.rowCount !== undefined) {
+        audit('query.exported', `Export ${req.format.toUpperCase()} (${req.target}): ${result.rowCount} rijen — ${req.fileName}`, { server: undefined })
+      }
+      return result
     }
   )
 
@@ -182,6 +221,209 @@ export function registerIpcHandlers(): void {
     historyStore.clear()
     return { ok: true }
   })
+
+  // ------------------------------------------------------------------ F2-1: table data (eis 8)
+  ipcMain.handle(
+    'tableData:getRows',
+    (_e, connectionId: string, database: string, schema: string, table: string, maxRows?: number) =>
+      tableData.getTableRows(connectionId, database, schema, table, maxRows)
+  )
+
+  ipcMain.handle('tableData:edit', async (_e, req: TableEditRequest) => {
+    // Environment-safety (F2-1): zelfde guard als query:run; pas uitvoeren
+    // wanneer de bewerking (of de bevestiging via `confirmed`-flag) door is.
+    const conn = connectionStore.get(req.connectionId)
+    const result = await tableData.editTableRow(req)
+    if (conn && result.sql && !req.confirmed) {
+      const guard = checkQuery(result.sql, conn.environment)
+      if (!guard.allowed) {
+        return { rowCount: 0, sql: result.sql, blocked: guard.reasons, guardSeverity: guard.severity }
+      }
+    }
+    if (!result.blocked || result.blocked.length === 0) {
+      audit('table.edit', `Tabelbewerking ${req.kind} op ${req.schema ? req.schema + '.' : ''}${req.table}: ${result.rowCount} rij(en)`, { server: conn?.name, database: req.database })
+    }
+    return result
+  })
+
+  // ------------------------------------------------------------------ F2-2: transactions (eis 23)
+  ipcMain.handle('transactions:begin', async (_e, connectionId: string) => {
+    const conn = connectionStore.get(connectionId)
+    audit('admin.ddl', 'Transactie gestart (BEGIN)', { server: conn?.name })
+    return transactionManager.begin(connectionId)
+  })
+  ipcMain.handle('transactions:commit', async (_e, connectionId: string) => {
+    const conn = connectionStore.get(connectionId)
+    audit('transaction.commit', 'Transactie gecommit (COMMIT)', { server: conn?.name })
+    return transactionManager.commit(connectionId)
+  })
+  ipcMain.handle('transactions:rollback', async (_e, connectionId: string) => {
+    const conn = connectionStore.get(connectionId)
+    audit('transaction.rollback', 'Transactie teruggedraaid (ROLLBACK)', { server: conn?.name })
+    return transactionManager.rollback(connectionId)
+  })
+  ipcMain.handle('transactions:status', (_e, connectionId: string) =>
+    transactionManager.status(connectionId)
+  )
+
+  // ------------------------------------------------------------------ F2-3: database administration (eis 9)
+  ipcMain.handle('admin:capabilities', (_e, connectionId: string) =>
+    admin.capabilities(connectionId)
+  )
+  ipcMain.handle('admin:createDatabase', async (_e, connectionId: string, name: string) => {
+    const r = await admin.createDatabase(connectionId, name)
+    audit('admin.ddl', `CREATE DATABASE ${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropDatabase', async (_e, connectionId: string, name: string) => {
+    const r = await admin.dropDatabase(connectionId, name)
+    audit('admin.ddl', `DROP DATABASE ${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:createSchema', async (_e, connectionId: string, database: string, name: string) => {
+    const r = await admin.createSchema(connectionId, database, name)
+    audit('admin.ddl', `CREATE SCHEMA ${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropSchema', async (_e, connectionId: string, database: string, name: string) => {
+    const r = await admin.dropSchema(connectionId, database, name)
+    audit('admin.ddl', `DROP SCHEMA ${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:createTable', async (_e, req: AdminTableCreateRequest) => {
+    const r = await admin.createTable(req.connectionId, req.database, req.schema, req.table, req.columns)
+    audit('admin.ddl', `CREATE TABLE ${req.schema ? req.schema + '.' : ''}${req.table}`, { server: connectionStore.get(req.connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropTable', async (_e, connectionId: string, database: string, schema: string, table: string) => {
+    const r = await admin.dropTable(connectionId, database, schema, table)
+    audit('admin.ddl', `DROP TABLE ${schema ? schema + '.' : ''}${table}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:createView', async (_e, connectionId: string, database: string, schema: string, name: string, selectSql: string) => {
+    const r = await admin.createView(connectionId, database, schema, name, selectSql)
+    audit('admin.ddl', `CREATE VIEW ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropView', async (_e, connectionId: string, database: string, schema: string, name: string) => {
+    const r = await admin.dropView(connectionId, database, schema, name)
+    audit('admin.ddl', `DROP VIEW ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:createIndex', async (_e, req: AdminIndexCreateRequest) => {
+    const r = await admin.createIndex(req.connectionId, req.database, req.schema, req.index)
+    audit('admin.ddl', `CREATE INDEX ${req.index.name}`, { server: connectionStore.get(req.connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropIndex', async (_e, connectionId: string, database: string, schema: string, table: string, index: string) => {
+    const r = await admin.dropIndex(connectionId, database, schema, table, index)
+    audit('admin.ddl', `DROP INDEX ${index}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:listUsers', async (_e, connectionId: string) =>
+    admin.listUsers(connectionId)
+  )
+  ipcMain.handle('admin:createUser', async (_e, req: AdminUserRequest) => {
+    const r = await admin.createUser(req.connectionId, req.name, req.password)
+    audit('admin.ddl', `CREATE USER ${req.name}`, { server: connectionStore.get(req.connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropUser', async (_e, connectionId: string, name: string) => {
+    const r = await admin.dropUser(connectionId, name)
+    audit('admin.ddl', `DROP USER ${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+
+  // ------------------------------------------------------------------ F2-4: query performance (eis 11)
+  ipcMain.handle('performance:getStats', (_e, connectionId: string, sql?: string) =>
+    performance.getStats(connectionId, sql)
+  )
+
+  // ------------------------------------------------------------------ F2-5: database search (eis 13)
+  ipcMain.handle(
+    'search:search',
+    (_e, connectionId: string, query: string, options?: { database?: string; limit?: number }) =>
+      search.searchDatabase(connectionId, query, options)
+  )
+
+  // ------------------------------------------------------------------ F2-6: snippets (eis 20)
+  ipcMain.handle('snippets:list', (_e, folder?: string) => snippetStore.list(folder))
+  ipcMain.handle('snippets:save', (_e, entry: { folder: string; title: string; sql: string }) => {
+    const saved = snippetStore.save(entry)
+    audit('admin.ddl', `Snippet opgeslagen: ${saved.title}`, {})
+    return saved
+  })
+  ipcMain.handle('snippets:remove', (_e, id: number) => {
+    snippetStore.remove(id)
+    return { ok: true }
+  })
+  ipcMain.handle('snippets:listFolders', () => snippetStore.listFolders())
+
+  // ------------------------------------------------------------------ F2-7: import (eis 17)
+  ipcMain.handle('import:pickFile', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Importbestand kiezen',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Data-bestanden', extensions: ['csv', 'json', 'xlsx', 'xml'] },
+        { name: 'CSV', extensions: ['csv'] },
+        { name: 'Excel', extensions: ['xlsx'] },
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'XML', extensions: ['xml'] }
+      ]
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true }
+    }
+    const filePath = result.filePaths[0]!
+    const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+    const format: ImportFileFormat | undefined =
+      ext === 'csv' ? 'csv' : ext === 'json' ? 'json' : ext === 'xlsx' ? 'xlsx' : ext === 'xml' ? 'xml' : undefined
+    return { canceled: false, filePath, format }
+  })
+  ipcMain.handle('import:preview', (_e, req: { filePath: string; format: ImportFileFormat }) =>
+    importer.previewImport(req)
+  )
+  ipcMain.handle('import:generate', async (_event, req: {
+      filePath: string
+      format: ImportFileFormat
+      table: string
+      schema?: string
+      mapping: Record<number, string>
+      rowLimit?: number
+      connectionId: string
+    }) => {
+      const session = sessionManager.getByConnectionId(req.connectionId)
+      if (!session) throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+      const { registry: reg } = await import('./registry')
+      const dialect = reg.get(session.providerId).capabilities.dialect
+      return importer.generateImport({ ...req, dialect })
+    }
+  )
+  ipcMain.handle(
+    'import:execute',
+    async (_e, connectionId: string, sql: string, confirmed?: boolean) => {
+      const result = await importer.executeImport(connectionId, sql, confirmed)
+      if (result.ok) {
+        const conn = connectionStore.get(connectionId)
+        audit('import.executed', `Import uitgevoerd: ${result.rowCount} rij(en)`, { server: conn?.name })
+      }
+      return result
+    }
+  )
+
+  // ------------------------------------------------------------------ F2-8: audit (eis 26)
+  ipcMain.handle('audit:list', (_e, limit?: number) => auditStore.list(limit))
+  ipcMain.handle('audit:clear', () => {
+    auditStore.clear()
+    return { ok: true }
+  })
+
+  // ------------------------------------------------------------------ F2-10: dashboard (eis 25)
+  ipcMain.handle('dashboard:get', (_e, connectionId: string) =>
+    dashboard.getDashboard(connectionId)
+  )
 
   // ------------------------------------------------------------------ app
   ipcMain.handle('app:getVersion', () => process.env.npm_package_version ?? '0.1.0')

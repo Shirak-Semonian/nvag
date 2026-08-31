@@ -6,10 +6,14 @@ import { ResultsGrid, MessagesPanel } from './components/ResultsGrid'
 import { HistoryPanel } from './components/HistoryPanel'
 import { ConnectionDialog } from './components/ConnectionDialog'
 import { QueryGuardDialog } from './components/QueryGuardDialog'
+import { TableEditConfirmDialog } from './components/TableEditConfirmDialog'
+import { TableDataPanel } from './components/TableDataPanel'
+import { SearchPanel, SnippetsPanel, ImportPanel, AuditPanel, DashboardPanel } from './components/F2Panels'
+import { AdminDialog } from './components/AdminDialog'
 import { EnvBadge, StatusBar } from './components/StatusBar'
 import { useAppStore, getDialectForProvider } from './state/store'
 
-type BottomTab = 'results' | 'messages' | 'history'
+type BottomTab = 'results' | 'messages' | 'history' | 'search' | 'snippets' | 'import' | 'audit' | 'dashboard'
 
 /** Kort een SQL-tekst af voor de recente-query's-dropdown. */
 function shortSql(sql: string): string {
@@ -46,6 +50,13 @@ function App(): React.JSX.Element {
   const saveQueryFileAs = useAppStore((s) => s.saveQueryFileAs)
   const openConnectionDialog = useAppStore((s) => s.openConnectionDialog)
   const closeSession = useAppStore((s) => s.closeSession)
+  const transactionState = useAppStore((s) => s.transactionState)
+  const beginTransaction = useAppStore((s) => s.beginTransaction)
+  const commitTransaction = useAppStore((s) => s.commitTransaction)
+  const rollbackTransaction = useAppStore((s) => s.rollbackTransaction)
+  const refreshTransactionState = useAppStore((s) => s.refreshTransactionState)
+  const openAdminDialog = useAppStore((s) => s.openAdminDialog)
+  const showAdminDialog = useAppStore((s) => s.showAdminDialog)
 
   const [bottomTab, setBottomTab] = useState<BottomTab>('results')
   const [now, setNow] = useState(() => Date.now())
@@ -86,6 +97,14 @@ function App(): React.JSX.Element {
     const t = window.setInterval(() => setNow(Date.now()), 100)
     return () => window.clearInterval(t)
   }, [activeTab?.running, activeTabId])
+
+  // Transactiestatus (F2-2): ververs bij actieve verbinding.
+  useEffect(() => {
+    const connId = activeTab?.connectionId
+    if (connId && openSessions[connId]) {
+      void refreshTransactionState(connId)
+    }
+  }, [activeTab?.connectionId, openSessions, refreshTransactionState])
 
   const activeConn = activeTab?.connectionId
     ? connections.find((c) => c.id === activeTab.connectionId)
@@ -303,26 +322,62 @@ function App(): React.JSX.Element {
                 </select>
                 <button onClick={() => openConnectionDialog('create')}>＋ Verbinding</button>
                 {activeTab.connectionId && openSessions[activeTab.connectionId] && (
-                  <button onClick={() => closeSession(activeTab.connectionId!)}>Verbinding sluiten</button>
+                  <>
+                    <button
+                      onClick={() => openAdminDialog()}
+                      title="Database Administration (F2-3)"
+                    >
+                      🛠 Admin
+                    </button>
+                    {transactionState[activeTab.connectionId] === 'active' ? (
+                      <>
+                        <span className="tx-indicator active" title="Actieve transactie">
+                          ⟳ TX actief
+                        </span>
+                        <button onClick={() => void commitTransaction(activeTab.connectionId!)} title="COMMIT">
+                          ✔ Commit
+                        </button>
+                        <button
+                          className="danger"
+                          onClick={() => void rollbackTransaction(activeTab.connectionId!)}
+                          title="ROLLBACK"
+                        >
+                          ↶ Rollback
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => void beginTransaction(activeTab.connectionId!)}
+                        title="Transactie starten (F2-2, eis 23)"
+                      >
+                        ⟳ Begin TX
+                      </button>
+                    )}
+                    <button onClick={() => closeSession(activeTab.connectionId!)}>Verbinding sluiten</button>
+                  </>
                 )}
               </div>
               <div className="editor-pane">
-                <QueryEditor
-                  key={activeTab.id}
-                  tabId={activeTab.id}
-                  sql={activeTab.sql}
-                  connectionId={activeTab.connectionId}
-                  dialect={getDialectForProvider(activeConn?.providerId ?? 'sqlite')}
-                  database={database}
-                  schema={schema}
-                  onRun={() => runQuery(activeTab.id)}
-                  onRunSelection={(selectionSql) => runQuery(activeTab.id, selectionSql)}
-                  onOpenFile={() => openQueryFile()}
-                  onSaveFile={() => saveQueryFile(activeTab.id)}
-                  onSaveFileAs={() => saveQueryFileAs(activeTab.id)}
-                  errorPosition={activeTab.result?.errorPosition ?? null}
-                  errorMessage={activeTab.result?.error ?? null}
-                />
+                {activeTab.kind === 'table-data' ? (
+                  <TableDataPanel tabId={activeTab.id} />
+                ) : (
+                  <QueryEditor
+                    key={activeTab.id}
+                    tabId={activeTab.id}
+                    sql={activeTab.sql}
+                    connectionId={activeTab.connectionId}
+                    dialect={getDialectForProvider(activeConn?.providerId ?? 'sqlite')}
+                    database={database}
+                    schema={schema}
+                    onRun={() => runQuery(activeTab.id)}
+                    onRunSelection={(selectionSql) => runQuery(activeTab.id, selectionSql)}
+                    onOpenFile={() => openQueryFile()}
+                    onSaveFile={() => saveQueryFile(activeTab.id)}
+                    onSaveFileAs={() => saveQueryFileAs(activeTab.id)}
+                    errorPosition={activeTab.result?.errorPosition ?? null}
+                    errorMessage={activeTab.result?.error ?? null}
+                  />
+                )}
               </div>
               <div className="results-pane">
                 <div className="results-tabs" role="tablist" aria-label="Resultaatpaneel">
@@ -353,6 +408,51 @@ function App(): React.JSX.Element {
                   >
                     Geschiedenis
                   </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'search'}
+                    className={`results-tab ${bottomTab === 'search' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('search')}
+                  >
+                    Zoeken
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'snippets'}
+                    className={`results-tab ${bottomTab === 'snippets' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('snippets')}
+                  >
+                    Snippets
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'import'}
+                    className={`results-tab ${bottomTab === 'import' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('import')}
+                  >
+                    Import
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'audit'}
+                    className={`results-tab ${bottomTab === 'audit' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('audit')}
+                  >
+                    Audit
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'dashboard'}
+                    className={`results-tab ${bottomTab === 'dashboard' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('dashboard')}
+                  >
+                    Dashboard
+                  </button>
                 </div>
                 <div className="results-content">
                   {bottomTab === 'results' ? (
@@ -363,8 +463,18 @@ function App(): React.JSX.Element {
                       running={activeTab.running}
                       elapsedMs={elapsedMs}
                     />
-                  ) : (
+                  ) : bottomTab === 'history' ? (
                     <HistoryPanel />
+                  ) : bottomTab === 'search' ? (
+                    <SearchPanel connectionId={activeTab.connectionId} />
+                  ) : bottomTab === 'snippets' ? (
+                    <SnippetsPanel activeTabId={activeTab.id} />
+                  ) : bottomTab === 'import' ? (
+                    <ImportPanel connectionId={activeTab.connectionId} />
+                  ) : bottomTab === 'audit' ? (
+                    <AuditPanel />
+                  ) : (
+                    <DashboardPanel connectionId={activeTab.connectionId} />
                   )}
                 </div>
               </div>
@@ -375,6 +485,8 @@ function App(): React.JSX.Element {
       <StatusBar />
       <ConnectionDialog />
       <QueryGuardDialog />
+      <TableEditConfirmDialog />
+      {showAdminDialog && activeTab?.connectionId && <AdminDialog connectionId={activeTab.connectionId} />}
     </div>
   )
 }

@@ -1232,3 +1232,332 @@ button.danger:hover:not(:disabled) {
 .object-explorer .env-badge {
   margin-left: 6px;
 }
+
+/* ------------------------------------------------------------------ F2 */
+
+/* F2-1: Table Data Viewer/Editor */
+.table-data-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  height: 100%;
+  min-height: 0;
+}
+.table-data-sql {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg, #141414);
+  font-size: 12px;
+}
+.table-data-sql summary {
+  cursor: pointer;
+  padding: 4px 8px;
+  color: var(--muted, #9a9a9a);
+}
+.table-data-sql pre {
+  margin: 0;
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+}
+.table-data-message {
+  font-size: 12px;
+  color: var(--ok, #7ec699);
+}
+.insert-row-form {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-panel, #1b1b1b);
+}
+.insert-row-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px;
+}
+.insert-row-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted, #9a9a9a);
+}
+.insert-row-actions {
+  display: flex;
+  gap: 6px;
+}
+.tree-action {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* F2-2: transacties */
+.tx-indicator {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 2px 8px;
+  margin-left: 6px;
+}
+.tx-indicator.active {
+  background: #5b3a00;
+  color: #ffd166;
+  border: 1px solid #8a6200;
+}
+
+/* F2-panelen (zoeken/snippets/import/audit/dashboard) */
+.f2-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+.f2-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.f2-panel-spacer {
+  flex: 1;
+}
+.f2-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: auto;
+}
+.f2-search-input {
+  flex: 1;
+  min-width: 240px;
+}
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.search-result:hover {
+  background: var(--bg-hover, #232323);
+}
+.search-type {
+  color: var(--muted, #9a9a9a);
+  font-size: 11px;
+  min-width: 90px;
+}
+.search-name {
+  font-weight: 600;
+}
+.search-snippet {
+  color: var(--muted, #9a9a9a);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snippet-row {
+  cursor: default;
+}
+.snippet-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+.snippet-sql {
+  font-size: 11px;
+  color: var(--muted, #9a9a9a);
+}
+.snippet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.import-map-table,
+.import-preview-table,
+.dashboard-db-table,
+.admin-column-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+.import-map-table th,
+.import-map-table td,
+.import-preview-table th,
+.import-preview-table td,
+.dashboard-db-table th,
+.dashboard-db-table td,
+.admin-column-table th,
+.admin-column-table td {
+  border: 1px solid var(--border);
+  padding: 3px 6px;
+  text-align: left;
+}
+.import-preview-scroll {
+  max-height: 180px;
+  overflow: auto;
+}
+.import-preview-table td {
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 11px;
+}
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+}
+.audit-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.audit-at {
+  color: var(--muted, #9a9a9a);
+  font-size: 11px;
+  min-width: 70px;
+}
+.audit-action {
+  font-weight: 600;
+  min-width: 150px;
+}
+.audit-server {
+  color: var(--muted, #9a9a9a);
+  min-width: 90px;
+}
+.audit-detail {
+  flex: 1;
+  word-break: break-word;
+}
+.audit-error {
+  color: #e06c75;
+}
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.dashboard-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+.dashboard-card h4 {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+}
+.dashboard-card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 2px 8px;
+  font-size: 12px;
+}
+.dashboard-card dt {
+  color: var(--muted, #9a9a9a);
+}
+.dashboard-card dd {
+  margin: 0;
+}
+.dashboard-card-wide {
+  grid-column: 1 / -1;
+}
+.dashboard-queries {
+  margin: 0;
+  font-size: 11px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* F2-3: Admin-dialoog */
+.admin-modal {
+  width: 640px;
+  max-width: 92vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+.admin-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.admin-tab.active {
+  border-color: var(--border);
+  background: var(--bg-hover, #232323);
+}
+.admin-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.admin-body {
+  overflow: auto;
+  padding: 8px 0;
+}
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--muted, #9a9a9a);
+}
+.admin-actions {
+  display: flex;
+  gap: 8px;
+}
+.admin-message {
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg, #141414);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+}

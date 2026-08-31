@@ -32,6 +32,7 @@ export function ObjectExplorer(): React.JSX.Element {
   const openSessions = useAppStore((s) => s.openSessions)
   const openConnectionDialog = useAppStore((s) => s.openConnectionDialog)
   const openTableQuery = useAppStore((s) => s.openTableQuery)
+  const openTableDataTab = useAppStore((s) => s.openTableDataTab)
 
   const [tree, setTree] = useState<TreeNode[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -184,6 +185,18 @@ export function ObjectExplorer(): React.JSX.Element {
             <span className="tree-arrow">{expandable ? (isOpen ? '▾' : '▸') : ''}</span>
             <span className="tree-icon">{node.icon}</span>
             <span className="tree-label">{node.label}</span>
+            {node.kind === 'table' && node.ref && (
+              <button
+                className="tree-action"
+                title="Tabelgegevens bekijken/bewerken (F2-1, eis 8)"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openTableDataTab(node.ref!.connId, node.ref!.db, node.ref!.schema ?? 'main', node.ref!.name)
+                }}
+              >
+                ▦
+              </button>
+            )}
             {node.environment && <EnvBadge environment={node.environment} />}
           </div>
           {isOpen && node.children.length > 0 && (

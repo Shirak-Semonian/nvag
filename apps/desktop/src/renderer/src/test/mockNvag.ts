@@ -297,6 +297,91 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       clear: async () => {}
     },
 
+    tableData: {
+      getRows: async () => ({
+        columns: [],
+        rows: [],
+        truncated: false,
+        rowCount: 0,
+        primaryKey: [],
+        editableColumns: []
+      }),
+      edit: async () => ({ rowCount: 0, sql: '' })
+    },
+
+    transactions: {
+      begin: async (connectionId: string) => ({ connectionId, state: 'active' as const }),
+      commit: async (connectionId: string) => ({ connectionId, state: 'none' as const }),
+      rollback: async (connectionId: string) => ({ connectionId, state: 'none' as const }),
+      status: async (connectionId: string) => ({ connectionId, state: 'none' as const })
+    },
+
+    admin: {
+      createDatabase: async () => ({ ok: true, sql: '' }),
+      dropDatabase: async () => ({ ok: true, sql: '' }),
+      createSchema: async () => ({ ok: true, sql: '' }),
+      dropSchema: async () => ({ ok: true, sql: '' }),
+      createTable: async () => ({ ok: true, sql: '' }),
+      dropTable: async () => ({ ok: true, sql: '' }),
+      createView: async () => ({ ok: true, sql: '' }),
+      dropView: async () => ({ ok: true, sql: '' }),
+      createIndex: async () => ({ ok: true, sql: '' }),
+      dropIndex: async () => ({ ok: true, sql: '' }),
+      listUsers: async () => [],
+      createUser: async () => ({ ok: true, sql: '' }),
+      dropUser: async () => ({ ok: true, sql: '' }),
+      capabilities: async () => ({
+        supportsSchemas: true,
+        supportsSequences: false,
+        supportsTriggers: true,
+        supportsExecutionPlans: false,
+        supportsMonitoring: false,
+        supportsTransactions: true,
+        supportsIdentityColumns: true,
+        supportsGeneratedColumns: true,
+        supportsDdlAdmin: true,
+        supportsUsersAndRoles: false,
+        supportsBackupRestore: false,
+        maxResultRowsDefault: 1000,
+        dialect: 'sqlite' as const
+      })
+    },
+
+    performance: {
+      getStats: async () => ({ elapsedMs: 0, rowsReturned: 0 })
+    },
+
+    search: {
+      search: async () => []
+    },
+
+    snippets: {
+      list: async () => [],
+      save: async (entry) => ({ id: 1, folder: entry.folder, title: entry.title, sql: entry.sql, updatedAt: new Date().toISOString() }),
+      remove: async () => {},
+      listFolders: async () => ['Algemeen']
+    },
+
+    import: {
+      pickFile: async () => ({ canceled: true }),
+      preview: async () => ({ fileName: 'x.csv', format: 'csv', columns: [], rows: [], totalRows: 0, uniqueColumns: [] }),
+      generate: async () => ({ sql: '', rowCount: 0 }),
+      execute: async () => ({ ok: true, rowCount: 0 })
+    },
+
+    audit: {
+      list: async () => [],
+      clear: async () => {}
+    },
+
+    dashboard: {
+      get: async () => ({
+        serverInfo: SERVER_INFO,
+        databases: [],
+        activeQueries: []
+      })
+    },
+
     app: {
       getVersion: async () => '0.1.0'
     }

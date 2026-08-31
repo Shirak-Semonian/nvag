@@ -1,24 +1,38 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
+  AdminUserInfo,
+  AuditEntry,
   ConnectionConfig,
+  DashboardData,
   DatabaseInfo,
   ExportResult,
+  ExplainResult,
   FuncInfo,
   HistoryEntry,
+  ImportFileFormat,
+  ImportGenerateResult,
+  ImportPreview,
   NvagIpcApi,
   ProcInfo,
+  ProviderCapabilities,
   QueryChunkEvent,
   QueryFileOpenResult,
   QueryFileSaveResult,
+  QueryPerformanceStats,
   QueryRunStartResponse,
   SchemaInfo,
   ScriptObjectResult,
+  SearchMatch,
   SeqInfo,
   ServerInfo,
+  SnippetEntry,
+  TableDataResult,
+  TableEditResult,
   TableInfo,
   TableMetadata,
   TestResult,
+  TransactionStatus,
   TriggerInfo,
   ViewInfo
 } from '@nvag/contracts'
@@ -74,6 +88,57 @@ const api: NvagIpcApi = {
   history: {
     list: handle<HistoryEntry[]>('history:list'),
     clear: handle<void>('history:clear')
+  },
+  tableData: {
+    getRows: handle<TableDataResult>('tableData:getRows'),
+    edit: handle<TableEditResult & { blocked?: string[]; guardSeverity?: 'warn' | 'confirm' }>('tableData:edit')
+  },
+  transactions: {
+    begin: handle<TransactionStatus>('transactions:begin'),
+    commit: handle<TransactionStatus>('transactions:commit'),
+    rollback: handle<TransactionStatus>('transactions:rollback'),
+    status: handle<TransactionStatus>('transactions:status')
+  },
+  admin: {
+    createDatabase: handle<{ ok: boolean; sql: string }>('admin:createDatabase'),
+    dropDatabase: handle<{ ok: boolean; sql: string }>('admin:dropDatabase'),
+    createSchema: handle<{ ok: boolean; sql: string }>('admin:createSchema'),
+    dropSchema: handle<{ ok: boolean; sql: string }>('admin:dropSchema'),
+    createTable: handle<{ ok: boolean; sql: string }>('admin:createTable'),
+    dropTable: handle<{ ok: boolean; sql: string }>('admin:dropTable'),
+    createView: handle<{ ok: boolean; sql: string }>('admin:createView'),
+    dropView: handle<{ ok: boolean; sql: string }>('admin:dropView'),
+    createIndex: handle<{ ok: boolean; sql: string }>('admin:createIndex'),
+    dropIndex: handle<{ ok: boolean; sql: string }>('admin:dropIndex'),
+    listUsers: handle<AdminUserInfo[]>('admin:listUsers'),
+    createUser: handle<{ ok: boolean; sql: string }>('admin:createUser'),
+    dropUser: handle<{ ok: boolean; sql: string }>('admin:dropUser'),
+    capabilities: handle<ProviderCapabilities>('admin:capabilities')
+  },
+  performance: {
+    getStats: handle<QueryPerformanceStats & { explain?: ExplainResult }>('performance:getStats')
+  },
+  search: {
+    search: handle<SearchMatch[]>('search:search')
+  },
+  snippets: {
+    list: handle<SnippetEntry[]>('snippets:list'),
+    save: handle<SnippetEntry>('snippets:save'),
+    remove: handle<void>('snippets:remove'),
+    listFolders: handle<string[]>('snippets:listFolders')
+  },
+  import: {
+    pickFile: handle<{ canceled: boolean; filePath?: string; format?: ImportFileFormat }>('import:pickFile'),
+    preview: handle<ImportPreview>('import:preview'),
+    generate: handle<ImportGenerateResult>('import:generate'),
+    execute: handle<{ ok: boolean; rowCount: number; blocked?: string[]; guardSeverity?: 'warn' | 'confirm' }>('import:execute')
+  },
+  audit: {
+    list: handle<AuditEntry[]>('audit:list'),
+    clear: handle<void>('audit:clear')
+  },
+  dashboard: {
+    get: handle<DashboardData>('dashboard:get')
   },
   app: {
     getVersion: handle<string>('app:getVersion')
