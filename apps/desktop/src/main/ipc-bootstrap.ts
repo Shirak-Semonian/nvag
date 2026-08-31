@@ -9,6 +9,7 @@ import { ConnectionStore } from './connections'
 import { HistoryStore } from './history-store'
 import { registerIpcHandlers } from './ipc'
 import { queryRunner } from './query-runner'
+import { sessionManager } from './session-manager'
 
 export const vault = new Vault()
 export const connectionStore = new ConnectionStore(vault)
@@ -20,5 +21,11 @@ export function bootstrapApp(): void {
   historyStore.init()
   // De runner schrijft na elke uitvoering naar de geschiedenis.
   queryRunner.historyStore = historyStore
+  // F1-10 (eis 24): config + vault-secret voor openSaved / database-switch.
+  sessionManager.configProvider = (connectionId) => {
+    const config = connectionStore.get(connectionId)
+    if (!config) return undefined
+    return { config, secret: connectionStore.getSecret(connectionId) }
+  }
   registerIpcHandlers()
 }

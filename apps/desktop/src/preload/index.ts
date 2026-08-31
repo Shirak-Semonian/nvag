@@ -63,7 +63,9 @@ const api: NvagIpcApi = {
   },
   sessions: {
     open: handle<{ sessionId: string; serverInfo: ServerInfo }>('sessions:open'),
-    close: handle<void>('sessions:close')
+    close: handle<void>('sessions:close'),
+    openSaved: handle<{ sessionId: string; serverInfo: ServerInfo }>('sessions:openSaved'),
+    useDatabase: handle<{ sessionId: string; serverInfo: ServerInfo }>('sessions:useDatabase')
   },
   queryFiles: {
     open: handle<QueryFileOpenResult>('queryFiles:open'),

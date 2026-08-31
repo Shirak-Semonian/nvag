@@ -207,4 +207,79 @@ describe('App (renderer-integratie)', () => {
     fireEvent.click(screen.getByRole('button', { name: '▶ Uitvoeren' }))
     await waitFor(() => expect(screen.getByText(/Query voltooid — 2 rij\(en\) in 3 ms/)).toBeTruthy())
   })
+
+  // ------------------------------------------------------------------ F1-10
+  it('toont per tab een database-dropdown en wisselt de database via useDatabase (F1-10)', async () => {
+    const conn = sampleConnection()
+    const withDb = createMockNvag({ connections: [conn] })
+    window.nvag = withDb
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-1': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3', currentDatabase: 'test.db' }
+        }
+      }
+    })
+    useAppStore.getState().addTab({ connectionId: 'conn-1' })
+
+    render(<App />)
+
+    const dbSelect = (await screen.findByTitle('Database van deze tab')) as HTMLSelectElement
+    expect(dbSelect).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'main' })).toBeTruthy()
+
+    fireEvent.change(dbSelect, { target: { value: 'main' } })
+    await waitFor(() => expect(withDb.useDatabaseCalls).toEqual([{ connectionId: 'conn-1', database: 'main' }]))
+    // De tab-context toont de gekozen database
+    await waitFor(() => expect(screen.getByText(/db: main/)).toBeTruthy())
+  })
+
+  it('switcht snel van verbinding via de dropdown en opent de sessie automatisch (F1-10)', async () => {
+    const connA = sampleConnection({ id: 'conn-a', name: 'Server A', database: 'dbA' })
+    const connB = sampleConnection({ id: 'conn-b', name: 'Server B', database: 'dbB' })
+    const withTwo = createMockNvag({ connections: [connA, connB] })
+    window.nvag = withTwo
+
+    useAppStore.getState().addTab()
+    render(<App />)
+    await waitFor(() => expect(screen.getAllByRole('option', { name: 'Server B' }).length).toBeGreaterThan(0))
+
+    const connSelect = screen.getByTitle(
+      'Verbonden server van deze tab (kiezen opent de sessie)'
+    ) as HTMLSelectElement
+    fireEvent.change(connSelect, { target: { value: 'conn-b' } })
+
+    await waitFor(() => expect(withTwo.openSavedCalls).toEqual(['conn-b']))
+    const tab = useAppStore.getState().tabs[0]
+    expect(tab?.connectionId).toBe('conn-b')
+    expect(tab?.database).toBe('dbB')
+    expect(useAppStore.getState().openSessions['conn-b']).toBeTruthy()
+    // Tab-context toont server + gekozen database
+    await waitFor(() => expect(screen.getByText(/db: dbB/)).toBeTruthy())
+  })
+
+  it('toont een fout in de tab-context wanneer de verbindingsswitch faalt (F1-10)', async () => {
+    const connA = sampleConnection({ id: 'conn-a', name: 'Server A', database: 'dbA' })
+    const connB = sampleConnection({ id: 'conn-b', name: 'Server B', database: 'dbB' })
+    const failing = createMockNvag({
+      connections: [connA, connB],
+      failOpenConnectionIds: ['conn-b']
+    })
+    window.nvag = failing
+
+    useAppStore.getState().addTab()
+    render(<App />)
+    await waitFor(() => expect(screen.getAllByRole('option', { name: 'Server B' }).length).toBeGreaterThan(0))
+
+    const connSelect = screen.getByTitle(
+      'Verbonden server van deze tab (kiezen opent de sessie)'
+    ) as HTMLSelectElement
+    fireEvent.change(connSelect, { target: { value: 'conn-b' } })
+
+    await waitFor(() => expect(screen.getByText(/bestand niet gevonden/)).toBeTruthy())
+    expect(useAppStore.getState().tabs[0]?.connectionId).toBeNull()
+  })
 })
