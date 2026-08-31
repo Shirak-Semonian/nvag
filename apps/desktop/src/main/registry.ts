@@ -7,6 +7,7 @@
  */
 
 import type { DatabaseProvider, ProviderRegistry } from '@nvag/contracts'
+import { createDb2Provider } from '@nvag/provider-db2'
 import { createSqliteProvider } from '@nvag/provider-sqlite'
 import { createSqlServerProvider } from '@nvag/provider-sqlserver'
 
@@ -37,4 +38,5 @@ export const registry: ProviderRegistry = new Registry()
 export function registerBuiltinProviders(): void {
   registry.register(createSqliteProvider())
   registry.register(createSqlServerProvider())
+  registry.register(createDb2Provider())
 }

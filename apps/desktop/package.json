@@ -26,6 +26,7 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@nvag/contracts": "workspace:*",
+    "@nvag/provider-db2": "workspace:*",
     "@nvag/provider-sqlite": "workspace:*",
     "@nvag/provider-sqlserver": "workspace:*",
     "@nvag/sql-dialect": "workspace:*",

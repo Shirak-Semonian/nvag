@@ -23,6 +23,9 @@ importers:
       '@nvag/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@nvag/provider-db2':
+        specifier: workspace:*
+        version: link:../../packages/providers/db2
       '@nvag/provider-sqlite':
         specifier: workspace:*
         version: link:../../packages/providers/sqlite
@@ -142,6 +145,25 @@ importers:
 
   packages/contracts:
     devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(jsdom@28.1.0(@noble/hashes@2.4.0)(supports-color@7.2.0))(supports-color@7.2.0)
+
+  packages/providers/db2:
+    dependencies:
+      '@nvag/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@nvag/sql-dialect':
+        specifier: workspace:*
+        version: link:../../sql-dialect
+    devDependencies:
+      '@nvag/contract-tests':
+        specifier: workspace:*
+        version: link:../../contract-tests
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
