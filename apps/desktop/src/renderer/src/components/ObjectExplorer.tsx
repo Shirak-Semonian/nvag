@@ -1,0 +1,152 @@
+import { useCallback, useEffect, useState } from 'react'
+import type { DatabaseInfo, SchemaInfo, TableInfo, ViewInfo } from '@nvag/contracts'
+import { useAppStore } from '../state/store'
+
+type NodeKind = 'server' | 'folder' | 'database' | 'schema' | 'table' | 'view'
+
+interface TreeNode {
+  key: string
+  label: string
+  icon: string
+  kind: NodeKind
+  children: TreeNode[]
+  /** true zodra children zijn geladen (lazy) */
+  loaded: boolean
+}
+
+export function ObjectExplorer(): React.JSX.Element {
+  const connections = useAppStore((s) => s.connections)
+  const openSessions = useAppStore((s) => s.openSessions)
+  const openConnectionDialog = useAppStore((s) => s.openConnectionDialog)
+
+  const [tree, setTree] = useState<TreeNode[]>([])
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  // Boom opbouwen uit connections (alleen servers + folders zichtbaar)
+  useEffect(() => {
+    const nodes: TreeNode[] = connections.map((conn) => ({
+      key: `conn:${conn.id}`,
+      label: conn.name,
+      icon: openSessions[conn.id] ? '🟢' : '⚪',
+      kind: 'server',
+      children: openSessions[conn.id]
+        ? [{ key: `dbs:${conn.id}`, label: 'Databases', icon: '🗄️', kind: 'folder', children: [], loaded: false }]
+        : [],
+      loaded: !!openSessions[conn.id]
+    }))
+    setTree(nodes)
+  }, [connections, openSessions])
+
+  const patchNode = useCallback((nodes: TreeNode[], key: string, fn: (n: TreeNode) => TreeNode): TreeNode[] => {
+    return nodes.map((n) => {
+      if (n.key === key) return fn(n)
+      if (n.children.length > 0) return { ...n, children: patchNode(n.children, key, fn) }
+      return n
+    })
+  }, [])
+
+  const loadChildren = useCallback(
+    async (node: TreeNode): Promise<void> => {
+      let children: TreeNode[] = []
+      const [, connId, dbName, schemaName] = node.key.split(':')
+
+      if (node.kind === 'folder' && node.key.startsWith('dbs:')) {
+        const dbs = await window.nvag.metadata.listDatabases(connId)
+        children = dbs.map((d: DatabaseInfo) => ({
+          key: `db:${connId}:${d.name}`,
+          label: d.name,
+          icon: '📁',
+          kind: 'database',
+          children: [],
+          loaded: false
+        }))
+      } else if (node.kind === 'database') {
+        const schemas = await window.nvag.metadata.listSchemas(connId, dbName)
+        children = schemas.map((s: SchemaInfo) => ({
+          key: `schema:${connId}:${dbName}:${s.name}`,
+          label: s.name,
+          icon: '📂',
+          kind: 'schema',
+          children: [],
+          loaded: false
+        }))
+      } else if (node.kind === 'schema') {
+        const [tables, views] = await Promise.all([
+          window.nvag.metadata.listTables(connId, dbName, schemaName),
+          window.nvag.metadata.listViews(connId, dbName, schemaName)
+        ])
+        children = [
+          ...tables.map((t: TableInfo) => ({
+            key: `table:${connId}:${dbName}:${schemaName}:${t.name}`,
+            label: t.name,
+            icon: '📋',
+            kind: 'table' as const,
+            children: [],
+            loaded: true
+          })),
+          ...views.map((v: ViewInfo) => ({
+            key: `view:${connId}:${dbName}:${schemaName}:${v.name}`,
+            label: v.name,
+            icon: '👁️',
+            kind: 'view' as const,
+            children: [],
+            loaded: true
+          }))
+        ]
+      }
+
+      setTree((t) => patchNode(t, node.key, (n) => ({ ...n, children, loaded: true })))
+    },
+    [patchNode]
+  )
+
+  const toggle = async (node: TreeNode): Promise<void> => {
+    if (node.kind === 'table' || node.kind === 'view') return
+    const next = new Set(expanded)
+    if (next.has(node.key)) {
+      next.delete(node.key)
+    } else {
+      next.add(node.key)
+      if (!node.loaded) await loadChildren(node)
+    }
+    setExpanded(next)
+  }
+
+  const renderNodes = (nodes: TreeNode[], depth: number): React.JSX.Element[] =>
+    nodes.map((node) => {
+      const isOpen = expanded.has(node.key)
+      const expandable = node.kind !== 'table' && node.kind !== 'view'
+      return (
+        <div key={node.key}>
+          <div
+            className={`tree-node tree-${node.kind}`}
+            style={{ paddingLeft: depth * 14 + 6 }}
+            onClick={() => expandable && toggle(node)}
+            title={node.kind === 'server' ? 'Dubbelklik om te openen' : node.label}
+          >
+            <span className="tree-arrow">{expandable ? (isOpen ? '▾' : '▸') : ''}</span>
+            <span className="tree-icon">{node.icon}</span>
+            <span className="tree-label">{node.label}</span>
+          </div>
+          {isOpen && node.children.length > 0 && (
+            <div className="tree-children">{renderNodes(node.children, depth + 1)}</div>
+          )}
+        </div>
+      )
+    })
+
+  return (
+    <div className="object-explorer">
+      <div className="panel-header">
+        <span>Object Explorer</span>
+        <button className="icon-btn" title="Nieuwe verbinding" onClick={() => openConnectionDialog('create')}>
+          ➕
+        </button>
+      </div>
+      <div className="tree">
+        {tree.length === 0 && <div className="tree-empty">Geen verbindingen. Klik ➕ om er een toe te voegen.</div>}
+        {renderNodes(tree, 0)}
+      </div>
+    </div>
+  )
+}

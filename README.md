@@ -6,8 +6,13 @@
 
 ## Status
 
-📋 **Fase: Planvorming** — architectuur en roadmap vastgelegd in `docs/`.
-Nog geen code.
+🚧 **Fase 0 (Fundament) afgerond** — draaiende Electron-app met:
+SQLite-provider (node:sqlite), provider-abstractie (`@nvag/contracts`),
+versleutelde credentials (safeStorage-vault), Connection Manager,
+Object Explorer (lazy), Query Editor (Monaco), resultaten + messages,
+environment-safety (query-guard). Contracttests groen (26 tests).
+
+**Volgende**: Fase 1 (SQL Server, PostgreSQL, MySQL-providers + core v1).
 
 ## Doel
 
@@ -52,9 +57,11 @@ Zie [docs/02-architectuur.md](docs/02-architectuur.md) voor de volledige onderbo
 
 ## Aanbevolen eerste stappen
 
-1. `npm install -g pnpm` (Node 26 is al geïnstalleerd)
-2. Repo initialiseren in deze map
-3. Fase 0 doorlopen volgens [docs/03-roadmap.md](docs/03-roadmap.md)
+1. `pnpm install` (Node 26 + pnpm zijn geïnstalleerd)
+2. `pnpm dev` in `apps/desktop` — start de Electron-app
+3. Nieuwe SQLite-verbinding aanmaken (➕ in Object Explorer),
+   query draaien en resultaten bekijken
+4. Fase 1 doorlopen volgens [docs/03-roadmap.md](docs/03-roadmap.md)
 
 ## Projectstructuur (beoogd)
 
