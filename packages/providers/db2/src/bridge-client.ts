@@ -16,7 +16,7 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import readline from 'node:readline'
-import { resolveBridgeCommand, resolveJccJar } from './jcc'
+import { resolveBridgeCommand, resolveJccJar } from './jcc.ts'
 
 export type BridgeEvent =
   | { kind: 'columns'; columns: { name: string }[] }

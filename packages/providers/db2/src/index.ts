@@ -38,11 +38,11 @@ import type {
   ViewInfo
 } from '@nvag/contracts'
 import { buildCreateTable, splitStatements } from '@nvag/sql-dialect'
-import { BridgeClient } from './bridge-client'
-import * as meta from './db2-metadata'
-import { parseDb2ErrorPosition } from './error-position'
-import { DB2_DEFAULT_PORT, buildJdbcUrl } from './jcc'
-import { applyFetchFirstLimit } from './limit'
+import { BridgeClient } from './bridge-client.ts'
+import * as meta from './db2-metadata.ts'
+import { parseDb2ErrorPosition } from './error-position.ts'
+import { DB2_DEFAULT_PORT, buildJdbcUrl } from './jcc.ts'
+import { applyFetchFirstLimit } from './limit.ts'
 
 export interface Db2SessionHandle {
   bridge: BridgeClient
@@ -356,8 +356,8 @@ export function createDb2Provider(): DatabaseProvider {
   }
 }
 
-export { applyFetchFirstLimit } from './limit'
-export { parseDb2ErrorPosition } from './error-position'
-export { buildJdbcUrl, resolveJccJar } from './jcc'
-export { BridgeClient } from './bridge-client'
+export { applyFetchFirstLimit } from './limit.ts'
+export { parseDb2ErrorPosition } from './error-position.ts'
+export { buildJdbcUrl, resolveJccJar } from './jcc.ts'
+export { BridgeClient } from './bridge-client.ts'
 export type { ColumnInfo, ForeignKeyInfo, IndexInfo, TableMetadata }
