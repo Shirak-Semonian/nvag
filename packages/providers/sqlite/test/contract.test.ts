@@ -171,6 +171,146 @@ describe('sqlite provider contract', () => {
     })
   })
 
+  describe('query-uitvoering — DML', () => {
+    it('voert INSERT uit en rapporteert changes', async () => {
+      const chunks: string[] = []
+      let rowCount = 0
+      for await (const chunk of provider.executeQuery(
+        session,
+        "INSERT INTO users (name, email, active) VALUES ('Carol', 'carol@x.nl', 1)",
+        {}
+      )) {
+        if (chunk.kind === 'error') chunks.push(`error:${chunk.message}`)
+        if (chunk.kind === 'done') {
+          chunks.push('done')
+          rowCount = chunk.rowCount
+        }
+      }
+      expect(chunks).toEqual(['done'])
+      expect(rowCount).toBe(1)
+    })
+
+    it('voert UPDATE uit en rapporteert changes', async () => {
+      const chunks: string[] = []
+      let rowCount = 0
+      for await (const chunk of provider.executeQuery(
+        session,
+        "UPDATE users SET active = 1 WHERE name = 'Bob'",
+        {}
+      )) {
+        if (chunk.kind === 'error') chunks.push(`error:${chunk.message}`)
+        if (chunk.kind === 'done') {
+          chunks.push('done')
+          rowCount = chunk.rowCount
+        }
+      }
+      expect(chunks).toEqual(['done'])
+      expect(rowCount).toBe(1)
+    })
+
+    it('voert DELETE uit en rapporteert changes', async () => {
+      const chunks: string[] = []
+      let rowCount = 0
+      for await (const chunk of provider.executeQuery(
+        session,
+        "DELETE FROM users WHERE name = 'Carol'",
+        {}
+      )) {
+        if (chunk.kind === 'error') chunks.push(`error:${chunk.message}`)
+        if (chunk.kind === 'done') {
+          chunks.push('done')
+          rowCount = chunk.rowCount
+        }
+      }
+      expect(chunks).toEqual(['done'])
+      expect(rowCount).toBe(1)
+    })
+
+    it('voert DML met trailing puntkomma uit (één statement)', async () => {
+      const chunks: string[] = []
+      for await (const chunk of provider.executeQuery(
+        session,
+        "INSERT INTO users (name, email, active) VALUES ('Dave', 'dave@x.nl', 1);",
+        {}
+      )) {
+        if (chunk.kind === 'error') chunks.push(`error:${chunk.message}`)
+        if (chunk.kind === 'done') chunks.push('done')
+      }
+      expect(chunks).toEqual(['done'])
+    })
+  })
+
+  describe('query-uitvoering — eigen LIMIT en maxRows', () => {
+    it('voert SELECT met eigen LIMIT uit zonder dubbele LIMIT', async () => {
+      const chunks: string[] = []
+      const rows: unknown[][] = []
+      for await (const chunk of provider.executeQuery(
+        session,
+        'SELECT id, name FROM users ORDER BY id LIMIT 2',
+        {}
+      )) {
+        if (chunk.kind === 'error') chunks.push(`error:${chunk.message}`)
+        if (chunk.kind === 'rows') rows.push(...chunk.rows.map((r) => r.values))
+        if (chunk.kind === 'done') chunks.push(`done:${chunk.rowCount}`)
+      }
+      expect(chunks).toEqual(['done:2'])
+      expect(rows).toEqual([
+        [1, 'Alice'],
+        [2, 'Bob']
+      ])
+    })
+
+    it('voert SELECT met LIMIT in string-literal uit (geen valse detectie)', async () => {
+      const chunks: string[] = []
+      const rows: unknown[][] = []
+      for await (const chunk of provider.executeQuery(session, "SELECT 'LIMIT 5' AS txt", {})) {
+        if (chunk.kind === 'error') chunks.push(`error:${chunk.message}`)
+        if (chunk.kind === 'rows') rows.push(...chunk.rows.map((r) => r.values))
+        if (chunk.kind === 'done') chunks.push('done')
+      }
+      expect(chunks).toEqual(['done'])
+      expect(rows).toEqual([['LIMIT 5']])
+    })
+
+    it('past maxRows niet toe op DML', async () => {
+      const chunks: string[] = []
+      for await (const chunk of provider.executeQuery(
+        session,
+        "INSERT INTO users (name, email, active) VALUES ('Eve', 'eve@x.nl', 0)",
+        { maxRows: 1 }
+      )) {
+        if (chunk.kind === 'error') chunks.push(`error:${chunk.message}`)
+        if (chunk.kind === 'done') chunks.push('done')
+      }
+      expect(chunks).toEqual(['done'])
+    })
+  })
+
+  describe('query-uitvoering — multi-statement', () => {
+    it('weigert meerdere statements met MULTIPLE_STATEMENTS', async () => {
+      const errors: string[] = []
+      let columns = false
+      for await (const chunk of provider.executeQuery(session, 'SELECT 1 AS a; SELECT 2 AS b', {})) {
+        if (chunk.kind === 'error') errors.push(chunk.message)
+        if (chunk.kind === 'columns') columns = true
+      }
+      expect(columns).toBe(false)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toMatch(/MULTIPLE_STATEMENTS/)
+    })
+
+    it('weigert statements met puntkomma in string-literal niet', async () => {
+      const errors: string[] = []
+      const rows: unknown[][] = []
+      for await (const chunk of provider.executeQuery(session, "SELECT 'a;b' AS txt", {})) {
+        if (chunk.kind === 'error') errors.push(chunk.message)
+        if (chunk.kind === 'rows') rows.push(...chunk.rows.map((r) => r.values))
+      }
+      expect(errors).toHaveLength(0)
+      expect(rows).toEqual([['a;b']])
+    })
+  })
+
   describe('capabilities', () => {
     it('exposeert dialect sqlite en standaard max rows', () => {
       expect(provider.capabilities.dialect).toBe('sqlite')

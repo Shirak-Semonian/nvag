@@ -35,7 +35,7 @@ import type {
   TriggerInfo,
   ViewInfo
 } from '@nvag/contracts'
-import { buildLimit, wrapErrorPosition } from '@nvag/sql-dialect'
+import { buildLimit, containsKeyword, splitStatements, wrapErrorPosition } from '@nvag/sql-dialect'
 
 export interface SqliteSessionHandle {
   db: DatabaseSync
@@ -79,9 +79,18 @@ export function createSqliteProvider(): DatabaseProvider {
     async connect(config: ConnectionConfig): Promise<DbSession> {
       const path = resolvePath(config)
       if (!path) throw new Error('SQLite: geen databasepad opgegeven (host)')
-      // Alleen openen wanneer bestand bestaat (voorkomt per ongeluk lege db's aanmaken)
+      // Alleen openen wanneer bestand bestaat (voorkomt per ongeluk lege db's aanmaken),
+      // tenzij createIfMissing expliciet is aangevraagd (F0-6 verbindingsdialoog).
       if (!existsSync(path)) {
-        throw new Error(`SQLite: bestand niet gevonden: ${path}`)
+        if (config.createIfMissing === true) {
+          const dir = path.split(/[\\/]/).slice(0, -1).join('/')
+          if (dir && !existsSync(dir)) {
+            const { mkdirSync } = await import('node:fs')
+            mkdirSync(dir, { recursive: true })
+          }
+        } else {
+          throw new Error(`SQLite: bestand niet gevonden: ${path}`)
+        }
       }
       const db = openDb(path)
       db.exec('PRAGMA foreign_keys = ON')
@@ -332,14 +341,22 @@ export function createSqliteProvider(): DatabaseProvider {
       const { db } = session.handle as SqliteSessionHandle
       const maxRows = opts.maxRows ?? CAPABILITIES.maxResultRowsDefault
 
-      // Meerdere statements splitsen op ';' (eenvoudig; F1: echte parser per dialect)
-      const statements = sql
-        .split(';')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
+      // Statements splitsen op ';' (quote/comment-bewust; F1: echte parser per dialect).
+      // Contract: maximaal één statement per executeQuery; node:sqlite zou de
+      // rest stilletjes negeren, dus weigeren is veiliger dan stilletjes truncaten.
+      const statements = splitStatements(sql)
 
       if (statements.length === 0) {
         yield { kind: 'done', rowCount: 0, durationMs: 0 }
+        return
+      }
+
+      if (statements.length > 1) {
+        yield {
+          kind: 'error',
+          message:
+            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+        }
         return
       }
 
@@ -349,48 +366,49 @@ export function createSqliteProvider(): DatabaseProvider {
       let currentStmt = ''
 
       try {
-        for (const stmt of statements) {
-          currentStmt = stmt
-          const capped = `${stmt} ${buildLimit('sqlite', maxRows)}`.trim()
-          let st: ReturnType<DatabaseSync['prepare']>
-          try {
-            st = db.prepare(capped)
-          } catch (err) {
-            yield {
-              kind: 'error',
-              message: err instanceof Error ? err.message : String(err),
-              position: wrapErrorPosition('sqlite', err instanceof Error ? err.message : String(err), currentStmt) ?? undefined
-            }
-            return
+        const stmt = statements[0]!
+        currentStmt = stmt
+        const isSelect = /^\s*(SELECT|WITH|PRAGMA|EXPLAIN)\b/i.test(stmt)
+        // Alleen lees-statements zonder eigen LIMIT krijgen een maxRows-cap
+        // (nooit DML/DDL, en nooit een tweede LIMIT naast een bestaande).
+        const capped = isSelect && !containsKeyword(stmt, 'LIMIT') ? `${stmt} ${buildLimit('sqlite', maxRows)}`.trim() : stmt
+        let st: ReturnType<DatabaseSync['prepare']>
+        try {
+          st = db.prepare(capped)
+        } catch (err) {
+          yield {
+            kind: 'error',
+            message: err instanceof Error ? err.message : String(err),
+            position: wrapErrorPosition('sqlite', err instanceof Error ? err.message : String(err), currentStmt) ?? undefined
           }
+          return
+        }
 
-          const isSelect = /^\s*(SELECT|WITH|PRAGMA|EXPLAIN)\b/i.test(stmt)
-          if (isSelect) {
-            const cols = st.columns().map((c) => ({
-              name: c.name,
-              dataType: c.type ?? undefined
-            }))
-            if (!returnedColumns) {
-              yield { kind: 'columns', columns: cols }
-              returnedColumns = true
-            }
-            const it = st.iterate() as Iterable<Record<string, unknown>>
-            let rows: QueryRow[] = []
-            let stmtCount = 0
-            for (const row of it) {
-              stmtCount++
-              rows.push({ values: cols.map((c) => toCell(row[c.name])) })
-              if (rows.length >= 1000) {
-                yield { kind: 'rows', rows }
-                rows = []
-              }
-            }
-            if (rows.length > 0) yield { kind: 'rows', rows }
-            totalRows += stmtCount
-          } else {
-            const result = st.run()
-            totalRows += Number(result.changes ?? 0)
+        if (isSelect) {
+          const cols = st.columns().map((c) => ({
+            name: c.name,
+            dataType: c.type ?? undefined
+          }))
+          if (!returnedColumns) {
+            yield { kind: 'columns', columns: cols }
+            returnedColumns = true
           }
+          const it = st.iterate() as Iterable<Record<string, unknown>>
+          let rows: QueryRow[] = []
+          let stmtCount = 0
+          for (const row of it) {
+            stmtCount++
+            rows.push({ values: cols.map((c) => toCell(row[c.name])) })
+            if (rows.length >= 1000) {
+              yield { kind: 'rows', rows }
+              rows = []
+            }
+          }
+          if (rows.length > 0) yield { kind: 'rows', rows }
+          totalRows += stmtCount
+        } else {
+          const result = st.run()
+          totalRows += Number(result.changes ?? 0)
         }
         yield {
           kind: 'done',

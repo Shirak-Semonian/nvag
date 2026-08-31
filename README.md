@@ -6,11 +6,25 @@
 
 ## Status
 
-🚧 **Fase 0 (Fundament) afgerond** — draaiende Electron-app met:
+🚧 **Fase 0 (Fundament)** — draaiende Electron-app met:
 SQLite-provider (node:sqlite), provider-abstractie (`@nvag/contracts`),
 versleutelde credentials (safeStorage-vault), Connection Manager,
 Object Explorer (lazy), Query Editor (Monaco), resultaten + messages,
-environment-safety (query-guard). Contracttests groen (26 tests).
+environment-safety (query-guard).
+
+**Validatie Fase 0 (hertest na review)**:
+- `pnpm dev` / `pnpm build` / `pnpm typecheck` (4 projecten) — groen
+- SELECT **met eigen LIMIT** en DML (INSERT/UPDATE/DELETE) via de provider — geverifieerd
+  (de dubbele-LIMIT-bug uit de review is opgelost: alleen SELECT zonder eigen
+  LIMIT krijgt een `maxRows`-cap, DML/DDL nooit)
+- Foutmeldingen bij ongeldige SQL — correct
+- Testdekking: `@nvag/contracts` 4 · `@nvag/sql-dialect` 85 ·
+  `@nvag/providers/sqlite` 24 · desktop-renderer: test-suite toegevoegd
+  (SAL-11, in afronding)
+
+**Bekend aandachtspunt (meegenomen naar F1)**: de query-guard blokkeert
+schrijfacties in de UI op alle omgevingen (nog geen bevestigingsflow) —
+acceptabel voor deze SELECT-only fase.
 
 **Volgende**: Fase 1 (SQL Server, PostgreSQL, MySQL-providers + core v1).
 

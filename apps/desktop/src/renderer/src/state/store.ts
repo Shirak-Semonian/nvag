@@ -3,8 +3,10 @@ import type {
   ConnectionConfig,
   ConnectionSecret,
   QueryRunResponse,
-  ServerInfo
+  ServerInfo,
+  SqlDialectId
 } from '@nvag/contracts'
+import { buildSelectStar } from '@nvag/sql-dialect'
 
 export interface QueryTabState {
   id: string
@@ -37,7 +39,10 @@ interface AppState {
   openSession: (config: ConnectionConfig, secret?: ConnectionSecret) => Promise<ServerInfo>
   closeSession: (connectionId: string) => Promise<void>
 
-  addTab: () => void
+  /** Nieuwe lege query-tab; met `opts` direct met sql/verbinding gevuld. */
+  addTab: (opts?: { sql?: string; connectionId?: string }) => void
+  /** Nieuwe tab met een SELECT * FROM <tabel> (dubbelklik in Object Explorer). */
+  openTableQuery: (connectionId: string, tableName: string, schema?: string) => void
   closeTab: (id: string) => void
   setActiveTab: (id: string) => void
   updateTabSql: (id: string, sql: string) => void
@@ -49,9 +54,20 @@ interface AppState {
 }
 
 let tabCounter = 1
+/** Zorgt voor unieke tab-ids, ook binnen dezelfde milliseconde. */
+let tabSeq = 0
+function nextTabId(): string {
+  tabSeq += 1
+  return `tab-${Date.now()}-${tabSeq}`
+}
+
+/** F0: alle geregistreerde providers spreken SQLite-dialect (uitbreiden per provider). */
+const PROVIDER_DIALECT: Record<string, SqlDialectId> = {
+  sqlite: 'sqlite'
+}
 
 function initialTab(): QueryTabState {
-  const id = `tab-${Date.now()}`
+  const id = nextTabId()
   return {
     id,
     title: `Query ${tabCounter++}`,
@@ -110,13 +126,31 @@ export const useAppStore = create<AppState>((set, get) => {
     }
   },
 
-  addTab() {
-    const id = `tab-${Date.now()}`
+  addTab(opts) {
+    const id = nextTabId()
     const tab: QueryTabState = {
       id,
-      title: `Query ${tabCounter++}`,
-      sql: '',
-      connectionId: null,
+      title: opts?.connectionId
+        ? (get().connections.find((c) => c.id === opts.connectionId)?.name ?? 'Query')
+        : `Query ${tabCounter++}`,
+      sql: opts?.sql ?? '',
+      connectionId: opts?.connectionId ?? null,
+      result: null,
+      running: false
+    }
+    set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
+  },
+
+  openTableQuery(connectionId, tableName, schema) {
+    const conn = get().connections.find((c) => c.id === connectionId)
+    const dialect = conn ? (PROVIDER_DIALECT[conn.providerId] ?? 'sqlite') : 'sqlite'
+    const sql = buildSelectStar(dialect, tableName, schema, 100)
+    const id = nextTabId()
+    const tab: QueryTabState = {
+      id,
+      title: tableName,
+      sql,
+      connectionId,
       result: null,
       running: false
     }

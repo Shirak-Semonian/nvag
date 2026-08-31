@@ -476,6 +476,255 @@ export function wrapErrorPosition(
   return DIALECTS[dialect].parseErrorPosition(message, sql)
 }
 
+// ---------------------------------------------------------------------------
+// Statement-splitsing en top-level keyword-detectie (quote/comment-bewust)
+// ---------------------------------------------------------------------------
+
+/**
+ * Splits SQL op ';' in losse statements, zonder te splitsen binnen
+ * string-literals, gequotede identifiers of commentaar.
+ *
+ * - Trailing ';' en lege statements worden genegeerd.
+ * - `SELECT 1; SELECT 2` → ['SELECT 1', 'SELECT 2'] (2 statements)
+ * - `SELECT ';'`        → ["SELECT ';'"]             (1 statement)
+ * - `/* x; y *​/ SELECT 1;` → ['/* x; y *​/ SELECT 1']   (1 statement)
+ */
+export function splitStatements(sql: string): string[] {
+  const out: string[] = []
+  let current = ''
+  let i = 0
+  let inSingle = false
+  let inDouble = false
+  let inBacktick = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  while (i < sql.length) {
+    const ch = sql[i]!
+    const next = sql[i + 1]
+
+    if (inLineComment) {
+      current += ch
+      if (ch === '\n') inLineComment = false
+      i++
+      continue
+    }
+    if (inBlockComment) {
+      current += ch
+      if (ch === '*' && next === '/') {
+        current += next!
+        inBlockComment = false
+        i += 2
+        continue
+      }
+      i++
+      continue
+    }
+    if (inSingle) {
+      current += ch
+      if (ch === "'") {
+        if (next === "'") {
+          current += next!
+          i += 2
+          continue
+        }
+        inSingle = false
+      }
+      i++
+      continue
+    }
+    if (inDouble) {
+      current += ch
+      if (ch === '"') {
+        if (next === '"') {
+          current += next!
+          i += 2
+          continue
+        }
+        inDouble = false
+      }
+      i++
+      continue
+    }
+    if (inBacktick) {
+      current += ch
+      if (ch === '`') {
+        if (next === '`') {
+          current += next!
+          i += 2
+          continue
+        }
+        inBacktick = false
+      }
+      i++
+      continue
+    }
+
+    // Buiten quotes/comments
+    if (ch === '-' && next === '-') {
+      inLineComment = true
+      current += ch + next!
+      i += 2
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      inBlockComment = true
+      current += ch + next!
+      i += 2
+      continue
+    }
+    if (ch === "'") {
+      inSingle = true
+      current += ch
+      i++
+      continue
+    }
+    if (ch === '"') {
+      inDouble = true
+      current += ch
+      i++
+      continue
+    }
+    if (ch === '`') {
+      inBacktick = true
+      current += ch
+      i++
+      continue
+    }
+    if (ch === ';') {
+      const trimmed = current.trim()
+      if (trimmed.length > 0) out.push(trimmed)
+      current = ''
+      i++
+      continue
+    }
+    current += ch
+    i++
+  }
+
+  const trimmed = current.trim()
+  if (trimmed.length > 0) out.push(trimmed)
+  return out
+}
+
+/**
+ * Detecteert of een keyword (buiten string-literals, gequotede identifiers
+ * en commentaar) in het eerste statement voorkomt. Hoofdletterongevoelig.
+ *
+ * Wordt gebruikt om te bepalen of een statement al een eigen clausule bevat
+ * (bijv. `LIMIT`), zodat de provider geen dubbele clausule toevoegt.
+ * Ook een clausule in een subquery telt mee: dan is toevoegen onveilig.
+ */
+export function containsKeyword(sql: string, keyword: string): boolean {
+  const statements = splitStatements(sql)
+  if (statements.length === 0) return false
+  // Alleen naar het eerste statement kijken; multi-statement wordt elders geweigerd.
+  const first = statements[0]!
+  const needle = keyword.toUpperCase()
+  const upper = first.toUpperCase()
+
+  let i = 0
+  let inSingle = false
+  let inDouble = false
+  let inBacktick = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  while (i < upper.length) {
+    const ch = upper[i]!
+    const next = upper[i + 1]
+
+    if (inLineComment) {
+      if (ch === '\n') inLineComment = false
+      i++
+      continue
+    }
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false
+        i += 2
+        continue
+      }
+      i++
+      continue
+    }
+    if (inSingle) {
+      if (ch === "'") {
+        if (next === "'") i += 2
+        else {
+          inSingle = false
+          i++
+        }
+      } else {
+        i++
+      }
+      continue
+    }
+    if (inDouble) {
+      if (ch === '"') {
+        if (next === '"') i += 2
+        else {
+          inDouble = false
+          i++
+        }
+      } else {
+        i++
+      }
+      continue
+    }
+    if (inBacktick) {
+      if (ch === '`') {
+        if (next === '`') i += 2
+        else {
+          inBacktick = false
+          i++
+        }
+      } else {
+        i++
+      }
+      continue
+    }
+
+    if (ch === '-' && next === '-') {
+      inLineComment = true
+      i += 2
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      inBlockComment = true
+      i += 2
+      continue
+    }
+    if (ch === "'") {
+      inSingle = true
+      i++
+      continue
+    }
+    if (ch === '"') {
+      inDouble = true
+      i++
+      continue
+    }
+    if (ch === '`') {
+      inBacktick = true
+      i++
+      continue
+    }
+
+    // Buiten quotes/comments: match op woordgrens?
+    if (upper.startsWith(needle, i)) {
+      const before = i > 0 ? upper[i - 1]! : ''
+      const after = upper[i + needle.length]
+      const isWordChar = (c: string): boolean => /[A-Za-z0-9_$]/.test(c)
+      if (!isWordChar(before) && !isWordChar(after ?? '')) return true
+      i += needle.length
+      continue
+    }
+    i++
+  }
+  return false
+}
+
 /** Genereer "SELECT * FROM <table>" met correcte quoting en optionele LIMIT/OFFSET. */
 export function buildSelectStar(
   dialect: SqlDialectId,

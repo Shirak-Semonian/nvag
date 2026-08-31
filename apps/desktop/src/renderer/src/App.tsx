@@ -1,34 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ObjectExplorer } from './components/ObjectExplorer'
 import { QueryEditor } from './components/QueryEditor'
 import { ResultsGrid, MessagesPanel } from './components/ResultsGrid'
 import { ConnectionDialog } from './components/ConnectionDialog'
+import { EnvBadge, StatusBar } from './components/StatusBar'
 import { useAppStore } from './state/store'
 
-const ENV_COLOR: Record<string, string> = {
-  DEV: '#2e7d32',
-  TEST: '#f9a825',
-  ACC: '#ef6c00',
-  PROD: '#c62828'
-}
-
-function ConnectionBadge({ connectionId }: { connectionId: string | null }): React.JSX.Element | null {
-  const connections = useAppStore((s) => s.connections)
-  const openSessions = useAppStore((s) => s.openSessions)
-  if (!connectionId) return null
-  const conn = connections.find((c) => c.id === connectionId)
-  if (!conn) return null
-  const session = openSessions[connectionId]
-  return (
-    <span
-      className="env-badge"
-      style={{ backgroundColor: ENV_COLOR[conn.environment] ?? '#555' }}
-      title={`${conn.environment} · ${session?.serverInfo.providerName ?? ''}`}
-    >
-      {conn.environment}
-    </span>
-  )
-}
+type BottomTab = 'results' | 'messages'
 
 function App(): React.JSX.Element {
   const tabs = useAppStore((s) => s.tabs)
@@ -44,6 +22,8 @@ function App(): React.JSX.Element {
   const openConnectionDialog = useAppStore((s) => s.openConnectionDialog)
   const closeSession = useAppStore((s) => s.closeSession)
 
+  const [bottomTab, setBottomTab] = useState<BottomTab>('results')
+
   useEffect(() => {
     loadConnections()
   }, [loadConnections])
@@ -52,77 +32,104 @@ function App(): React.JSX.Element {
 
   return (
     <div className="app-shell">
-      <div className="sidebar">
-        <ObjectExplorer />
-      </div>
-      <div className="main-area">
-        <div className="tab-bar">
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <span>{tab.title}</span>
-              <ConnectionBadge connectionId={tab.connectionId} />
-              <button
-                className="tab-close"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeTab(tab.id)
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-          <button className="tab-add" onClick={addTab} title="Nieuwe query-tab">
-            +
-          </button>
+      <div className="app-main-row">
+        <div className="sidebar">
+          <ObjectExplorer />
         </div>
-
-        {activeTab && (
-          <>
-            <div className="editor-toolbar">
-              <select
-                value={activeTab.connectionId ?? ''}
-                onChange={(e) => setTabConnection(activeTab.id, e.target.value || null)}
+        <div className="main-area">
+          <div className="tab-bar">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
               >
-                <option value="">— geen verbinding —</option>
-                {connections.map((c) => (
-                  <option key={c.id} value={c.id} disabled={!openSessions[c.id]}>
-                    {c.name} {openSessions[c.id] ? '' : '(niet verbonden)'}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="primary"
-                onClick={() => runQuery(activeTab.id)}
-                disabled={!activeTab.connectionId || !openSessions[activeTab.connectionId] || activeTab.running}
-              >
-                {activeTab.running ? 'Bezig…' : '▶ Uitvoeren'}
-              </button>
-              <button onClick={() => openConnectionDialog('create')}>＋ Verbinding</button>
-              {activeTab.connectionId && openSessions[activeTab.connectionId] && (
-                <button onClick={() => closeSession(activeTab.connectionId!)}>Verbinding sluiten</button>
-              )}
-            </div>
-            <div className="editor-pane">
-              <QueryEditor key={activeTab.id} tabId={activeTab.id} sql={activeTab.sql} />
-            </div>
-            <div className="results-pane">
-              <div className="results-tabs">
-                <span className="results-tab active">Resultaten</span>
-                <span className="results-tab">Messages</span>
+                <span>{tab.title}</span>
+                {tab.connectionId && (
+                  <EnvBadge
+                    environment={connections.find((c) => c.id === tab.connectionId)?.environment ?? 'DEV'}
+                  />
+                )}
+                <button
+                  className="tab-close"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeTab(tab.id)
+                  }}
+                >
+                  ✕
+                </button>
               </div>
-              <ResultsGrid result={activeTab.result} />
-            </div>
-            <div className="messages-pane">
-              <MessagesPanel result={activeTab.result} />
-            </div>
-          </>
-        )}
+            ))}
+            <button className="tab-add" onClick={() => addTab()} title="Nieuwe query-tab">
+              +
+            </button>
+          </div>
+
+          {activeTab && (
+            <>
+              <div className="editor-toolbar">
+                <select
+                  value={activeTab.connectionId ?? ''}
+                  onChange={(e) => setTabConnection(activeTab.id, e.target.value || null)}
+                >
+                  <option value="">— geen verbinding —</option>
+                  {connections.map((c) => (
+                    <option key={c.id} value={c.id} disabled={!openSessions[c.id]}>
+                      {c.name} {openSessions[c.id] ? '' : '(niet verbonden)'}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="primary"
+                  onClick={() => runQuery(activeTab.id)}
+                  disabled={!activeTab.connectionId || !openSessions[activeTab.connectionId] || activeTab.running}
+                  title="Uitvoeren (Ctrl+Enter)"
+                >
+                  {activeTab.running ? 'Bezig…' : '▶ Uitvoeren'}
+                </button>
+                <button onClick={() => openConnectionDialog('create')}>＋ Verbinding</button>
+                {activeTab.connectionId && openSessions[activeTab.connectionId] && (
+                  <button onClick={() => closeSession(activeTab.connectionId!)}>Verbinding sluiten</button>
+                )}
+              </div>
+              <div className="editor-pane">
+                <QueryEditor key={activeTab.id} tabId={activeTab.id} sql={activeTab.sql} onRun={() => runQuery(activeTab.id)} />
+              </div>
+              <div className="results-pane">
+                <div className="results-tabs" role="tablist" aria-label="Resultaatpaneel">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'results'}
+                    className={`results-tab ${bottomTab === 'results' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('results')}
+                  >
+                    Resultaten
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bottomTab === 'messages'}
+                    className={`results-tab ${bottomTab === 'messages' ? 'active' : ''}`}
+                    onClick={() => setBottomTab('messages')}
+                  >
+                    Berichten
+                  </button>
+                </div>
+                <div className="results-content">
+                  {bottomTab === 'results' ? (
+                    <ResultsGrid result={activeTab.result} />
+                  ) : (
+                    <MessagesPanel result={activeTab.result} />
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
+      <StatusBar />
       <ConnectionDialog />
     </div>
   )

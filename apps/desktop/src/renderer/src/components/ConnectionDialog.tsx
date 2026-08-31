@@ -10,6 +10,7 @@ const EMPTY: Omit<ConnectionConfig, 'id'> = {
   auth: 'username-password',
   ssl: { mode: 'disable' },
   connectionTimeoutMs: 10000,
+  createIfMissing: true,
   group: 'Development'
 }
 
@@ -98,6 +99,16 @@ export function ConnectionDialog(): React.JSX.Element | null {
             Databasepad (host)
             <input value={form.host} onChange={(e) => set({ host: e.target.value })} placeholder="/pad/naar/test.db" />
           </label>
+          {form.providerId === 'sqlite' && (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={form.createIfMissing === true}
+                onChange={(e) => set({ createIfMissing: e.target.checked })}
+              />
+              Maak het bestand aan wanneer het niet bestaat
+            </label>
+          )}
           <label>
             Omgeving
             <select value={form.environment} onChange={(e) => set({ environment: e.target.value as ConnectionConfig['environment'] })}>

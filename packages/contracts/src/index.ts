@@ -41,6 +41,8 @@ export interface ConnectionConfig {
   auth: AuthMethod
   ssl: SslConfig
   connectionTimeoutMs: number
+  /** Bestand-gebaseerde providers (SQLite): maak het bestand aan wanneer het niet bestaat. */
+  createIfMissing?: boolean
   encryption?: Record<string, string> // provider-specifiek
   extraParams?: Record<string, string> // vrije connection-string parameters
   group: string // folder: 'Development', 'Test', ...
