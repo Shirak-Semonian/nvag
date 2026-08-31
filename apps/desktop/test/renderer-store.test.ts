@@ -29,7 +29,15 @@ function mockNvag(opts: { stream?: (emit: (chunk: QueryChunk) => void) => void; 
         sessionId: 's1',
         serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1' }
       })),
-      close: vi.fn(async () => undefined)
+      close: vi.fn(async () => undefined),
+      openSaved: vi.fn(async () => ({
+        sessionId: 's1',
+        serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1', currentDatabase: 'test.db' }
+      })),
+      useDatabase: vi.fn(async (_connectionId: string, database: string) => ({
+        sessionId: 's1',
+        serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1', currentDatabase: database }
+      }))
     },
     query: {
       run: async (req: { connectionId: string; sql: string }) => {

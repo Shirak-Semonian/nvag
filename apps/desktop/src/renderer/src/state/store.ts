@@ -458,14 +458,6 @@ export const useAppStore = create<AppState>((set, get) => {
     const session = get().openSessions[tab.connectionId]
     if (!session) return
 
-    set((s) => ({
-      tabs: s.tabs.map((t) =>
-        t.id === tabId
-          ? { ...t, running: true, result: null, executionId: null, startedAt: Date.now() }
-          : t
-      )
-    }))
-
     const acc = createAccumulator()
     let unsubscribe: (() => void) | null = null
 
@@ -474,6 +466,46 @@ export const useAppStore = create<AppState>((set, get) => {
         tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, ...patch } : t))
       }))
     }
+
+    // F1-10: zorg dat de sessie op de database van deze tab staat. Wanneer een
+    // tab met een andere database werd aangemaakt (Script Object, recente query)
+    // moet de query op die database draaien, niet op de sessie-default.
+    // SQLite slaan we over: het bestand ís de database (geen in-place switch).
+    const dialect = getDialectForProvider(session.config.providerId)
+    if (tab.database && dialect !== 'sqlite' && session.serverInfo.currentDatabase !== tab.database) {
+      try {
+        const res = await window.nvag.sessions.useDatabase(tab.connectionId, tab.database)
+        set((s) => ({
+          openSessions: {
+            ...s.openSessions,
+            [tab.connectionId!]: { ...session, sessionId: res.sessionId, serverInfo: res.serverInfo }
+          }
+        }))
+      } catch (err) {
+        const text = err instanceof Error ? err.message : String(err)
+        patchTab({
+          result: {
+            executionId: '',
+            columns: [],
+            rows: [],
+            truncated: false,
+            rowCount: 0,
+            durationMs: 0,
+            error: text,
+            messages: [{ severity: 'error', text }]
+          }
+        })
+        return
+      }
+    }
+
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === tabId
+          ? { ...t, running: true, result: null, executionId: null, startedAt: Date.now() }
+          : t
+      )
+    }))
 
     const applyChunk = (chunk: QueryChunk, executionId: string): void => {
       if (chunk.kind === 'columns') {

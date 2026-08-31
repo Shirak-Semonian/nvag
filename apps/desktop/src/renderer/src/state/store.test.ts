@@ -541,4 +541,55 @@ describe('app store', () => {
     expect(tab?.dbSwitchError).toContain('USE mislukt')
     expect(original).toBeDefined()
   })
+
+  it('schakelt vóór de uitvoering naar de database van de tab (F1-10)', async () => {
+    const conn = sampleConnection({ id: 'conn-srv', providerId: 'sqlserver', database: 'main' })
+    const withDb = createMockNvag({ connections: [conn] })
+    window.nvag = withDb
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-srv': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '2022', currentDatabase: 'main' }
+        }
+      },
+      tabs: [seedTab({ id: 'tab-1', sql: 'SELECT 1;', connectionId: 'conn-srv', database: 'archive' })],
+      activeTabId: 'tab-1'
+    })
+
+    await useAppStore.getState().runQuery('tab-1')
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
+    expect(withDb.useDatabaseCalls).toEqual([{ connectionId: 'conn-srv', database: 'archive' }])
+    expect(withDb.queriedSql).toEqual(['SELECT 1;'])
+    expect(tab?.running).toBe(false)
+  })
+
+  it('blokkeert de query wanneer de database-switch vóór uitvoering faalt (F1-10)', async () => {
+    const conn = sampleConnection({ id: 'conn-srv', providerId: 'sqlserver', database: 'main' })
+    const failing = createMockNvag({ connections: [conn] })
+    failing.sessions.useDatabase = async () => {
+      throw new Error('USE mislukt')
+    }
+    window.nvag = failing
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-srv': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '2022', currentDatabase: 'main' }
+        }
+      },
+      tabs: [seedTab({ id: 'tab-1', sql: 'SELECT 1;', connectionId: 'conn-srv', database: 'archive' })],
+      activeTabId: 'tab-1'
+    })
+
+    await useAppStore.getState().runQuery('tab-1')
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
+    expect(failing.queriedSql).toHaveLength(0)
+    expect(tab?.result?.error).toContain('USE mislukt')
+    expect(tab?.running).toBe(false)
+  })
 })
