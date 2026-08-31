@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import type { ExplainPlanNode, ExplainResult, QueryPerformanceStats, SearchMatch } from '@nvag/contracts'
+import type { ExplainPlanNode, ExplainResult, MonitoringRow, QueryPerformanceStats, SearchMatch } from '@nvag/contracts'
 import { useAppStore } from '../state/store'
 
 // ---------------------------------------------------------------------------
@@ -348,6 +348,84 @@ export function AuditPanel(): React.JSX.Element {
       </div>
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// F3-2: Monitoring/Activity
+// ---------------------------------------------------------------------------
+
+export function MonitoringPanel({ connectionId }: { connectionId: string | null }): React.JSX.Element {
+  const [rows, setRows] = useState<MonitoringRow[]>([])
+  const [locks, setLocks] = useState<unknown[]>([])
+  const [busy, setBusy] = useState(false)
+  const [includeIdle, setIncludeIdle] = useState(false)
+
+  const load = async (): Promise<void> => {
+    if (!connectionId) return
+    setBusy(true)
+    try {
+      const [q, l] = await Promise.all([
+        window.nvag.monitoring.activeQueries(connectionId, includeIdle),
+        window.nvag.monitoring.locks(connectionId)
+      ])
+      setRows(q)
+      setLocks(l)
+    } catch {
+      setRows([])
+      setLocks([])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId, includeIdle])
+
+  return (
+    <div className="f2-panel">
+      <div className="f2-panel-row">
+        <span className="result-meta">Monitoring (F3-2) — {rows.length} actieve sessie(s)</span>
+        <span className="f2-panel-spacer" />
+        <label className="checkbox-row" style={{ fontSize: 12 }}>
+          <input type="checkbox" checked={includeIdle} onChange={(e) => setIncludeIdle(e.target.checked)} />
+          Idle tonen
+        </label>
+        <button onClick={() => void load()} disabled={busy || !connectionId}>
+          ⟳ Vernieuwen
+        </button>
+      </div>
+      <div className="audit-list">
+        {rows.length === 0 && <div className="results-empty">Geen actieve sessies.</div>}
+        {rows.map((r) => (
+          <div key={r.id} className="audit-row">
+            <span className="audit-action">sessie {r.id}</span>
+            {r.user && <span className="audit-server">{r.user}</span>}
+            {r.database && <span className="audit-server">{r.database}</span>}
+            <span className="audit-detail">
+              {r.status ?? ''}
+              {r.durationMs !== undefined ? ` · ${formatMs(r.durationMs)}` : ''}
+              {r.cpuMs !== undefined ? ` · cpu ${formatMs(r.cpuMs)}` : ''}
+              {r.blockedBy ? ` · ⛔ geblokkeerd door ${r.blockedBy}` : ''}
+            </span>
+            {r.query && <code className="snippet-sql">{r.query}</code>}
+          </div>
+        ))}
+      </div>
+      {locks.length > 0 && (
+        <details className="table-data-sql">
+          <summary>{locks.length} lock(s)</summary>
+          <pre>{JSON.stringify(locks.slice(0, 20), null, 2)}</pre>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${Math.floor(ms)} ms`
+  return `${(ms / 1000).toFixed(1)} s`
 }
 
 // ---------------------------------------------------------------------------

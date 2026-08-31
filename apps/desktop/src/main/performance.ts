@@ -50,11 +50,49 @@ export function parseExplainJson(raw: string, dialect: string): ExplainPlanNode[
   try {
     const parsed = JSON.parse(raw)
     const nodes = Array.isArray(parsed) ? parsed : [parsed]
-    const plan = nodes.find((n) => n && typeof n === 'object' && n.Plan)
-    if (!plan?.Plan) return undefined
-    return [convertPlanNode(plan.Plan, dialect)]
+    // PostgreSQL: { Plan: {...} } — MySQL: { query_block: { table: {...} } }
+    const pgPlan = nodes.find((n) => n && typeof n === 'object' && n.Plan)
+    if (pgPlan?.Plan) return [convertPlanNode(pgPlan.Plan, dialect)]
+    const myPlan = nodes.find((n) => n && typeof n === 'object' && n.query_block)
+    if (myPlan?.query_block) {
+      const qb = myPlan.query_block as Record<string, unknown>
+      const table = qb.table as Record<string, unknown> | undefined
+      if (table) {
+        const children: ExplainPlanNode[] = []
+        const subqueries = table['attached_subqueries'] as unknown
+        if (Array.isArray(subqueries)) {
+          for (const sub of subqueries as Record<string, unknown>[]) {
+            const qb = sub?.query_block as Record<string, unknown> | undefined
+            const subTable = qb?.table as Record<string, unknown> | undefined
+            if (subTable) {
+              children.push(convertMySqlTable(subTable))
+            }
+          }
+        }
+        return [convertMySqlTable(table, children)]
+      }
+    }
+    return undefined
   } catch {
     return undefined
+  }
+}
+
+function convertMySqlTable(table: Record<string, unknown>, extraChildren: ExplainPlanNode[] = []): ExplainPlanNode {
+  const children: ExplainPlanNode[] = [...extraChildren]
+  const nested = table['nested_loop'] as Record<string, unknown>[] | undefined
+  if (Array.isArray(nested)) {
+    for (const nl of nested) {
+      const t = nl?.table as Record<string, unknown> | undefined
+      if (t) children.push(convertMySqlTable(t))
+    }
+  }
+  return {
+    operator: String(table['access_type'] ?? table['table_name'] ?? 'TABLE'),
+    detail: table['table_name'] != null ? String(table['table_name']) : undefined,
+    rows: toNumber(table['rows']),
+    cost: toNumber(table['cost_info'] ? (table['cost_info'] as Record<string, unknown>)['read_cost'] : undefined),
+    children
   }
 }
 

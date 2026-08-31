@@ -610,9 +610,111 @@ export interface NvagIpcApi {
     get(connectionId: string): Promise<DashboardData>
   }
 
+  // F3-2: Monitoring/Activity (eis 12)
+  monitoring: {
+    /** Actieve queries/sessies; `includeIdle` toont ook idle sessies. */
+    activeQueries(connectionId: string, includeIdle?: boolean): Promise<MonitoringRow[]>
+    /** Locks (waar beschikbaar). */
+    locks(connectionId: string): Promise<unknown[]>
+  }
+
+  // F3-3: Schema Compare + Data Compare (eis 15 + 16)
+  compare: {
+    schemas(
+      sourceConnectionId: string,
+      sourceSchema: string | undefined,
+      targetConnectionId: string,
+      targetSchema: string | undefined
+    ): Promise<SchemaDiff>
+    data(
+      sourceConnectionId: string,
+      sourceSchema: string | undefined,
+      targetConnectionId: string,
+      targetSchema: string | undefined,
+      table: string
+    ): Promise<DataDiff>
+    deployScript(
+      sourceConnectionId: string,
+      sourceSchema: string | undefined,
+      targetConnectionId: string,
+      targetSchema: string | undefined,
+      diff: SchemaDiff
+    ): Promise<string>
+  }
+
+  // F3-6: AI Assistant (eis 27)
+  ai: {
+    /** Config opslaan (apiKey gaat versleuteld naar de vault). */
+    saveConfig(config: AiConfigInput): Promise<void>
+    /** AI-aanroep (generate/explain/optimize/convert). */
+    chat(req: AiRequest): Promise<{ text: string }>
+  }
+
+  // F3-7: Extern plugin-systeem (eis 29)
+  plugins: {
+    list(): Promise<PluginInfo[]>
+    reload(): Promise<PluginInfo[]>
+  }
+
   app: {
     getVersion(): Promise<string>
   }
+}
+
+export interface MonitoringRow {
+  id: string
+  user?: string
+  database?: string
+  status?: string
+  durationMs?: number
+  query?: string
+  blockedBy?: string
+  cpuMs?: number
+  locks?: number
+}
+
+// F3-3
+export interface SchemaDiff {
+  tablesOnlyInSource: string[]
+  tablesOnlyInTarget: string[]
+  columnDiffs: {
+    table: string
+    missingInTarget: string[]
+    missingInSource: string[]
+  }[]
+  missingTables: number
+  missingColumns: number
+}
+
+export interface DataDiff {
+  table: string
+  sourceRowCount: number
+  targetRowCount: number
+  differs: boolean
+}
+
+// F3-6
+export interface AiConfigInput {
+  baseUrl?: string
+  model?: string
+  apiKey?: string
+}
+
+export interface AiRequest {
+  connectionId?: string
+  mode: 'generate' | 'explain' | 'optimize' | 'convert' | 'free'
+  input: string
+  targetDialect?: string
+}
+
+// F3-7
+export interface PluginInfo {
+  name: string
+  source: string
+  providerId?: string
+  providerName?: string
+  ok: boolean
+  error?: string
 }
 
 export interface SnippetEntry {

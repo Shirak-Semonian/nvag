@@ -53,7 +53,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsSequences: true,
   supportsTriggers: true,
   supportsExecutionPlans: false, // F3
-  supportsMonitoring: false, // F3
+  supportsMonitoring: true, // F3
   supportsTransactions: true,
   supportsIdentityColumns: true,
   supportsGeneratedColumns: true, // computed columns

@@ -1577,3 +1577,53 @@ button.danger:hover:not(:disabled) {
   color: var(--muted, #9a9a9a);
   font-size: 11px;
 }
+
+/* F3: vergelijk / dependencies / ER / AI / plugins */
+.compare-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.erd-scroll {
+  overflow: auto;
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg, #141414);
+}
+.erd-box {
+  fill: var(--bg-panel, #1b1b1b);
+  stroke: var(--border);
+}
+.erd-header {
+  fill: #2b3a4a;
+  stroke: var(--border);
+}
+.erd-title {
+  fill: #e6edf3;
+  font-size: 12px;
+  font-weight: 700;
+}
+.erd-col {
+  fill: #c9d1d9;
+  font-size: 10px;
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+}
+.ai-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+}
+.ai-output {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg, #141414);
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow: auto;
+}

@@ -386,6 +386,27 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       })
     },
 
+    monitoring: {
+      activeQueries: async () => [],
+      locks: async () => []
+    },
+
+    compare: {
+      schemas: async () => ({ tablesOnlyInSource: [], tablesOnlyInTarget: [], columnDiffs: [], missingTables: 0, missingColumns: 0 }),
+      data: async () => ({ table: 't', sourceRowCount: 0, targetRowCount: 0, differs: false }),
+      deployScript: async () => ''
+    },
+
+    ai: {
+      saveConfig: async () => {},
+      chat: async () => ({ text: '-- AI-antwoord' })
+    },
+
+    plugins: {
+      list: async () => [],
+      reload: async () => []
+    },
+
     app: {
       getVersion: async () => '0.1.0'
     }

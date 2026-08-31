@@ -50,7 +50,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsSequences: true,
   supportsTriggers: true,
   supportsExecutionPlans: false,
-  supportsMonitoring: false,
+  supportsMonitoring: true,
   supportsTransactions: true,
   supportsIdentityColumns: true,
   supportsGeneratedColumns: false,

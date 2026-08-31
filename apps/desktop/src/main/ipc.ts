@@ -30,6 +30,8 @@ import * as performance from './performance'
 import * as search from './database-search'
 import * as importer from './importer'
 import * as dashboard from './dashboard'
+import * as compare from './compare'
+import * as aiAssistant from './ai-assistant'
 import { registry } from './registry'
 
 function audit(action: Parameters<typeof auditStore.add>[0]['action'], detail: string, extra: { server?: string; database?: string; success?: boolean; error?: string } = {}) {
@@ -438,6 +440,53 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('dashboard:get', (_e, connectionId: string) =>
     dashboard.getDashboard(connectionId)
   )
+
+  // ------------------------------------------------------------------ F3-2: monitoring (eis 12)
+  ipcMain.handle('monitoring:activeQueries', async (_e, connectionId: string, includeIdle?: boolean) => {
+    const { getActiveQueries } = await import('./monitoring')
+    return getActiveQueries(connectionId, includeIdle)
+  })
+  ipcMain.handle('monitoring:locks', async (_e, connectionId: string) => {
+    const { getLocks } = await import('./monitoring')
+    return getLocks(connectionId)
+  })
+
+  // ------------------------------------------------------------------ F3-3: compare (eis 15 + 16)
+  ipcMain.handle(
+    'compare:schemas',
+    (_e, sourceConnectionId: string, sourceSchema: string | undefined, targetConnectionId: string, targetSchema: string | undefined) =>
+      compare.compareSchemas(sourceConnectionId, sourceSchema, targetConnectionId, targetSchema)
+  )
+  ipcMain.handle(
+    'compare:data',
+    (_e, sourceConnectionId: string, sourceSchema: string | undefined, targetConnectionId: string, targetSchema: string | undefined, table: string) =>
+      compare.compareData(sourceConnectionId, sourceSchema, targetConnectionId, targetSchema, table)
+  )
+  ipcMain.handle(
+    'compare:deployScript',
+    (_e, sourceConnectionId: string, sourceSchema: string | undefined, targetConnectionId: string, targetSchema: string | undefined, diff: unknown) =>
+      compare.buildDeployScript(sourceConnectionId, sourceSchema, targetConnectionId, targetSchema, diff as Parameters<typeof compare.buildDeployScript>[4])
+  )
+
+  // ------------------------------------------------------------------ F3-6: AI assistant (eis 27)
+  ipcMain.handle('ai:saveConfig', (_e, config: { baseUrl?: string; model?: string; apiKey?: string }) => {
+    aiAssistant.saveAiConfig(config)
+    audit('admin.ddl', 'AI-configuratie opgeslagen (apiKey versleuteld in vault)', {})
+    return { ok: true }
+  })
+  ipcMain.handle('ai:chat', async (_e, req: Parameters<typeof aiAssistant.aiChat>[0]) => {
+    return aiAssistant.aiChat(req)
+  })
+
+  // ------------------------------------------------------------------ F3-7: plugins (eis 29)
+  ipcMain.handle('plugins:list', async () => {
+    const { loadPlugins } = await import('./plugin-loader')
+    return loadPlugins(registry)
+  })
+  ipcMain.handle('plugins:reload', async () => {
+    const { loadPlugins } = await import('./plugin-loader')
+    return loadPlugins(registry)
+  })
 
   // ------------------------------------------------------------------ app
   ipcMain.handle('app:getVersion', () => process.env.npm_package_version ?? '0.1.0')

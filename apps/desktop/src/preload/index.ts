@@ -5,6 +5,7 @@ import type {
   AuditEntry,
   ConnectionConfig,
   DashboardData,
+  DataDiff,
   DatabaseInfo,
   ExportResult,
   ExplainResult,
@@ -13,7 +14,9 @@ import type {
   ImportFileFormat,
   ImportGenerateResult,
   ImportPreview,
+  MonitoringRow,
   NvagIpcApi,
+  PluginInfo,
   ProcInfo,
   ProviderCapabilities,
   ProviderDescriptor,
@@ -22,6 +25,7 @@ import type {
   QueryFileSaveResult,
   QueryPerformanceStats,
   QueryRunStartResponse,
+  SchemaDiff,
   SchemaInfo,
   ScriptObjectResult,
   SearchMatch,
@@ -143,6 +147,23 @@ const api: NvagIpcApi = {
   },
   dashboard: {
     get: handle<DashboardData>('dashboard:get')
+  },
+  monitoring: {
+    activeQueries: handle<MonitoringRow[]>('monitoring:activeQueries'),
+    locks: handle<unknown[]>('monitoring:locks')
+  },
+  compare: {
+    schemas: handle<SchemaDiff>('compare:schemas'),
+    data: handle<DataDiff>('compare:data'),
+    deployScript: handle<string>('compare:deployScript')
+  },
+  ai: {
+    saveConfig: handle<void>('ai:saveConfig'),
+    chat: handle<{ text: string }>('ai:chat')
+  },
+  plugins: {
+    list: handle<PluginInfo[]>('plugins:list'),
+    reload: handle<PluginInfo[]>('plugins:reload')
   },
   app: {
     getVersion: handle<string>('app:getVersion')

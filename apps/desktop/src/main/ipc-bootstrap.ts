@@ -37,4 +37,16 @@ export function bootstrapApp(): void {
     return { config, secret: connectionStore.getSecret(connectionId) }
   }
   registerIpcHandlers()
+  // F3-7 (eis 29): externe providers uit de plugin-map laden.
+  void import('./plugin-loader').then(async ({ loadPlugins }) => {
+    const { registry } = await import('./registry')
+    const plugins = await loadPlugins(registry)
+    for (const plugin of plugins) {
+      if (plugin.ok) {
+        console.log(`[nvag] Plugin geladen: ${plugin.name} (provider ${plugin.providerId})`)
+      } else {
+        console.warn(`[nvag] Plugin overgeslagen: ${plugin.name} — ${plugin.error ?? 'onbekende fout'}`)
+      }
+    }
+  })
 }
