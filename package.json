@@ -1,0 +1,19 @@
+{
+  "name": "nvag",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Eén centrale Database Management Studio voor meerdere databaseplatformen",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "pnpm --filter desktop build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
