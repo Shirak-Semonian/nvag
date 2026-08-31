@@ -346,9 +346,11 @@ export function createSqliteProvider(): DatabaseProvider {
       const start = performance.now()
       let totalRows = 0
       let returnedColumns = false
+      let currentStmt = ''
 
       try {
         for (const stmt of statements) {
+          currentStmt = stmt
           const capped = `${stmt} ${buildLimit('sqlite', maxRows)}`.trim()
           let st: ReturnType<DatabaseSync['prepare']>
           try {
@@ -357,7 +359,7 @@ export function createSqliteProvider(): DatabaseProvider {
             yield {
               kind: 'error',
               message: err instanceof Error ? err.message : String(err),
-              position: wrapErrorPosition('sqlite', err instanceof Error ? err.message : String(err)) ?? undefined
+              position: wrapErrorPosition('sqlite', err instanceof Error ? err.message : String(err), currentStmt) ?? undefined
             }
             return
           }
@@ -399,7 +401,7 @@ export function createSqliteProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message: err instanceof Error ? err.message : String(err),
-          position: wrapErrorPosition('sqlite', err instanceof Error ? err.message : String(err)) ?? undefined
+          position: wrapErrorPosition('sqlite', err instanceof Error ? err.message : String(err), currentStmt) ?? undefined
         }
       }
     },
