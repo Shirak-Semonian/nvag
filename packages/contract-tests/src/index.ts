@@ -56,6 +56,11 @@ export interface ProviderContractHarness {
   }
 }
 
+export interface ContractTestOptions {
+  /** Zet op false wanneer er geen testserver beschikbaar is (suite wordt geskipt). */
+  enabled?: boolean
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -99,11 +104,16 @@ async function runFixture(
 // De generieke suite
 // ---------------------------------------------------------------------------
 
-export function runProviderContractTests(harness: ProviderContractHarness): void {
+export function runProviderContractTests(
+  harness: ProviderContractHarness,
+  options: ContractTestOptions = {}
+): void {
   const name = harness.name
   const skips = harness.skips ?? {}
+  const enabled = options.enabled ?? true
+  const describeFn = enabled ? describe : describe.skip
 
-  describe(`contract — ${name} provider`, () => {
+  describeFn(`contract — ${name} provider`, () => {
     let provider: DatabaseProvider
     let config: ConnectionConfig
     let session: DbSession
