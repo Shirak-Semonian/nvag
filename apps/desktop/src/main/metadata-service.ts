@@ -5,15 +5,19 @@
 
 import type {
   DatabaseInfo,
+  DbObjectRef,
   FuncInfo,
   ProcInfo,
   SchemaInfo,
+  ScriptKind,
+  ScriptObjectResult,
   SeqInfo,
   TableInfo,
   TableMetadata,
   TriggerInfo,
   ViewInfo
 } from '@nvag/contracts'
+import { buildCreateTable, scriptObject as dialectScriptObject } from '@nvag/sql-dialect'
 import { registry } from './registry'
 import { sessionManager } from './session-manager'
 
@@ -97,4 +101,41 @@ export async function getTableMetadata(
 ): Promise<TableMetadata> {
   const { session, provider } = requireSession(connectionId)
   return provider.getTableMetadata(session, db, schema, table)
+}
+
+export async function getObjectDefinition(
+  connectionId: string,
+  obj: DbObjectRef
+): Promise<string> {
+  const { session, provider } = requireSession(connectionId)
+  return provider.getObjectDefinition(session, obj)
+}
+
+/**
+ * Script Object (F1-5): genereer dialect-correcte SQL voor een object via
+ * @nvag/sql-dialect.
+ * - CREATE op tabel: CREATE TABLE uit metadata (dialect-correct reconstructie).
+ * - CREATE op andere objecten (view/trigger/...): exacte definitie van de provider.
+ * - SELECT/INSERT/UPDATE/DELETE: uit metadata, met correcte quoting,
+ *   `?`-placeholders en PK-bewuste WHERE (dialect-specifiek per provider).
+ */
+export async function scriptObject(
+  connectionId: string,
+  obj: DbObjectRef,
+  kind: ScriptKind
+): Promise<ScriptObjectResult> {
+  const { session, provider } = requireSession(connectionId)
+  const dialect = provider.capabilities.dialect
+
+  if (kind === 'CREATE' && obj.type !== 'table') {
+    const sql = await provider.getObjectDefinition(session, obj)
+    return { sql, title: `${obj.name} — CREATE` }
+  }
+
+  const meta = await provider.getTableMetadata(session, obj.database, obj.schema ?? 'main', obj.name)
+  const sql =
+    kind === 'CREATE'
+      ? buildCreateTable(dialect, obj.name, obj.schema ?? null, meta)
+      : dialectScriptObject(kind, dialect, obj.name, obj.schema ?? null, meta)
+  return { sql, title: `${obj.name} — ${kind}` }
 }

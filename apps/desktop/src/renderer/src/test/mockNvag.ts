@@ -2,24 +2,44 @@ import type {
   ConnectionConfig,
   ConnectionSecret,
   DatabaseInfo,
+  DbObjectRef,
   NvagIpcApi,
+  QueryChunk,
+  QueryChunkEvent,
+  QueryFileOpenResult,
+  QueryFileSaveResult,
   QueryRunResponse,
   SchemaInfo,
+  ScriptKind,
   ServerInfo,
   TableInfo,
   TableMetadata,
   TestResult,
   ViewInfo
 } from '@nvag/contracts'
+import { buildCreateTable, scriptObject as buildScriptObject } from '@nvag/sql-dialect'
 
 export interface MockNvagOptions {
   connections?: ConnectionConfig[]
   tables?: string[]
   views?: string[]
+  procedures?: string[]
+  functions?: string[]
   tableMetadata?: Record<string, TableMetadata>
   queryResults?: Record<string, QueryRunResponse>
   defaultQueryResult?: QueryRunResponse
+  /** SQL → redenen waarom environment-safety de query blokkeert. */
+  blockedQueries?: Record<string, string[]>
   failOpenConnectionIds?: string[]
+  openFileResult?: QueryFileOpenResult
+  saveFileResult?: QueryFileSaveResult
+  /** Overschrijft de default `start`-streaming (voor cancel/progressie-tests). */
+  startHandler?: (
+    executionId: string,
+    emit: (chunk: QueryChunk) => void
+  ) => Promise<void> | void
+  /** Wordt aangeroepen wanneer `query.cancel` wordt aangeroepen. */
+  onCancel?: (executionId: string) => void
 }
 
 const SERVER_INFO: ServerInfo = {
@@ -43,29 +63,42 @@ function defaultResult(): QueryRunResponse {
 
 /**
  * In-memory fake van window.nvag (preload-brug) voor renderer-tests.
+ * Implementeert het F1-4 streaming-protocol: `run` geeft een executionId,
+ * `start` emitteert columns/rows/done-chunks naar de onChunk-listeners.
  */
 export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
   savedConfigs: ConnectionConfig[]
   openedSessions: string[]
   closedSessions: string[]
   queriedSql: string[]
+  savedFiles: { content: string; path?: string }[]
 } {
   const savedConfigs: ConnectionConfig[] = [...(options.connections ?? [])]
   const openedSessions: string[] = []
   const closedSessions: string[] = []
   const queriedSql: string[] = []
+  const savedFiles: { content: string; path?: string }[] = []
+  const chunkListeners = new Set<(evt: QueryChunkEvent) => void>()
+  const pendingRuns = new Map<string, QueryRunResponse>()
   let sessionSeq = 0
+  let execSeq = 0
+
+  const emit = (evt: QueryChunkEvent): void => {
+    for (const listener of chunkListeners) listener(evt)
+  }
 
   const api: NvagIpcApi & {
     savedConfigs: ConnectionConfig[]
     openedSessions: string[]
     closedSessions: string[]
     queriedSql: string[]
+    savedFiles: { content: string; path?: string }[]
   } = {
     savedConfigs,
     openedSessions,
     closedSessions,
     queriedSql,
+    savedFiles,
 
     connections: {
       list: async () => [...savedConfigs],
@@ -102,9 +135,58 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     query: {
       run: async (req) => {
         queriedSql.push(req.sql)
-        return options.queryResults?.[req.sql] ?? options.defaultQueryResult ?? defaultResult()
+        const blocked = options.blockedQueries?.[req.sql]
+        if (blocked && blocked.length > 0) {
+          return { executionId: '', blocked }
+        }
+        execSeq += 1
+        const executionId = `exec-${execSeq}`
+        pendingRuns.set(
+          executionId,
+          options.queryResults?.[req.sql] ?? options.defaultQueryResult ?? defaultResult()
+        )
+        return { executionId }
       },
-      cancel: async () => {}
+      start: async (executionId: string) => {
+        const response = pendingRuns.get(executionId)
+        if (response) {
+          pendingRuns.delete(executionId)
+          if (response.error && response.columns.length === 0 && response.rows.length === 0) {
+            emit({ executionId, chunk: { kind: 'error', message: response.error, position: response.errorPosition } })
+            emit({ executionId, chunk: { kind: 'done', rowCount: 0, durationMs: response.durationMs } })
+            return
+          }
+          if (response.columns.length > 0) {
+            emit({ executionId, chunk: { kind: 'columns', columns: response.columns } })
+          }
+          if (response.rows.length > 0) {
+            emit({ executionId, chunk: { kind: 'rows', rows: response.rows } })
+          }
+          emit({
+            executionId,
+            chunk: {
+              kind: 'done',
+              rowCount: response.rowCount,
+              durationMs: response.durationMs,
+              truncated: response.truncated
+            }
+          })
+          return
+        }
+        if (options.startHandler) {
+          await options.startHandler(executionId, (chunk) => emit({ executionId, chunk }))
+        }
+      },
+      cancel: async (executionId: string) => {
+        options.onCancel?.(executionId)
+      },
+      onChunk: (cb: (evt: QueryChunkEvent) => void) => {
+        chunkListeners.add(cb)
+        return () => {
+          chunkListeners.delete(cb)
+        }
+      },
+      exportCsv: async () => ({ canceled: true })
     },
 
     metadata: {
@@ -114,15 +196,58 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         (options.tables ?? []).map((name) => ({ name, schema: 'main', type: 'table' })),
       listViews: async (): Promise<ViewInfo[]> =>
         (options.views ?? []).map((name) => ({ name, schema: 'main' })),
-      listProcedures: async () => [],
-      listFunctions: async () => [],
+      listProcedures: async () =>
+        (options.procedures ?? []).map((name) => ({ name, schema: 'main', type: 'procedure' as const })),
+      listFunctions: async () =>
+        (options.functions ?? []).map((name) => ({ name, schema: 'main' })),
       listTriggers: async () => [],
       listSequences: async () => [],
       getTableMetadata: async (_connId: string, _db: string, _schema: string, _table: string): Promise<TableMetadata> => {
         const meta = options.tableMetadata?.[_table]
         if (meta) return meta
         return { columns: [], primaryKey: [], foreignKeys: [], indexes: [], constraints: [], triggers: [], dependencies: [] }
+      },
+      getObjectDefinition: async (_connId: string, obj: DbObjectRef): Promise<string> => {
+        if (obj.type === 'view') return `CREATE VIEW ${JSON.stringify(obj.name)} AS SELECT 1;`
+        return `CREATE TABLE ${JSON.stringify(obj.name)} (\n  "id" INTEGER PRIMARY KEY\n);`
+      },
+      scriptObject: async (_connId: string, obj: DbObjectRef, kind: ScriptKind) => {
+        // Zelfde routing als main process: CREATE op niet-tabel → providerdefinitie.
+        if (kind === 'CREATE' && obj.type !== 'table') {
+          return {
+            sql: `CREATE VIEW ${JSON.stringify(obj.name)} AS SELECT 1;`,
+            title: `${obj.name} — CREATE`
+          }
+        }
+        const meta = options.tableMetadata?.[obj.name] ?? {
+          columns: [],
+          primaryKey: [],
+          foreignKeys: [],
+          indexes: [],
+          constraints: [],
+          triggers: [],
+          dependencies: []
+        }
+        const sql =
+          kind === 'CREATE'
+            ? buildCreateTable('sqlite', obj.name, obj.schema ?? null, meta)
+            : buildScriptObject(kind, 'sqlite', obj.name, obj.schema ?? null, meta)
+        return { sql, title: `${obj.name} — ${kind}` }
       }
+    },
+
+    queryFiles: {
+      open: async (): Promise<QueryFileOpenResult> =>
+        options.openFileResult ?? { canceled: true },
+      save: async (content: string, path?: string): Promise<QueryFileSaveResult> => {
+        savedFiles.push({ content, path })
+        return options.saveFileResult ?? { canceled: false, path: path ?? '/tmp/query.sql' }
+      }
+    },
+
+    history: {
+      list: async () => [],
+      clear: async () => {}
     },
 
     app: {

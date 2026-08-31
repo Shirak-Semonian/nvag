@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import type {
   DatabaseInfo,
+  DbObjectRef,
   SchemaInfo,
+  ScriptKind,
   TableInfo,
-  TableMetadata,
   ViewInfo
 } from '@nvag/contracts'
 import { useAppStore } from '../state/store'
+import { ObjectViewer, type ObjectViewerSelection } from './ObjectViewer'
 
 type NodeKind = 'server' | 'folder' | 'database' | 'schema' | 'table' | 'view'
 
@@ -22,13 +24,6 @@ interface TreeNode {
   ref?: { connId: string; db: string; schema?: string; name: string }
 }
 
-interface DetailState {
-  ref: NonNullable<TreeNode['ref']>
-  kind: 'table' | 'view'
-  meta: TableMetadata | null
-  error?: string
-}
-
 export function ObjectExplorer(): React.JSX.Element {
   const connections = useAppStore((s) => s.connections)
   const openSessions = useAppStore((s) => s.openSessions)
@@ -37,7 +32,7 @@ export function ObjectExplorer(): React.JSX.Element {
 
   const [tree, setTree] = useState<TreeNode[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [details, setDetails] = useState<DetailState | null>(null)
+  const [selection, setSelection] = useState<ObjectViewerSelection | null>(null)
 
   // Boom opbouwen uit connections (alleen servers + folders zichtbaar)
   useEffect(() => {
@@ -52,7 +47,7 @@ export function ObjectExplorer(): React.JSX.Element {
       loaded: !!openSessions[conn.id]
     }))
     setTree(nodes)
-    setDetails(null)
+    setSelection(null)
   }, [connections, openSessions])
 
   const patchNode = useCallback((nodes: TreeNode[], key: string, fn: (n: TreeNode) => TreeNode): TreeNode[] => {
@@ -132,27 +127,23 @@ export function ObjectExplorer(): React.JSX.Element {
     setExpanded(next)
   }
 
-  /** Klik op tabel/view: kolomdetails laden en tonen (SAL-11). */
-  const showDetails = useCallback(async (node: TreeNode): Promise<void> => {
+  /** Klik op tabel/view: Object Viewer openen met eigenschappen per type (F1-5). */
+  const showViewer = useCallback((node: TreeNode): void => {
     if (!node.ref) return
     const kind = node.kind === 'view' ? 'view' : 'table'
-    setDetails({ ref: node.ref, kind, meta: null })
-    try {
-      const meta = await window.nvag.metadata.getTableMetadata(
-        node.ref.connId,
-        node.ref.db,
-        node.ref.schema ?? 'main',
-        node.ref.name
-      )
-      setDetails({ ref: node.ref, kind, meta })
-    } catch (err) {
-      setDetails({ ref: node.ref, kind, meta: null, error: err instanceof Error ? err.message : String(err) })
-    }
+    setSelection({ connId: node.ref.connId, db: node.ref.db, schema: node.ref.schema, name: node.ref.name, kind })
   }, [])
+
+  /** Script Object (F1-5): genereer SQL en open een nieuwe querytab. */
+  const handleScript = useCallback((obj: DbObjectRef, kind: ScriptKind): void => {
+    const { connId } = selection ?? { connId: null }
+    if (!connId) return
+    void useAppStore.getState().openScriptTab(connId, obj, kind)
+  }, [selection])
 
   const handleNodeClick = (node: TreeNode): void => {
     if (node.kind === 'table' || node.kind === 'view') {
-      void showDetails(node)
+      showViewer(node)
       return
     }
     void toggle(node)
@@ -209,55 +200,12 @@ export function ObjectExplorer(): React.JSX.Element {
         {tree.length === 0 && <div className="tree-empty">Geen verbindingen. Klik ➕ om er een toe te voegen.</div>}
         {renderNodes(tree, 0)}
       </div>
-      {details && (
-        <div className="tree-details">
-          <div className="tree-details-header">
-            <span>
-              {details.kind === 'view' ? 'View' : 'Tabel'}: {details.ref.name}
-            </span>
-            <button className="icon-btn" title="Sluiten" onClick={() => setDetails(null)}>
-              ✕
-            </button>
-          </div>
-          {details.error ? (
-            <div className="tree-details-error">⚠️ {details.error}</div>
-          ) : details.meta ? (
-            <div className="tree-details-body">
-              <table className="details-table">
-                <thead>
-                  <tr>
-                    <th>Kolom</th>
-                    <th>Type</th>
-                    <th>Nullable</th>
-                    <th>Default</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {details.meta.columns.map((c) => (
-                    <tr key={c.name}>
-                      <td>
-                        {c.name}
-                        {c.isPrimaryKey ? ' 🔑' : ''}
-                        {c.isIdentity ? ' (identity)' : ''}
-                      </td>
-                      <td>{c.dataType}</td>
-                      <td>{c.nullable ? 'ja' : 'nee'}</td>
-                      <td className={c.defaultValue == null ? 'cell-null' : ''}>
-                        {c.defaultValue == null ? 'NULL' : String(c.defaultValue)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="details-meta">
-                Rijen: {details.meta.rowCount ?? '—'} · Indexen: {details.meta.indexes.length} · FKs:{' '}
-                {details.meta.foreignKeys.length} · Triggers: {details.meta.triggers.length}
-              </div>
-            </div>
-          ) : (
-            <div className="tree-details-loading">Bezig met laden…</div>
-          )}
-        </div>
+      {selection && (
+        <ObjectViewer
+          selection={selection}
+          onClose={() => setSelection(null)}
+          onScript={handleScript}
+        />
       )}
     </div>
   )

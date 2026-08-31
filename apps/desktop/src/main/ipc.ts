@@ -4,11 +4,13 @@
  */
 
 import { ipcMain } from 'electron'
-import type { ConnectionConfig, ConnectionSecret } from '@nvag/contracts'
-import { connectionStore } from './ipc-bootstrap'
+import type { ConnectionConfig, ConnectionSecret, DbObjectRef, ScriptKind } from '@nvag/contracts'
+import { connectionStore, historyStore } from './ipc-bootstrap'
 import { sessionManager } from './session-manager'
 import { queryRunner } from './query-runner'
 import * as metadata from './metadata-service'
+import * as queryFiles from './query-files'
+import { saveCsv } from './results-export'
 import { checkQuery } from './security/query-guard'
 
 export function registerIpcHandlers(): void {
@@ -52,35 +54,35 @@ export function registerIpcHandlers(): void {
   // ------------------------------------------------------------------ query
   ipcMain.handle(
     'query:run',
-    async (
-      _e,
-      req: { connectionId: string; sql: string; maxRows?: number; selection?: { start: number; end: number } }
-    ) => {
+    (event, req: { connectionId: string; sql: string; maxRows?: number; selection?: { start: number; end: number } }) => {
       // Environment safety (ADR-009): alleen wanneer verbinding bekend is
       const conn = connectionStore.get(req.connectionId)
       if (conn) {
         const guard = checkQuery(req.sql, conn.environment)
         if (!guard.allowed) {
-          return {
-            executionId: '',
-            columns: [],
-            rows: [],
-            truncated: false,
-            rowCount: 0,
-            durationMs: 0,
-            error: `Query geblokkeerd door environment safety (${guard.reasons.join(', ')}). Bevestiging vereist.`,
-            blocked: guard.reasons
-          }
+          return { executionId: '', blocked: guard.reasons }
         }
       }
-      return queryRunner.run(req)
+      // Verbindingsnaam meesturen voor de SQL-history (server-veld).
+      return queryRunner.run({ ...req, server: conn?.name ?? req.connectionId }, event.sender)
     }
   )
+
+  ipcMain.handle('query:start', (_e, executionId: string) => {
+    return queryRunner.start(executionId)
+  })
 
   ipcMain.handle('query:cancel', async (_e, executionId: string) => {
     await queryRunner.cancel(executionId)
     return { ok: true }
   })
+
+  ipcMain.handle(
+    'query:exportCsv',
+    async (event, req: { defaultFileName: string; csv: string }) => {
+      return saveCsv(req, event.sender)
+    }
+  )
 
   // ------------------------------------------------------------------ metadata
   ipcMain.handle('metadata:listDatabases', (_e, connectionId: string) =>
@@ -124,6 +126,35 @@ export function registerIpcHandlers(): void {
     (_e, connectionId: string, db: string, schema: string, table: string) =>
       metadata.getTableMetadata(connectionId, db, schema, table)
   )
+  ipcMain.handle(
+    'metadata:getObjectDefinition',
+    (_e, connectionId: string, obj: DbObjectRef) =>
+      metadata.getObjectDefinition(connectionId, obj)
+  )
+  ipcMain.handle(
+    'metadata:scriptObject',
+    (_e, connectionId: string, obj: DbObjectRef, kind: ScriptKind) =>
+      metadata.scriptObject(connectionId, obj, kind)
+  )
+
+  // ------------------------------------------------------------------ query files
+  ipcMain.handle('queryFiles:open', async (event) => {
+    return queryFiles.openQueryFile(event.sender)
+  })
+
+  ipcMain.handle('queryFiles:save', async (event, content: string, path?: string) => {
+    return queryFiles.saveQueryFile(content, path, event.sender)
+  })
+
+  // ------------------------------------------------------------------ history (eis 19)
+  ipcMain.handle('history:list', (_e, query?: string, limit?: number) => {
+    return historyStore.list(query, limit)
+  })
+
+  ipcMain.handle('history:clear', () => {
+    historyStore.clear()
+    return { ok: true }
+  })
 
   // ------------------------------------------------------------------ app
   ipcMain.handle('app:getVersion', () => process.env.npm_package_version ?? '0.1.0')

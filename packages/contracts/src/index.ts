@@ -200,6 +200,15 @@ export interface DbObjectRef {
   name: string
 }
 
+/** Script Object-acties (F1-5): gegenereerde SQL per object. */
+export type ScriptKind = 'CREATE' | 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE'
+
+export interface ScriptObjectResult {
+  sql: string
+  /** Tabtitel, bijv. 'users — SELECT'. */
+  title: string
+}
+
 // ---------------------------------------------------------------------------
 // Query-uitvoering
 // ---------------------------------------------------------------------------
@@ -225,8 +234,33 @@ export interface QueryRow {
 export type QueryChunk =
   | { kind: 'columns'; columns: QueryColumn[] }
   | { kind: 'rows'; rows: QueryRow[] }
-  | { kind: 'done'; rowCount: number; durationMs: number }
-  | { kind: 'error'; message: string; position?: { line: number; column: number } }
+  | {
+      kind: 'done'
+      rowCount: number
+      durationMs: number
+      /** De runner heeft eerder gestopt dan de provider (maxRows-cap). */
+      truncated?: boolean
+      /** De uitvoering is door de gebruiker geannuleerd. */
+      cancelled?: boolean
+    }
+  | { kind: 'error'; message: string; position?: ErrorPosition }
+  | { kind: 'warning'; message: string; position?: ErrorPosition }
+
+/** Eén resultatenset binnen een query-uitvoering (meerdere sets = tabs in de UI). */
+export interface QueryResultSet {
+  columns: QueryColumn[]
+  rows: QueryRow[]
+  truncated: boolean
+  rowCount: number
+}
+
+export type QueryMessageSeverity = 'error' | 'warning' | 'info'
+
+export interface QueryMessage {
+  severity: QueryMessageSeverity
+  text: string
+  position?: ErrorPosition
+}
 
 export interface QueryStats {
   rowCount: number
@@ -237,6 +271,12 @@ export interface QueryStats {
 export interface ErrorPosition {
   line: number
   column: number
+}
+
+/** Chunk-event dat main process naar de renderer stuurt tijdens streaming. */
+export interface QueryChunkEvent {
+  executionId: string
+  chunk: QueryChunk
 }
 
 // ---------------------------------------------------------------------------
@@ -358,8 +398,26 @@ export interface NvagIpcApi {
 
   // Query
   query: {
-    run(req: QueryRunRequest): Promise<QueryRunResponse>
+    /**
+     * Registreert een uitvoering en geeft direct een executionId terug;
+     * het daadwerkelijk streamen start pas na `start(executionId)`.
+     * Wanneer `blocked` gevuld is, is de query door environment-safety
+     * geweigerd en is `executionId` leeg.
+     */
+    run(req: QueryRunRequest): Promise<QueryRunStartResponse>
+    /** Start het streamen van chunks naar de renderer (`query:chunk`-events). */
+    start(executionId: string): Promise<void>
     cancel(executionId: string): Promise<void>
+    /** Abonneer op gestreamde chunks; retourneert een unsubscribe-functie. */
+    onChunk(cb: (evt: QueryChunkEvent) => void): () => void
+    /**
+     * Sla resultaten op als CSV via een save-dialoog in main process.
+     * `csv` is de RFC-4180-tekst (zonder BOM); main voegt BOM toe voor Excel.
+     */
+    exportCsv(req: {
+      defaultFileName: string
+      csv: string
+    }): Promise<{ canceled: boolean; filePath?: string }>
   }
 
   // Metadata / Object Explorer
@@ -378,6 +436,17 @@ export interface NvagIpcApi {
       schema: string,
       table: string
     ): Promise<TableMetadata>
+    /** Exacte objectdefinitie (CREATE) zoals de provider die kent. */
+    getObjectDefinition(connectionId: string, obj: DbObjectRef): Promise<string>
+    /**
+     * Script Object: genereer dialect-correcte CREATE/SELECT/INSERT/UPDATE/DELETE
+     * voor een object (F1-5); resultaat is bedoeld voor een nieuwe querytab.
+     */
+    scriptObject(
+      connectionId: string,
+      obj: DbObjectRef,
+      kind: ScriptKind
+    ): Promise<ScriptObjectResult>
   }
 
   // Sessiebeheer
@@ -386,9 +455,35 @@ export interface NvagIpcApi {
     close(sessionId: string): Promise<void>
   }
 
+  // Query-bestanden (openen/opslaan via dialoog in main process)
+  queryFiles: {
+    open(): Promise<QueryFileOpenResult>
+    save(content: string, path?: string): Promise<QueryFileSaveResult>
+  }
+
+  // SQL History (eis 19) — lokale uitvoeringsgeschiedenis in SQLite
+  history: {
+    /** Recente uitvoeringen; met `query` wordt er op SQL/server/database gezocht. */
+    list(query?: string, limit?: number): Promise<HistoryEntry[]>
+    clear(): Promise<void>
+  }
+
   app: {
     getVersion(): Promise<string>
   }
+}
+
+export interface QueryFileOpenResult {
+  canceled: boolean
+  path?: string
+  /** Bestandsnaam zonder map (voor tab-titel). */
+  name?: string
+  content?: string
+}
+
+export interface QueryFileSaveResult {
+  canceled: boolean
+  path?: string
 }
 
 export interface QueryRunRequest {
@@ -398,8 +493,36 @@ export interface QueryRunRequest {
   maxRows?: number
 }
 
+// ---------------------------------------------------------------------------
+// SQL History (eis 19)
+// ---------------------------------------------------------------------------
+
+/** Eén uitvoering in de lokale SQL-history. */
+export interface HistoryEntry {
+  id: number
+  /** ISO-tijdstip van uitvoering (UTC). */
+  executedAt: string
+  connectionId: string
+  /** Verbindingsnaam (server) zoals in de Connection Manager. */
+  server: string
+  /** Database waarop de query draaide (indien bekend). */
+  database: string
+  sql: string
+  durationMs: number
+  success: boolean
+  error?: string
+  rowCount: number
+}
+
+export interface QueryRunStartResponse {
+  executionId: string
+  /** Redenen waarom environment-safety de query blokkeerde (executionId is dan leeg). */
+  blocked?: string[]
+}
+
 export interface QueryRunResponse {
   executionId: string
+  /** Eerste resultatenset (backward-compat); bij DML leeg. */
   columns: QueryColumn[]
   rows: QueryRow[]
   truncated: boolean
@@ -407,4 +530,12 @@ export interface QueryRunResponse {
   durationMs: number
   error?: string
   errorPosition?: ErrorPosition
+  /** Redenen waarom environment-safety de query blokkeerde. */
+  blocked?: string[]
+  /** Uitvoering is door de gebruiker geannuleerd. */
+  cancelled?: boolean
+  /** Alle resultatensets (meerdere sets → tabs in de UI). */
+  results?: QueryResultSet[]
+  /** Structured messages-paneel: errors, warnings, info. */
+  messages?: QueryMessage[]
 }

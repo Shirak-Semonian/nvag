@@ -286,6 +286,40 @@ export function createSqliteProvider(): DatabaseProvider {
         .prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name = ? ORDER BY name`)
         .all(table) as { name: string }[]
 
+      // Afhankelijkheden (F1-5): FK-doelen als 'depends-on', objecten die
+      // deze tabel in hun SQL noemen (views, triggers, FK-referenties) als
+      // 'used-by'. SQLite heeft geen catalogus hiervoor; we scannen
+      // sqlite_master.sql op een identifier-wijze vermelding.
+      const dependencies: DependencyInfo[] = []
+      for (const fk of fkMap.values()) {
+        dependencies.push({
+          objectName: fk.referencedTable,
+          objectSchema: fk.referencedSchema ?? 'main',
+          objectType: 'table',
+          direction: 'depends-on'
+        })
+      }
+      const refRows = db
+        .prepare(
+          `SELECT name, type, sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table','view','trigger')`
+        )
+        .all() as { name: string; type: string; sql: string }[]
+      const usedBySeen = new Set<string>()
+      const tableRe = new RegExp(`(^|[^A-Za-z0-9_$])${escapeRegex(table)}(?=$|[^A-Za-z0-9_$])`)
+      for (const r of refRows) {
+        if (r.name === table || r.name.startsWith('sqlite_')) continue
+        if (!tableRe.test(r.sql)) continue
+        const key = `${r.type}:${r.name}`
+        if (usedBySeen.has(key)) continue
+        usedBySeen.add(key)
+        dependencies.push({
+          objectName: r.name,
+          objectSchema: 'main',
+          objectType: r.type === 'view' ? 'view' : r.type === 'trigger' ? 'trigger' : 'table',
+          direction: 'used-by'
+        })
+      }
+
       // Rijtelling (benadering; exact via COUNT is duur op grote tabellen)
       let rowCount: number | undefined
       try {
@@ -315,7 +349,7 @@ export function createSqliteProvider(): DatabaseProvider {
         indexes,
         constraints,
         triggers: trigRows.map((t) => t.name),
-        dependencies: [] as DependencyInfo[],
+        dependencies,
         rowCount
       }
     },
@@ -444,6 +478,11 @@ function quoteIdent(name: string): string {
 
 function quoteLit(name: string): string {
   return `'${name.replace(/'/g, "''")}'`
+}
+
+/** Regex-escape voor identifier-matching in opgeslagen SQL. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** SQLite-waarden naar QueryCellValue; Uint8Array/Buffer blijft binair. */

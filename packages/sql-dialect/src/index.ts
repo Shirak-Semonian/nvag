@@ -7,7 +7,7 @@
  * F2: scripting (meerstatement-scripts splitsen/uitvoeren).
  */
 
-import type { ErrorPosition, SqlDialectId } from '@nvag/contracts'
+import type { ErrorPosition, ScriptKind, SqlDialectId, TableMetadata } from '@nvag/contracts'
 
 export interface SqlDialect {
   id: SqlDialectId
@@ -312,6 +312,85 @@ function parseSqliteErrorPosition(
 }
 
 // ---------------------------------------------------------------------------
+// Error-positie (T-SQL)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extraheer de foutpositie uit een SQL Server-foutmelding, teruggezocht in de
+ * uitgevoerde SQL. Ondersteunde patronen (message-only, zoals tedious die
+ * levert): `Incorrect syntax near 'X'`, `Invalid column name/object name 'X'`,
+ * `Cannot find the object "X" ...`, `Must declare the scalar variable "@X"`,
+ * `The multi-part identifier "X" could not be bound`, `Unclosed quotation
+ * mark ...`, `'X' is not a recognized built-in function name`.
+ * Retourneert null wanneer de positie niet bepaald kan worden.
+ */
+function parseTsqlErrorPosition(
+  sql: string,
+  message: string
+): { line: number; column: number } | null {
+  if (typeof sql !== 'string' || typeof message !== 'string') return null
+  const trimmed = message.trim()
+
+  // Token tussen enkele quotes: near / invalid column / invalid object / variable / etc.
+  const quotedToken =
+    /(?:Incorrect syntax near|Invalid column name|Invalid object name|Invalid schema name|Ambiguous column name|Unclosed quotation mark after the character string)\s+'([^']+)'/i.exec(
+      trimmed
+    ) ??
+    /'([^']+)' is not a recognized built-in function name/i.exec(trimmed)
+  if (quotedToken) {
+    return locateTsqlToken(sql, quotedToken[1] ?? '')
+  }
+
+  // Token tussen dubbele quotes: object-verwijzingen
+  const doubleQuoted =
+    /(?:Cannot find the object|The multi-part identifier)\s+"([^"]+)"/i.exec(trimmed)
+  if (doubleQuoted) {
+    return locateTsqlToken(sql, doubleQuoted[1] ?? '')
+  }
+
+  // Scalar variable: @naam (message gebruikt dubbele quotes)
+  const scalarVar = /Must declare the scalar variable\s+"(@[^"]+)"/i.exec(trimmed)
+  if (scalarVar) {
+    return locateToken(sql, scalarVar[1] ?? '', { quoted: true })
+  }
+
+  return null
+}
+
+/** Zoek een T-SQL token in de SQL: eerst als identifier, daarna als gebrackete identifier. */
+function locateTsqlToken(
+  sql: string,
+  rawToken: string
+): { line: number; column: number } | null {
+  const token = stripSurroundingQuotes(rawToken.trim())
+  if (token.length === 0) return null
+  if (token.startsWith('@')) {
+    return locateVariable(sql, token)
+  }
+  const asIdent = locateToken(sql, token, { quoted: false })
+  if (asIdent) return asIdent
+  // T-SQL geciteerde identifier: [naam]
+  return locateToken(sql, `[${token}]`, { quoted: true })
+}
+
+/** Zoek een @-variabele als token, zonder matches in strings/comments. */
+function locateVariable(
+  sql: string,
+  name: string
+): { line: number; column: number } | null {
+  const re = new RegExp(`(^|[^A-Za-z0-9_$@])${escapeRegExp(name)}(?=$|[^A-Za-z0-9_$@])`, 'g')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(sql)) !== null) {
+    const prefix = m[1] ?? ''
+    const idx = m.index + prefix.length
+    if (!insideStringOrComment(sql, idx)) {
+      return offsetToLineColumn(sql, idx)
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Dialecten
 // ---------------------------------------------------------------------------
 
@@ -321,6 +400,8 @@ interface DialectShape {
   closeQuote: string
   literalQuote: string
   buildLimit(maxRows?: number, offset?: number): string
+  /** Optionele dialect-specifieke error-positie-parser (sql-gebruikend). */
+  parseError?(sql: string, message: string): { line: number; column: number } | null
 }
 
 function makeDialect(config: DialectShape): SqlDialect {
@@ -332,6 +413,10 @@ function makeDialect(config: DialectShape): SqlDialect {
     quoteLiteral: (value) => quoteLit(config.literalQuote, value),
     buildLimit: (maxRows, offset) => config.buildLimit(maxRows, offset),
     parseErrorPosition: (message, sql) => {
+      if (config.parseError && sql !== undefined) {
+        const pos = config.parseError(sql, message)
+        return pos ? { line: pos.line, column: pos.column } : null
+      }
       if (config.id !== 'sqlite') return null
       if (sql !== undefined) {
         const pos = parseSqliteErrorPosition(sql, message)
@@ -373,7 +458,8 @@ const DIALECTS: Record<SqlDialectId, SqlDialect> = {
       if (m !== null && o === null) return `TOP (${m})`
       if (m === null) return `OFFSET ${o} ROWS`
       return `OFFSET ${o} ROWS FETCH NEXT ${m} ROWS ONLY`
-    }
+    },
+    parseError: (sql, message) => parseTsqlErrorPosition(sql, message)
   }),
   postgres: makeDialect({
     id: 'postgres',
@@ -739,4 +825,232 @@ export function buildSelectStar(
     : d.quoteIdentifier(table)
   const limit = d.buildLimit(maxRows, offset)
   return `SELECT * FROM ${name}${limit ? ` ${limit}` : ''}`
+}
+
+// ---------------------------------------------------------------------------
+// Script Object (F1-5) — dialect-correcte CREATE/DML-generatie uit metadata.
+// Alle identifiers worden per dialect gequoted; waarden komen als `?`
+// placeholders (de gebruiker vult ze in vóór uitvoering).
+// ---------------------------------------------------------------------------
+
+function renderColumnType(col: TableMetadata['columns'][number]): string {
+  const base = col.dataType.toUpperCase() || 'TEXT'
+  if (col.length !== undefined && col.length !== null) return `${base}(${col.length})`
+  if (col.precision !== undefined && col.precision !== null) {
+    if (col.scale !== undefined && col.scale !== null) return `${base}(${col.precision},${col.scale})`
+    return `${base}(${col.precision})`
+  }
+  return base
+}
+
+function identityClause(dialect: SqlDialectId): string {
+  switch (dialect) {
+    case 'sqlite':
+      return '' // SQLite: AUTOINCREMENT alleen inline op een INTEGER PRIMARY KEY
+    case 'tsql':
+      return ' IDENTITY(1,1)'
+    case 'postgres':
+    case 'db2':
+    case 'oracle':
+      return ' GENERATED ALWAYS AS IDENTITY'
+    case 'mysql':
+    case 'snowflake':
+      return ' AUTO_INCREMENT'
+  }
+}
+
+/**
+ * Dialect-correcte CREATE TABLE op basis van tabelmetadata.
+ * Bevat: kolommen (type/lengte, DEFAULT, NOT NULL, IDENTITY), primary key,
+ * UNIQUE-constraints (uit unieke indexen), foreign keys en losse
+ * CREATE INDEX-statements voor niet-unieke user-indexen.
+ */
+export function buildCreateTable(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  meta: TableMetadata
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+
+  const pkCols =
+    meta.primaryKey.length > 0
+      ? meta.primaryKey
+      : meta.columns.filter((c) => c.isPrimaryKey).map((c) => c.name)
+  const pkSet = new Set(pkCols)
+
+  const lines: string[] = []
+  let inlineIdentityPk: string | null = null
+
+  for (const col of meta.columns) {
+    if (col.isComputed) continue // geen definitie beschikbaar in metadata
+    let def = `${d.quoteIdentifier(col.name)} ${renderColumnType(col)}`
+    if (col.isIdentity) {
+      def += identityClause(dialect)
+      if (dialect === 'sqlite' && col.isPrimaryKey && pkSet.size === 1) {
+        def += ' PRIMARY KEY AUTOINCREMENT'
+        inlineIdentityPk = col.name
+      }
+    }
+    if (col.defaultValue !== null && col.defaultValue !== undefined) {
+      def += ` DEFAULT ${col.defaultValue}`
+    }
+    if (!col.nullable) {
+      def += ' NOT NULL'
+    }
+    lines.push(def)
+  }
+
+  const tableConstraints: string[] = []
+  if (pkSet.size > 0 && inlineIdentityPk === null) {
+    tableConstraints.push(
+      `PRIMARY KEY (${[...pkSet].map((c) => d.quoteIdentifier(c)).join(', ')})`
+    )
+  }
+  for (const idx of meta.indexes) {
+    if (idx.isUnique && !idx.isPrimaryKey && !idx.name.startsWith('sqlite_autoindex_')) {
+      tableConstraints.push(
+        `UNIQUE (${idx.columns.map((c) => d.quoteIdentifier(c)).join(', ')})`
+      )
+    }
+  }
+  for (const fk of meta.foreignKeys) {
+    let s = `FOREIGN KEY (${fk.columns
+      .map((c) => d.quoteIdentifier(c))
+      .join(', ')}) REFERENCES ${d.quoteQualifiedName(fk.referencedSchema, fk.referencedTable)} (${fk.referencedColumns
+      .map((c) => d.quoteIdentifier(c))
+      .join(', ')})`
+    if (fk.onDelete && !/NO ACTION/i.test(fk.onDelete)) s += ` ON DELETE ${fk.onDelete}`
+    if (fk.onUpdate && !/NO ACTION/i.test(fk.onUpdate)) s += ` ON UPDATE ${fk.onUpdate}`
+    tableConstraints.push(s)
+  }
+
+  const body = [...lines, ...tableConstraints]
+  const createStmt =
+    body.length === 0
+      ? `CREATE TABLE ${name};`
+      : `CREATE TABLE ${name} (\n  ${body.join(',\n  ')}\n);`
+
+  // Niet-unieke user-indexen als losse statements (unieke indexen zijn al
+  // als UNIQUE-constraint opgenomen; PK-autoindexen slaan we over).
+  const indexStmts: string[] = []
+  for (const idx of meta.indexes) {
+    if (idx.isPrimaryKey || idx.isUnique || idx.name.startsWith('sqlite_autoindex_')) continue
+    indexStmts.push(
+      `CREATE INDEX ${d.quoteIdentifier(idx.name)} ON ${name} (${idx.columns
+        .map((c) => d.quoteIdentifier(c))
+        .join(', ')});`
+    )
+  }
+
+  return indexStmts.length > 0 ? `${createStmt}\n${indexStmts.join('\n')}` : createStmt
+}
+
+/** SELECT met expliciete kolomlijst; zonder kolommen `SELECT *`. */
+export function scriptSelect(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  columns?: string[]
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  if (!columns || columns.length === 0) {
+    return `SELECT *\nFROM ${name};`
+  }
+  return `SELECT ${columns.map((c) => d.quoteIdentifier(c)).join(', ')}\nFROM ${name};`
+}
+
+/** INSERT met expliciete kolomlijst en `?`-placeholders als waarden. */
+export function scriptInsert(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  columns: string[]
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  const cols = columns.map((c) => d.quoteIdentifier(c)).join(', ')
+  const placeholders = columns.map(() => '?').join(', ')
+  return `INSERT INTO ${name} (${cols})\nVALUES (${placeholders});`
+}
+
+/** UPDATE: niet-PK-kolommen in SET, PK-kolommen in WHERE (beide `?`). */
+export function scriptUpdate(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  columns: string[],
+  pkColumns: string[]
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  const settable = columns.filter((c) => !pkColumns.includes(c))
+  const setClause = (settable.length > 0 ? settable : columns)
+    .map((c) => `${d.quoteIdentifier(c)} = ?`)
+    .join(', ')
+
+  if (pkColumns.length > 0) {
+    const where = pkColumns.map((c) => `${d.quoteIdentifier(c)} = ?`).join(' AND ')
+    return `UPDATE ${name}\nSET ${setClause}\nWHERE ${where};`
+  }
+  return `UPDATE ${name}\nSET ${setClause}\n-- Let op: geen primary key gevonden; vul zelf een WHERE in\nWHERE <voorwaarde>;`
+}
+
+/** DELETE op basis van de primary key; zonder PK een invulbare WHERE. */
+export function scriptDelete(
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  pkColumns: string[]
+): string {
+  const d = DIALECTS[dialect]
+  const name = d.quoteQualifiedName(schema, table)
+  if (pkColumns.length > 0) {
+    const where = pkColumns.map((c) => `${d.quoteIdentifier(c)} = ?`).join(' AND ')
+    return `DELETE FROM ${name}\nWHERE ${where};`
+  }
+  return `DELETE FROM ${name}\n-- Let op: geen primary key gevonden; vul zelf een WHERE in\nWHERE <voorwaarde>;`
+}
+
+/**
+ * Script Object-dispatch (F1-5): genereer dialect-correcte SQL voor een tabel.
+ * INSERT laat identity-kolommen buiten de kolomlijst; UPDATE/DELETE gebruiken
+ * de primary key als WHERE-basis.
+ */
+export function scriptObject(
+  kind: ScriptKind,
+  dialect: SqlDialectId,
+  table: string,
+  schema: string | null | undefined,
+  meta: TableMetadata
+): string {
+  switch (kind) {
+    case 'CREATE':
+      return buildCreateTable(dialect, table, schema, meta)
+    case 'SELECT':
+      return scriptSelect(dialect, table, schema, meta.columns.map((c) => c.name))
+    case 'INSERT':
+      return scriptInsert(
+        dialect,
+        table,
+        schema,
+        meta.columns.filter((c) => !c.isIdentity).map((c) => c.name)
+      )
+    case 'UPDATE':
+      return scriptUpdate(
+        dialect,
+        table,
+        schema,
+        meta.columns.map((c) => c.name),
+        meta.primaryKey
+      )
+    case 'DELETE':
+      return scriptDelete(dialect, table, schema, meta.primaryKey)
+    default: {
+      const exhaustive: never = kind
+      throw new Error(`Onbekende ScriptKind: ${String(exhaustive)}`)
+    }
+  }
 }

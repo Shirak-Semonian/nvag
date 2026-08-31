@@ -114,14 +114,49 @@ describe('App (renderer-integratie)', () => {
     expect(screen.getByText('Maak het bestand aan wanneer het niet bestaat')).toBeTruthy()
   })
 
-  it('toont kolomdetails bij klik op een tabel (SAL-11)', async () => {
+  it('toont objecteigenschappen per objecttype in de Object Viewer (F1-5)', async () => {
     render(<App />)
     await expandToTables()
     fireEvent.click(screen.getByText('klanten'))
     await waitFor(() => expect(screen.getByText('Tabel: klanten')).toBeTruthy())
-    expect(await screen.findByText(/id 🔑/)).toBeTruthy()
+    // Algemeen: eigenschappen
+    expect(await screen.findByText('Rijen')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Kolommen' })).toBeTruthy()
+    // Kolommen-sectie
+    fireEvent.click(screen.getByRole('tab', { name: 'Kolommen' }))
+    expect(screen.getByText(/id 🔑/)).toBeTruthy()
     expect(screen.getByText('naam')).toBeTruthy()
-    expect(await screen.findByText(/Rijen: 2/)).toBeTruthy()
+    expect(screen.getAllByText('TEXT').length).toBeGreaterThan(0)
+    // Definitie-sectie toont de CREATE
+    fireEvent.click(screen.getByRole('tab', { name: 'Definitie' }))
+    expect(await screen.findByText(/CREATE TABLE/)).toBeTruthy()
+  })
+
+  it('opent Script-as-tabbladen met dialect-correcte SQL (F1-5)', async () => {
+    render(<App />)
+    await expandToTables()
+    fireEvent.click(screen.getByText('klanten'))
+    await waitFor(() => expect(screen.getByText('Tabel: klanten')).toBeTruthy())
+
+    fireEvent.click(screen.getByRole('button', { name: 'SELECT' }))
+    await waitFor(() => {
+      const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
+      expect(editor.value).toBe('SELECT "id", "naam"\nFROM "main"."klanten";')
+    })
+    expect(screen.getByText('klanten — SELECT')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'CREATE' }))
+    await waitFor(() => {
+      const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
+      expect(editor.value).toContain('CREATE TABLE "main"."klanten" (')
+      expect(editor.value).toContain('"id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'INSERT' }))
+    await waitFor(() => {
+      const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
+      expect(editor.value).toBe('INSERT INTO "main"."klanten" ("naam")\nVALUES (?);')
+    })
   })
 
   it('opent een SELECT-tab bij dubbelklik op een tabel en draait de query (SAL-11)', async () => {

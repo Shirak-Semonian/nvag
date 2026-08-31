@@ -4,10 +4,15 @@ import type {
   ConnectionConfig,
   DatabaseInfo,
   FuncInfo,
+  HistoryEntry,
   NvagIpcApi,
   ProcInfo,
-  QueryRunResponse,
+  QueryChunkEvent,
+  QueryFileOpenResult,
+  QueryFileSaveResult,
+  QueryRunStartResponse,
   SchemaInfo,
+  ScriptObjectResult,
   SeqInfo,
   ServerInfo,
   TableInfo,
@@ -29,8 +34,17 @@ const api: NvagIpcApi = {
     test: handle<TestResult>('connections:test')
   },
   query: {
-    run: handle<QueryRunResponse>('query:run'),
-    cancel: handle<void>('query:cancel')
+    run: handle<QueryRunStartResponse>('query:run'),
+    start: handle<void>('query:start'),
+    cancel: handle<void>('query:cancel'),
+    onChunk(cb: (evt: QueryChunkEvent) => void): () => void {
+      const listener = (_e: Electron.IpcRendererEvent, evt: QueryChunkEvent): void => cb(evt)
+      ipcRenderer.on('query:chunk', listener)
+      return () => {
+        ipcRenderer.removeListener('query:chunk', listener)
+      }
+    },
+    exportCsv: handle<{ canceled: boolean; filePath?: string }>('query:exportCsv')
   },
   metadata: {
     listDatabases: handle<DatabaseInfo[]>('metadata:listDatabases'),
@@ -41,11 +55,21 @@ const api: NvagIpcApi = {
     listFunctions: handle<FuncInfo[]>('metadata:listFunctions'),
     listTriggers: handle<TriggerInfo[]>('metadata:listTriggers'),
     listSequences: handle<SeqInfo[]>('metadata:listSequences'),
-    getTableMetadata: handle<TableMetadata>('metadata:getTableMetadata')
+    getTableMetadata: handle<TableMetadata>('metadata:getTableMetadata'),
+    getObjectDefinition: handle<string>('metadata:getObjectDefinition'),
+    scriptObject: handle<ScriptObjectResult>('metadata:scriptObject')
   },
   sessions: {
     open: handle<{ sessionId: string; serverInfo: ServerInfo }>('sessions:open'),
     close: handle<void>('sessions:close')
+  },
+  queryFiles: {
+    open: handle<QueryFileOpenResult>('queryFiles:open'),
+    save: handle<QueryFileSaveResult>('queryFiles:save')
+  },
+  history: {
+    list: handle<HistoryEntry[]>('history:list'),
+    clear: handle<void>('history:clear')
   },
   app: {
     getVersion: handle<string>('app:getVersion')
