@@ -1,92 +1,219 @@
 /**
- * Query Runner — voert queries uit via de provider en bouwt een
- * compleet QueryRunResponse voor de renderer.
+ * Query Runner — voert queries uit via de provider en streamt chunks
+ * naar de renderer over IPC (`query:chunk`-events).
  *
- * F0: buffert rijen (maxRows-cap, ADR-007); streaming in F1.
+ * F1-4 (SAL-17): twee-fasen-protocol om chunk-verlies te voorkomen:
+ *   1. `run(req)`   — registreert een uitvoering en geeft executionId terug
+ *                     (er wordt nog niets uitgevoerd).
+ *   2. `start(id)`  — consumeert de provider-iterable en stuurt elke chunk
+ *                     naar de window die de query startte.
+ *   `cancel(id)`    — vraagt annulering aan; de runner stopt en stuurt een
+ *                     done-chunk met `cancelled: true`.
+ *
+ * De maxRows-cap (standaard provider.capabilities.maxResultRowsDefault) wordt
+ * hier afgedwongen op het aantal rijen dat naar de renderer gaat; bij
+ * overschrijding stopt de runner en stuurt een warning-chunk.
  */
 
 import { randomUUID } from 'node:crypto'
 import type {
-  QueryColumn,
-  QueryRow,
-  QueryRunResponse,
-  QueryStats
+  DbSession,
+  QueryChunk,
+  QueryRunStartResponse
 } from '@nvag/contracts'
 import { registry } from './registry'
 import { sessionManager } from './session-manager'
+import type { HistoryStore } from './history-store'
 
 export interface RunRequest {
   connectionId: string
   sql: string
   maxRows?: number
+  selection?: { start: number; end: number }
+  /** Verbindingsnaam (server) voor de SQL-history; ingevuld door ipc.ts. */
+  server?: string
+}
+
+/**
+ * Minimale sender-interface: de runner heeft alleen `send` + `isDestroyed`
+ * nodig (electron.WebContents voldoet structureel; tests kunnen een fake
+ * meegeven).
+ */
+export interface QuerySender {
+  send(channel: string, ...args: unknown[]): void
+  isDestroyed(): boolean
+}
+
+interface PreparedExecution {
+  session: DbSession
+  providerId: string
+  req: RunRequest
+}
+
+interface ActiveExecution {
+  sender: QuerySender
+  cancelRequested: boolean
 }
 
 export class QueryRunner {
-  private running = new Map<string, { cancel: () => Promise<void> }>()
+  private active = new Map<string, ActiveExecution>()
+  private prepared = new Map<string, PreparedExecution>()
 
-  async run(req: RunRequest): Promise<QueryRunResponse> {
+  /** SQL-history (eis 19); geïnjecteerd vanuit ipc-bootstrap. */
+  historyStore: HistoryStore | null = null
+
+  /**
+   * Registreert een uitvoering; consumeert nog niets.
+   * Gooit wanneer er geen actieve sessie is voor de verbinding.
+   */
+  run(req: RunRequest, sender: QuerySender): QueryRunStartResponse {
     const session = sessionManager.getByConnectionId(req.connectionId)
     if (!session) {
       throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
     }
     const provider = registry.get(session.providerId)
     const executionId = randomUUID()
+    this.active.set(executionId, { sender, cancelRequested: false })
+    this.prepared.set(executionId, {
+      session,
+      providerId: provider.id,
+      req
+    })
+    return { executionId }
+  }
 
-    const columns: QueryColumn[] = []
-    const rows: QueryRow[] = []
-    let rowCount = 0
-    let error: string | undefined
-    let errorPosition: QueryRunResponse['errorPosition']
-    let truncated = false
-    let durationMs = 0
+  /** Start het streamen; resolveert wanneer de uitvoering is afgelopen. */
+  async start(executionId: string): Promise<void> {
+    const active = this.active.get(executionId)
+    const prepared = this.prepared.get(executionId)
+    if (!active || !prepared) return
 
+    const { session, providerId, req } = prepared
+    const provider = registry.get(providerId)
     const maxRows = req.maxRows ?? provider.capabilities.maxResultRowsDefault
+    const start = performance.now()
+    let delivered = 0
+    let providerRowCount = 0
+    let error: string | undefined
+    let truncated = false
+    let finished = false
+
+    const send = (chunk: QueryChunk): void => {
+      if (active.sender.isDestroyed()) return
+      active.sender.send('query:chunk', { executionId, chunk })
+    }
+
+    const warnTruncated = (): void => {
+      send({
+        kind: 'warning',
+        message: `Resultaat afgekapt op ${maxRows} rijen (max-rij-cap). Verfijn je query of verhoog de cap.`
+      })
+    }
 
     try {
-      const iter = provider.executeQuery(session, req.sql, { maxRows })
+      const iter = provider.executeQuery(session, req.sql, {
+        maxRows,
+        selection: req.selection
+      })
       for await (const chunk of iter) {
-        if (chunk.kind === 'columns') {
-          columns.push(...chunk.columns)
+        if (active.cancelRequested) break
+
+        if (chunk.kind === 'columns' || chunk.kind === 'warning') {
+          send(chunk)
         } else if (chunk.kind === 'rows') {
-          for (const row of chunk.rows) {
-            if (rows.length >= maxRows) {
-              truncated = true
-              break
-            }
-            rows.push(row)
-            rowCount++
+          const remaining = maxRows - delivered
+          if (remaining <= 0) {
+            truncated = true
+            warnTruncated()
+            break
           }
-        } else if (chunk.kind === 'done') {
-          durationMs = chunk.durationMs
-          if (rowCount === 0 && chunk.rowCount > 0) rowCount = chunk.rowCount
+          if (chunk.rows.length > remaining) {
+            send({ kind: 'rows', rows: chunk.rows.slice(0, remaining) })
+            delivered += remaining
+            truncated = true
+            warnTruncated()
+            break
+          }
+          send(chunk)
+          delivered += chunk.rows.length
         } else if (chunk.kind === 'error') {
           error = chunk.message
-          errorPosition = chunk.position
+          send(chunk)
+          finished = true
+          break
+        } else if (chunk.kind === 'done') {
+          providerRowCount = chunk.rowCount
+          send({
+            ...chunk,
+            truncated: truncated || chunk.truncated === true,
+            cancelled: active.cancelRequested
+          })
+          finished = true
+          break
         }
+      }
+
+      if (!finished) {
+        send({
+          kind: 'done',
+          rowCount: delivered,
+          durationMs: Math.round(performance.now() - start),
+          truncated,
+          cancelled: active.cancelRequested
+        })
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
-    }
+      send({
+        kind: 'error',
+        message: error
+      })
+    } finally {
+      this.active.delete(executionId)
+      this.prepared.delete(executionId)
 
-    return {
-      executionId,
-      columns,
-      rows,
-      truncated,
-      rowCount,
-      durationMs,
-      error,
-      errorPosition
+      // SQL-history (eis 19): elke uitvoering vastleggen — datum/tijd, server,
+      // database, SQL, execution time, succes/fout, rowcount.
+      const history = this.historyStore
+      if (history) {
+        try {
+          history.add({
+            connectionId: req.connectionId,
+            server: req.server ?? req.connectionId,
+            database: session.database ?? '',
+            sql: req.sql,
+            durationMs: Math.round(performance.now() - start),
+            success: !error && !active.cancelRequested,
+            ...(error ? { error } : {}),
+            rowCount: providerRowCount > 0 ? providerRowCount : delivered
+          })
+        } catch {
+          // History is best-effort; een fout hier mag de query niet breken.
+        }
+      }
     }
   }
 
   async cancel(executionId: string): Promise<void> {
-    const entry = this.running.get(executionId)
-    if (entry) await entry.cancel()
+    const active = this.active.get(executionId)
+    if (!active || active.cancelRequested) return
+    active.cancelRequested = true
+
+    // Provider-cancel aanroepen waar ondersteund (bijv. sessie sluiten).
+    const prepared = this.prepared.get(executionId)
+    if (prepared) {
+      const provider = registry.get(prepared.providerId)
+      try {
+        await provider.cancel(prepared.session, executionId)
+      } catch {
+        // cancel is best-effort; de runner stopt hoe dan ook met consumeren.
+      }
+    }
   }
 
-  getStats(_executionId: string): Promise<QueryStats> {
-    return Promise.resolve({ rowCount: 0, durationMs: 0 })
+  /** Aantal actieve uitvoeringen (diagnostiek/tests). */
+  get activeCount(): number {
+    return this.active.size
   }
 }
 
