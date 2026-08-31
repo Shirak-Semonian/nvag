@@ -45,6 +45,8 @@ export interface ProviderContractHarness {
   makeLimitQuery(table: string, n: number): string
   /** Standaard maxRows-cap van de provider (default 1000). */
   maxRows?: number
+  /** Schema waarin de fixture-tabellen staan (default 'main'; PG: 'public', MSSQL: 'dbo'). */
+  schema?: string
   /** Multi-statement-beleid: weigeren (MULTIPLE_STATEMENTS) of toestaan. */
   multipleStatements?: 'reject' | 'allow'
   /** Tests die voor deze provider niet gelden. */
@@ -167,7 +169,7 @@ export function runProviderContractTests(
         const meta = await provider.getTableMetadata(
           session,
           session.database,
-          'main',
+          harness.schema ?? 'main',
           harness.metadataTable
         )
         const cols = meta.columns.map((c) => c.name)
@@ -181,7 +183,7 @@ export function runProviderContractTests(
         const def = await provider.getObjectDefinition(session, {
           type: 'table',
           database: session.database,
-          schema: 'main',
+          schema: harness.schema ?? 'main',
           name: harness.metadataTable
         })
         expect(def.toLowerCase()).toContain('create')

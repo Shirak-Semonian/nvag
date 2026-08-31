@@ -26,7 +26,15 @@ environment-safety (query-guard).
 schrijfacties in de UI op alle omgevingen (nog geen bevestigingsflow) —
 acceptabel voor deze SELECT-only fase.
 
-**Volgende**: Fase 1 (SQL Server, PostgreSQL, MySQL-providers + core v1).
+**Fase 1 (in uitvoering)**: providers (SQL Server, PostgreSQL, MySQL) +
+streaming query-runner (chunks → progressieve grid, cancel + timer) +
+results op AG Grid v36 (sorteren/filteren/kopiëren/NULL, multi-set tabs,
+Results to Text/File) + object viewer/scripting + query-editor-uitbreiding
+zijn opgeleverd; zie [docs/03-roadmap.md](docs/03-roadmap.md) voor de
+done-criteria per stap.
+
+**Volgende**: resterende Fase 1-stappen (export, env-safety, Db2, multiple
+connections) en daarna Fase 2.
 
 ## Doel
 

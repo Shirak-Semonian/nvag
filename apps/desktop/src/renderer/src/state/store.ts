@@ -473,10 +473,11 @@ export const useAppStore = create<AppState>((set, get) => {
     if (!tab) return
     const res = await window.nvag.queryFiles.save(tab.sql, tab.filePath)
     if (res.canceled || !res.path) return
+    const filePath: string = res.path
     set((s) => ({
       tabs: s.tabs.map((t) =>
         t.id === tabId
-          ? { ...t, filePath: res.path, dirty: false, title: baseName(res.path) }
+          ? { ...t, filePath, dirty: false, title: baseName(filePath) }
           : t
       )
     }))
@@ -487,10 +488,11 @@ export const useAppStore = create<AppState>((set, get) => {
     if (!tab) return
     const res = await window.nvag.queryFiles.save(tab.sql)
     if (res.canceled || !res.path) return
+    const filePath: string = res.path
     set((s) => ({
       tabs: s.tabs.map((t) =>
         t.id === tabId
-          ? { ...t, filePath: res.path, dirty: false, title: baseName(res.path) }
+          ? { ...t, filePath, dirty: false, title: baseName(filePath) }
           : t
       )
     }))

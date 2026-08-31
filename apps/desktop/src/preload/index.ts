@@ -3,6 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type {
   ConnectionConfig,
   DatabaseInfo,
+  ExportResult,
   FuncInfo,
   HistoryEntry,
   NvagIpcApi,
@@ -44,7 +45,8 @@ const api: NvagIpcApi = {
         ipcRenderer.removeListener('query:chunk', listener)
       }
     },
-    exportCsv: handle<{ canceled: boolean; filePath?: string }>('query:exportCsv')
+    exportCsv: handle<{ canceled: boolean; filePath?: string }>('query:exportCsv'),
+    exportResults: handle<ExportResult>('query:exportResults')
   },
   metadata: {
     listDatabases: handle<DatabaseInfo[]>('metadata:listDatabases'),

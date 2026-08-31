@@ -8,6 +8,7 @@
 
 import type { DatabaseProvider, ProviderRegistry } from '@nvag/contracts'
 import { createSqliteProvider } from '@nvag/provider-sqlite'
+import { createSqlServerProvider } from '@nvag/provider-sqlserver'
 
 class Registry implements ProviderRegistry {
   private providers = new Map<string, DatabaseProvider>()
@@ -35,4 +36,5 @@ export const registry: ProviderRegistry = new Registry()
 
 export function registerBuiltinProviders(): void {
   registry.register(createSqliteProvider())
+  registry.register(createSqlServerProvider())
 }

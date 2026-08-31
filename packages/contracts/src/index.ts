@@ -12,6 +12,9 @@
 
 export type Environment = 'DEV' | 'TEST' | 'ACC' | 'PROD'
 
+/** Severity van de environment-safety-guard (ADR-009, F1-8). */
+export type GuardSeverity = 'warn' | 'confirm'
+
 export type AuthMethod =
   | 'username-password'
   | 'windows'
@@ -418,6 +421,12 @@ export interface NvagIpcApi {
       defaultFileName: string
       csv: string
     }): Promise<{ canceled: boolean; filePath?: string }>
+    /**
+     * Exporteren (F1-7): CSV (papaparse) of XLSX (exceljs), naar bestand
+     * (save-dialoog) of klembord. Logic in main process; renderer stuurt
+     * alleen kolommen + rijwaarden mee.
+     */
+    exportResults(req: ExportRequest): Promise<ExportResult>
   }
 
   // Metadata / Object Explorer
@@ -491,6 +500,8 @@ export interface QueryRunRequest {
   sql: string
   selection?: { start: number; end: number }
   maxRows?: number
+  /** Environment-safety (F1-8): gebruiker bevestigde de query in de dialoog. */
+  confirmed?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -518,6 +529,51 @@ export interface QueryRunStartResponse {
   executionId: string
   /** Redenen waarom environment-safety de query blokkeerde (executionId is dan leeg). */
   blocked?: string[]
+  /** Severity van de blokkade: 'confirm' → dialoog; 'warn' → uitvoeren met waarschuwing. */
+  guardSeverity?: GuardSeverity
+}
+
+// ---------------------------------------------------------------------------
+// Resultaten exporteren (F1-7, SAL-20) — CSV (papaparse) en XLSX (exceljs)
+// ---------------------------------------------------------------------------
+
+export type ExportFormat = 'csv' | 'xlsx'
+
+/** Doel van een export: save-dialoog naar bestand, of systeemklembord. */
+export type ExportTarget = 'file' | 'clipboard'
+
+/** Kolomdefinitie voor export (naam + optioneel datatype). */
+export interface ExportColumn {
+  name: string
+  dataType?: string
+}
+
+export interface ExportRequest {
+  format: ExportFormat
+  target: ExportTarget
+  /** Standaard bestandsnaam (zonder extensie) voor de save-dialoog. */
+  fileName: string
+  columns: ExportColumn[]
+  /**
+   * Rijen als platte waardes in kolomvolgorde (kolom i ↔ columns[i]).
+   * Waardes zijn QueryCellValue-achtig; bigint/Uint8Array worden
+   * genormaliseerd (string resp. "[BLOB n bytes]").
+   */
+  rows: unknown[][]
+  /** CSV-scheidingsteken; standaard ';' (Excel NL-locale). */
+  delimiter?: ';' | ',' | '\t'
+}
+
+export interface ExportResult {
+  /** file-target: gebruiker annuleerde de save-dialoog. */
+  canceled?: boolean
+  /** file-target: gekozen pad. */
+  filePath?: string
+  /** clipboard-target: gelukt. */
+  ok?: boolean
+  /** Aantal geëxporteerde rijen (zonder header). */
+  rowCount?: number
+  error?: string
 }
 
 export interface QueryRunResponse {

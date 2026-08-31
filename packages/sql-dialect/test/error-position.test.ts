@@ -111,10 +111,86 @@ describe('wrapErrorPosition — legacy zonder SQL', () => {
 })
 
 describe('wrapErrorPosition — overige dialecten', () => {
-  it('retourneren null (F1)', () => {
-    for (const d of ['tsql', 'postgres', 'mysql', 'db2', 'oracle', 'snowflake'] as const) {
+  it('retourneren null (F1: alleen sqlite + tsql geïmplementeerd)', () => {
+    for (const d of ['postgres', 'mysql', 'db2', 'oracle', 'snowflake'] as const) {
       expect(wrapErrorPosition(d, 'near "x": syntax error', 'SELECT x')).toBeNull()
     }
+  })
+})
+
+describe('wrapErrorPosition — T-SQL (tsql)', () => {
+  it('Incorrect syntax near TOKEN', () => {
+    const pos = wrapErrorPosition('tsql', "Incorrect syntax near 'FRM'.", 'SELECT * FRM users')
+    expect(pos).toEqual({ line: 1, column: 10 })
+  })
+
+  it('Incorrect syntax near keyword', () => {
+    const pos = wrapErrorPosition('tsql', "Incorrect syntax near 'FROM'.", 'SELECT FROM t')
+    expect(pos).toEqual({ line: 1, column: 8 })
+  })
+
+  it('Incorrect syntax near in meerregelige SQL (regel 2)', () => {
+    const pos = wrapErrorPosition(
+      'tsql',
+      "Incorrect syntax near 'users'.",
+      'SELECT *\nFROM users WHERE'
+    )
+    expect(pos).toEqual({ line: 2, column: 6 })
+  })
+
+  it('Invalid column name', () => {
+    const pos = wrapErrorPosition('tsql', "Invalid column name 'nope'.", 'SELECT nope FROM users')
+    expect(pos).toEqual({ line: 1, column: 8 })
+  })
+
+  it('Invalid object name', () => {
+    const pos = wrapErrorPosition(
+      'tsql',
+      "Invalid object name 'missing_table'.",
+      'SELECT * FROM missing_table'
+    )
+    expect(pos).toEqual({ line: 1, column: 15 })
+  })
+
+  it('Cannot find the object "X" (dubbele quotes)', () => {
+    const pos = wrapErrorPosition(
+      'tsql',
+      'Cannot find the object "dbo.missing" because it does not exist or you do not have permission.',
+      'SELECT * FROM dbo.missing'
+    )
+    expect(pos).toEqual({ line: 1, column: 15 })
+  })
+
+  it('Must declare the scalar variable "@x"', () => {
+    const pos = wrapErrorPosition('tsql', 'Must declare the scalar variable "@x".', 'SELECT @x')
+    expect(pos).toEqual({ line: 1, column: 8 })
+  })
+
+  it('The multi-part identifier "x" could not be bound', () => {
+    const pos = wrapErrorPosition(
+      'tsql',
+      'The multi-part identifier "dbo.t.x" could not be bound.',
+      'SELECT dbo.t.x FROM t'
+    )
+    expect(pos).toEqual({ line: 1, column: 8 })
+  })
+
+  it("'X' is not a recognized built-in function name", () => {
+    const pos = wrapErrorPosition(
+      'tsql',
+      "'FOO' is not a recognized built-in function name.",
+      'SELECT FOO(1)'
+    )
+    expect(pos).toEqual({ line: 1, column: 8 })
+  })
+
+  it('slaat occurrence in een string-literal over', () => {
+    const pos = wrapErrorPosition('tsql', "Invalid column name 'nope'.", "SELECT 'nope' FROM t")
+    expect(pos).toBeNull()
+  })
+
+  it('onbekende melding → null', () => {
+    expect(wrapErrorPosition('tsql', 'Timeout expired.', 'SELECT 1')).toBeNull()
   })
 })
 

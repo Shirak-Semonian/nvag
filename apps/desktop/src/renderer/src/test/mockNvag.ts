@@ -3,6 +3,8 @@ import type {
   ConnectionSecret,
   DatabaseInfo,
   DbObjectRef,
+  ExportRequest,
+  ExportResult,
   NvagIpcApi,
   QueryChunk,
   QueryChunkEvent,
@@ -186,7 +188,8 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
           chunkListeners.delete(cb)
         }
       },
-      exportCsv: async () => ({ canceled: true })
+      exportCsv: async () => ({ canceled: true }),
+      exportResults: async (_req: ExportRequest): Promise<ExportResult> => ({ canceled: true })
     },
 
     metadata: {

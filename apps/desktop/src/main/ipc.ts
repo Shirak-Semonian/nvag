@@ -10,7 +10,8 @@ import { sessionManager } from './session-manager'
 import { queryRunner } from './query-runner'
 import * as metadata from './metadata-service'
 import * as queryFiles from './query-files'
-import { saveCsv } from './results-export'
+import { exportResults, saveCsv } from './results-export'
+import type { ExportRequest } from '@nvag/contracts'
 import { checkQuery } from './security/query-guard'
 
 export function registerIpcHandlers(): void {
@@ -81,6 +82,13 @@ export function registerIpcHandlers(): void {
     'query:exportCsv',
     async (event, req: { defaultFileName: string; csv: string }) => {
       return saveCsv(req, event.sender)
+    }
+  )
+
+  ipcMain.handle(
+    'query:exportResults',
+    async (event, req: ExportRequest) => {
+      return exportResults(req, event.sender)
     }
   )
 

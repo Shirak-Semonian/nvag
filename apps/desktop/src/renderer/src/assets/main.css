@@ -888,6 +888,78 @@ button.primary:hover:not(:disabled) {
   flex: 1;
 }
 
+/* Export-menu (F1-7: CSV/XLSX, grid/resultaat, bestand/klembord) */
+.export-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-trigger.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.export-feedback {
+  font-size: 12px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-ok {
+  color: #7fdb8a;
+}
+
+.export-error {
+  color: var(--red);
+}
+
+.export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.export-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.export-dropdown button {
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  border-radius: 4px;
+}
+
+.export-dropdown button:hover {
+  background: var(--bg-input);
+}
+
+.export-group-label {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
 .result-ag-grid {
   flex: 1;
   min-height: 0;
