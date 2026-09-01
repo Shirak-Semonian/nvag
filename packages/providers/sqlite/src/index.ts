@@ -8,6 +8,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { existsSync } from 'node:fs'
 import type {
+  BackupOptions,
+  BackupRestoreApi,
+  BackupResult,
   ColumnInfo,
   ConnectionConfig,
   ConstraintInfo,
@@ -26,6 +29,8 @@ import type {
   QueryOptions,
   QueryRow,
   QueryStats,
+  RestoreOptions,
+  RestoreResult,
   SchemaInfo,
   SeqInfo,
   ServerInfo,
@@ -53,7 +58,7 @@ const CAPABILITIES: ProviderCapabilities = {
   supportsGeneratedColumns: true,
   supportsDdlAdmin: true,
   supportsUsersAndRoles: false,
-  supportsBackupRestore: false,
+  supportsBackupRestore: true, // F4: bestandskopie via VACUUM INTO / restore-reopen
   maxResultRowsDefault: 1000,
   dialect: 'sqlite'
 }
@@ -468,7 +473,81 @@ export function createSqliteProvider(): DatabaseProvider {
       _executionId: string
     ): Promise<QueryStats> {
       return { rowCount: 0, durationMs: 0 }
-    }
+    },
+
+    // ------------------------------------------------------------------ F4
+    // Backup & Restore (DBA) — SQLite is een bestand; backup via VACUUM INTO
+    // (consistente snapshot), restore via bestandskopie + heropenen.
+    backupRestore: {
+      async backupDatabase(
+        session: DbSession,
+        _database: string,
+        targetPath: string,
+        options?: BackupOptions
+      ): Promise<BackupResult> {
+        const { db } = session.handle as SqliteSessionHandle
+        const start = performance.now()
+        try {
+          const { existsSync, rmSync } = await import('node:fs')
+          if (existsSync(targetPath)) {
+            if (!options?.overwrite) {
+              return {
+                ok: false,
+                targetPath,
+                durationMs: Math.round(performance.now() - start),
+                message: `Backupbestand bestaat al: ${targetPath} (gebruik overwrite om te vervangen)`
+              }
+            }
+            rmSync(targetPath, { force: true })
+          }
+          db.exec(`VACUUM INTO ${quoteLit(targetPath)}`)
+          return { ok: true, targetPath, durationMs: Math.round(performance.now() - start) }
+        } catch (err) {
+          return {
+            ok: false,
+            targetPath,
+            durationMs: Math.round(performance.now() - start),
+            message: err instanceof Error ? err.message : String(err)
+          }
+        }
+      },
+
+      async restoreDatabase(
+        session: DbSession,
+        _database: string,
+        sourcePath: string,
+        _options?: RestoreOptions
+      ): Promise<RestoreResult> {
+        const handle = session.handle as SqliteSessionHandle
+        const start = performance.now()
+        try {
+          const { existsSync, copyFileSync } = await import('node:fs')
+          if (!existsSync(sourcePath)) {
+            return {
+              ok: false,
+              sourcePath,
+              durationMs: Math.round(performance.now() - start),
+              message: `Backupbestand niet gevonden: ${sourcePath}`
+            }
+          }
+          // Bestand vervangen terwijl de database open is, is onveilig:
+          // eerst sluiten, dan kopiëren, daarna her-openen (zelfde path).
+          handle.db.close()
+          copyFileSync(sourcePath, handle.path)
+          const reopened = openDb(handle.path)
+          reopened.exec('PRAGMA foreign_keys = ON')
+          handle.db = reopened
+          return { ok: true, sourcePath, durationMs: Math.round(performance.now() - start) }
+        } catch (err) {
+          return {
+            ok: false,
+            sourcePath,
+            durationMs: Math.round(performance.now() - start),
+            message: err instanceof Error ? err.message : String(err)
+          }
+        }
+      }
+    } satisfies BackupRestoreApi
   }
 }
 
