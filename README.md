@@ -6,35 +6,32 @@
 
 ## Status
 
-🚧 **Fase 0 (Fundament)** — draaiende Electron-app met:
-SQLite-provider (node:sqlite), provider-abstractie (`@nvag/contracts`),
-versleutelde credentials (safeStorage-vault), Connection Manager,
-Object Explorer (lazy), Query Editor (Monaco), resultaten + messages,
-environment-safety (query-guard).
+✅ **Fase 0–4 afgerond (SAL-26, 2026-09-01)** — zie
+[docs/03-roadmap.md](docs/03-roadmap.md) voor de done-criteria per fase.
 
-**Validatie Fase 0 (hertest na review)**:
-- `pnpm dev` / `pnpm build` / `pnpm typecheck` (4 projecten) — groen
-- SELECT **met eigen LIMIT** en DML (INSERT/UPDATE/DELETE) via de provider — geverifieerd
-  (de dubbele-LIMIT-bug uit de review is opgelost: alleen SELECT zonder eigen
-  LIMIT krijgt een `maxRows`-cap, DML/DDL nooit)
-- Foutmeldingen bij ongeldige SQL — correct
-- Testdekking: `@nvag/contracts` 4 · `@nvag/sql-dialect` 85 ·
-  `@nvag/providers/sqlite` 24 · desktop-renderer: test-suite toegevoegd
-  (SAL-11, in afronding)
+- **Fase 0 (Fundament)**: draaiende Electron-app met SQLite-provider
+  (node:sqlite), provider-abstractie (`@nvag/contracts`), versleutelde
+  credentials (safeStorage-vault), Connection Manager, Object Explorer
+  (lazy), Query Editor (Monaco), resultaten + messages,
+  environment-safety (query-guard).
+- **Fase 1 (Core v1)**: SQL Server, PostgreSQL, MySQL en Db2-providers;
+  streaming query-runner (chunks → progressieve grid, cancel + timer);
+  results op AG Grid v36 (sorteren/filteren/kopiëren/NULL, multi-set tabs,
+  Results to Text/File); object viewer/scripting; query-editor-uitbreiding
+  (autocomplete, tabs, shortcuts, statusregel); SQL history; CSV/Excel-
+  export; env-safety met bevestigingsflow; multiple connections per tab.
+- **Fase 2 (Beheer & productiviteit)**: tabeldata-editor, transacties,
+  admin (DDL), prestaties, zoeken, snippets, import, audit, dashboard en
+  meer providers (Oracle, Snowflake, Azure SQL/Synapse, Databricks).
+- **Fase 3 (Geavanceerd)**: execution plans, monitoring/activity,
+  schema+data compare met deployment-script, dependencies, ER-diagram,
+  AI-assistant (eigen API-key, vault) en extern plugin-systeem.
+- **Fase 4 (Backup & Restore)**: backup/restore voor SQL Server, Db2 en
+  SQLite met dialect-correcte SQL, environment-safety (RESTORE altijd
+  bevestigen), auditlogging en een capability-gated Backup-tab.
 
-**Bekend aandachtspunt (meegenomen naar F1)**: de query-guard blokkeert
-schrijfacties in de UI op alle omgevingen (nog geen bevestigingsflow) —
-acceptabel voor deze SELECT-only fase.
-
-**Fase 1 (in uitvoering)**: providers (SQL Server, PostgreSQL, MySQL) +
-streaming query-runner (chunks → progressieve grid, cancel + timer) +
-results op AG Grid v36 (sorteren/filteren/kopiëren/NULL, multi-set tabs,
-Results to Text/File) + object viewer/scripting + query-editor-uitbreiding
-zijn opgeleverd; zie [docs/03-roadmap.md](docs/03-roadmap.md) voor de
-done-criteria per stap.
-
-**Volgende**: resterende Fase 1-stappen (export, env-safety, Db2, multiple
-connections) en daarna Fase 2.
+**Doorlopende kwaliteit**: `pnpm dev` start de app; `pnpm -r typecheck` en
+`pnpm -r test` blijven groen (desktop-suite 223 tests).
 
 ## Doel
 
