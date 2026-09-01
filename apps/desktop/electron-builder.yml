@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: desktop
+appId: nl.nvag.app
+productName: Nvag
 directories:
   buildResources: build
 files:
@@ -12,13 +12,14 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: desktop
+  executableName: nvag
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  artifactName: ${productName}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  category: public.app-category.developer-tools
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -27,16 +28,18 @@ mac:
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${productName}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
+    - tar.gz
     - deb
-  maintainer: electronjs.org
-  category: Utility
+    - rpm
+  maintainer: Nvag (Shirak Semonian)
+  category: Development
+  synopsis: Database Management Studio
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${productName}-${version}.${ext}
 npmRebuild: false
 publish:
   provider: generic

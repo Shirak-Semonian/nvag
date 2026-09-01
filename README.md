@@ -28,7 +28,8 @@
   AI-assistant (eigen API-key, vault) en extern plugin-systeem.
 - **Fase 4 (Backup & Restore)**: backup/restore voor SQL Server, Db2 en
   SQLite met dialect-correcte SQL, environment-safety (RESTORE altijd
-  bevestigen), auditlogging en een capability-gated Backup-tab.
+  bevestigen), auditlogging en een capability-gated Backup-tab; daarnaast
+  packaging (AppImage/tar.gz/deb/rpm) met CI-workflow.
 
 **Doorlopende kwaliteit**: `pnpm dev` start de app; `pnpm -r typecheck` en
 `pnpm -r test` blijven groen (desktop-suite 223 tests).
