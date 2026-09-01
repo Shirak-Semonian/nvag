@@ -46,6 +46,12 @@ import { buildLimit, containsKeyword, splitStatements } from '@nvag/sql-dialect'
 
 export interface OracleSessionHandle {
   conn: oracledb.Connection
+  /**
+   * Actuele schema van de sessie (CURRENT_SCHEMA, doorgaans de username).
+   * Oracle-schema's zijn gebruikers, géén servicenamen — `session.database`
+   * (bv. FREEPDB1) is daarvoor onbruikbaar (SAL-36).
+   */
+  currentSchema: string
 }
 
 /** Resolveert zodra het signaal afgaat (voor het race-mechanisme in executeQuery). */
@@ -101,6 +107,17 @@ function toCell(v: unknown): QueryCellValue {
   return v as QueryCellValue
 }
 
+/**
+ * Resolveert het metadata-schema (owner): een expliciet doorgegeven schema
+ * wint; anders het actuele schema van de sessie (CURRENT_SCHEMA). Oracle-
+ * schema's zijn usernames — nooit de servicenaam (`session.database`).
+ */
+function resolveOwner(session: DbSession, schema?: string): string {
+  if (schema && schema.trim() !== '') return schema.toUpperCase()
+  const { currentSchema } = session.handle as OracleSessionHandle
+  return (currentSchema ?? '').toUpperCase()
+}
+
 export function createOracleProvider(): DatabaseProvider {
   const sessions = new Map<string, DbSession>()
 
@@ -118,8 +135,18 @@ export function createOracleProvider(): DatabaseProvider {
         connectString: buildConnectString(config),
         connectTimeout: config.connectionTimeoutMs ?? 10000
       })
+      // Oracle-schema = username; resolveer het actuele schema van de sessie
+      // (CURRENT_SCHEMA) zodat metadata zonder expliciet schema werkt (SAL-36).
+      const schemaRow = await conn.execute<{ schema: string }>(
+        `SELECT sys_context('USERENV','CURRENT_SCHEMA') AS "schema" FROM dual`,
+        {},
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      )
       const session: DbSession = {
-        handle: { conn } satisfies OracleSessionHandle,
+        handle: {
+          conn,
+          currentSchema: schemaRow.rows?.[0]?.schema ?? config.username ?? ''
+        } satisfies OracleSessionHandle,
         connectionId: config.id,
         providerId: 'oracle',
         database: config.database ?? config.host
@@ -137,7 +164,11 @@ export function createOracleProvider(): DatabaseProvider {
           connectString: buildConnectString(config),
           connectTimeout: config.connectionTimeoutMs ?? 10000
         })
-        const r = await conn.execute<{ v: string }>('SELECT banner AS v FROM v$version WHERE ROWNUM = 1')
+        const r = await conn.execute<{ v: string }>(
+          `SELECT banner AS "v" FROM v$version WHERE ROWNUM = 1`,
+          {},
+          { outFormat: oracledb.OUT_FORMAT_OBJECT }
+        )
         const banner = r.rows?.[0]?.v ?? ''
         await conn.close()
         return { ok: true, serverInfo: { providerId: 'oracle', providerName: 'Oracle', serverVersion: banner.split(' ')[2] ?? banner } }
@@ -156,7 +187,9 @@ export function createOracleProvider(): DatabaseProvider {
     async getServerInfo(session: DbSession): Promise<ServerInfo> {
       const { conn } = session.handle as OracleSessionHandle
       const r = await conn.execute<{ v: string; db: string; u: string }>(
-        `SELECT banner AS v, sys_context('USERENV','DB_NAME') AS db, USER AS u FROM v$version WHERE ROWNUM = 1`
+        `SELECT banner AS "v", sys_context('USERENV','DB_NAME') AS "db", USER AS "u" FROM v$version WHERE ROWNUM = 1`,
+        {},
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       const row = r.rows?.[0]
       return {
@@ -181,74 +214,86 @@ export function createOracleProvider(): DatabaseProvider {
 
     async listDatabases(session: DbSession): Promise<DatabaseInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
-      const r = await conn.execute<{ name: string }>('SELECT name FROM v$database')
+      const r = await conn.execute<{ name: string }>(
+        `SELECT name AS "name" FROM v$database`,
+        {},
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      )
       return (r.rows ?? []).map((row) => ({ name: row.name }))
     },
 
     async listSchemas(session: DbSession): Promise<SchemaInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
       const r = await conn.execute<{ name: string }>(
-        `SELECT username AS name FROM all_users ORDER BY username`
+        `SELECT username AS "name" FROM all_users ORDER BY username`,
+        {},
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name }))
     },
 
     async listTables(session: DbSession, _db: string, schema?: string): Promise<TableInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
-      const owner = (schema ?? session.database ?? '').toUpperCase()
+      const owner = resolveOwner(session, schema)
       const r = await conn.execute<{ name: string }>(
-        `SELECT table_name AS name FROM all_tables WHERE owner = :owner ORDER BY table_name`,
-        { owner }
+        `SELECT table_name AS "name" FROM all_tables WHERE owner = :owner ORDER BY table_name`,
+        { owner },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name, schema: owner, type: 'table' }))
     },
 
     async listViews(session: DbSession, _db: string, schema?: string): Promise<ViewInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
-      const owner = (schema ?? session.database ?? '').toUpperCase()
+      const owner = resolveOwner(session, schema)
       const r = await conn.execute<{ name: string }>(
-        `SELECT view_name AS name FROM all_views WHERE owner = :owner ORDER BY view_name`,
-        { owner }
+        `SELECT view_name AS "name" FROM all_views WHERE owner = :owner ORDER BY view_name`,
+        { owner },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name, schema: owner }))
     },
 
     async listProcedures(session: DbSession, _db: string, schema?: string): Promise<ProcInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
-      const owner = (schema ?? session.database ?? '').toUpperCase()
+      const owner = resolveOwner(session, schema)
       const r = await conn.execute<{ name: string }>(
-        `SELECT object_name AS name FROM all_objects WHERE owner = :owner AND object_type = 'PROCEDURE' ORDER BY object_name`,
-        { owner }
+        `SELECT object_name AS "name" FROM all_objects WHERE owner = :owner AND object_type = 'PROCEDURE' ORDER BY object_name`,
+        { owner },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name, schema: owner, type: 'procedure' }))
     },
 
     async listFunctions(session: DbSession, _db: string, schema?: string): Promise<FuncInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
-      const owner = (schema ?? session.database ?? '').toUpperCase()
+      const owner = resolveOwner(session, schema)
       const r = await conn.execute<{ name: string }>(
-        `SELECT object_name AS name FROM all_objects WHERE owner = :owner AND object_type = 'FUNCTION' ORDER BY object_name`,
-        { owner }
+        `SELECT object_name AS "name" FROM all_objects WHERE owner = :owner AND object_type = 'FUNCTION' ORDER BY object_name`,
+        { owner },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name, schema: owner }))
     },
 
     async listTriggers(session: DbSession, _db: string, schema?: string): Promise<TriggerInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
-      const owner = (schema ?? session.database ?? '').toUpperCase()
+      const owner = resolveOwner(session, schema)
       const r = await conn.execute<{ name: string; table: string }>(
-        `SELECT trigger_name AS name, table_name AS table FROM all_triggers WHERE owner = :owner ORDER BY trigger_name`,
-        { owner }
+        `SELECT trigger_name AS "name", table_name AS "table" FROM all_triggers WHERE owner = :owner ORDER BY trigger_name`,
+        { owner },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name, schema: owner, table: row.table }))
     },
 
     async listSequences(session: DbSession, _db: string, schema?: string): Promise<SeqInfo[]> {
       const { conn } = session.handle as OracleSessionHandle
-      const owner = (schema ?? session.database ?? '').toUpperCase()
+      const owner = resolveOwner(session, schema)
       const r = await conn.execute<{ name: string }>(
-        `SELECT sequence_name AS name FROM all_sequences WHERE sequence_owner = :owner ORDER BY sequence_name`,
-        { owner }
+        `SELECT sequence_name AS "name" FROM all_sequences WHERE sequence_owner = :owner ORDER BY sequence_name`,
+        { owner },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name, schema: owner }))
     },
@@ -286,21 +331,23 @@ export function createOracleProvider(): DatabaseProvider {
         identity: string
         position: number
       }>(
-        `SELECT column_name AS name, data_type AS type, data_length AS length,
-                data_precision AS precision, data_scale AS scale,
-                nullable, data_default AS default_value,
-                identity_column AS identity, column_id AS position
+        `SELECT column_name AS "name", data_type AS "type", data_length AS "length",
+                data_precision AS "precision", data_scale AS "scale",
+                nullable AS "nullable", data_default AS "default_value",
+                identity_column AS "identity", column_id AS "position"
          FROM all_tab_columns WHERE owner = :owner AND table_name = :tbl ORDER BY column_id`,
-        { owner, tbl }
+        { owner, tbl },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
 
       const pkRows = await conn.execute<{ name: string; position: number }>(
-        `SELECT cc.column_name AS name, cc.position
+        `SELECT cc.column_name AS "name", cc.position AS "position"
          FROM all_constraints c
          JOIN all_cons_columns cc ON c.owner = cc.owner AND c.constraint_name = cc.constraint_name
          WHERE c.owner = :owner AND c.table_name = :tbl AND c.constraint_type = 'P'
          ORDER BY cc.position`,
-        { owner, tbl }
+        { owner, tbl },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       const pkNames = (pkRows.rows ?? []).map((r) => r.name)
       const pkSet = new Set(pkNames)
@@ -312,14 +359,15 @@ export function createOracleProvider(): DatabaseProvider {
         ref_table: string
         ref_column: string
       }>(
-        `SELECT c.constraint_name AS name, cc.column_name AS column,
-                r.owner AS ref_owner, r.table_name AS ref_table, rc.column_name AS ref_column
+        `SELECT c.constraint_name AS "name", cc.column_name AS "column",
+                r.owner AS "ref_owner", r.table_name AS "ref_table", rc.column_name AS "ref_column"
          FROM all_constraints c
          JOIN all_cons_columns cc ON c.owner = cc.owner AND c.constraint_name = cc.constraint_name
          JOIN all_constraints r ON c.r_owner = r.owner AND c.r_constraint_name = r.constraint_name
          JOIN all_cons_columns rc ON r.owner = rc.owner AND r.constraint_name = rc.constraint_name AND rc.position = cc.position
          WHERE c.owner = :owner AND c.table_name = :tbl AND c.constraint_type = 'R'`,
-        { owner, tbl }
+        { owner, tbl },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       const fkMap = new Map<string, ForeignKeyInfo>()
       for (const fk of fkRows.rows ?? []) {
@@ -339,12 +387,13 @@ export function createOracleProvider(): DatabaseProvider {
       }
 
       const idxRows = await conn.execute<{ name: string; column: string; unique: string }>(
-        `SELECT i.index_name AS name, ic.column_name AS column, i.uniqueness AS unique
+        `SELECT i.index_name AS "name", ic.column_name AS "column", i.uniqueness AS "unique"
          FROM all_indexes i
          JOIN all_ind_columns ic ON i.owner = ic.index_owner AND i.index_name = ic.index_name
          WHERE i.table_owner = :owner AND i.table_name = :tbl
          ORDER BY i.index_name, ic.column_position`,
-        { owner, tbl }
+        { owner, tbl },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
       const idxMap = new Map<string, IndexInfo>()
       for (const idx of idxRows.rows ?? []) {
@@ -354,8 +403,9 @@ export function createOracleProvider(): DatabaseProvider {
       }
 
       const trigRows = await conn.execute<{ name: string }>(
-        `SELECT trigger_name AS name FROM all_triggers WHERE owner = :owner AND table_name = :tbl ORDER BY trigger_name`,
-        { owner, tbl }
+        `SELECT trigger_name AS "name" FROM all_triggers WHERE owner = :owner AND table_name = :tbl ORDER BY trigger_name`,
+        { owner, tbl },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
 
       const constraints: ConstraintInfo[] = []
@@ -384,8 +434,9 @@ export function createOracleProvider(): DatabaseProvider {
       let rowCount: number | undefined
       try {
         const r = await conn.execute<{ n: number }>(
-          `SELECT num_rows AS n FROM all_tables WHERE owner = :owner AND table_name = :tbl`,
-          { owner, tbl }
+          `SELECT num_rows AS "n" FROM all_tables WHERE owner = :owner AND table_name = :tbl`,
+          { owner, tbl },
+          { outFormat: oracledb.OUT_FORMAT_OBJECT }
         )
         rowCount = r.rows?.[0]?.n ?? undefined
       } catch {
@@ -406,13 +457,17 @@ export function createOracleProvider(): DatabaseProvider {
 
     async getObjectDefinition(session: DbSession, obj: DbObjectRef): Promise<string> {
       const { conn } = session.handle as OracleSessionHandle
-      const owner = (obj.schema ?? session.database ?? '').toUpperCase()
+      const owner = resolveOwner(session, obj.schema)
       const type = obj.type === 'view' ? 'VIEW' : obj.type === 'procedure' ? 'PROCEDURE' : obj.type === 'function' ? 'FUNCTION' : 'TABLE'
       const r = await conn.execute<{ text: string | null }>(
-        `SELECT dbms_metadata.get_ddl(:type, :name, :owner) AS text FROM dual`,
-        { type, name: obj.name.toUpperCase(), owner }
+        `SELECT dbms_metadata.get_ddl(:type, :name, :owner) AS "text" FROM dual`,
+        { type, name: obj.name.toUpperCase(), owner },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
       )
-      const text = r.rows?.[0]?.text
+      // dbms_metadata.get_ddl retourneert een CLOB → oracledb geeft een Lob
+      // (stream) terug; lees die expliciet uit als string (SAL-36).
+      const raw = r.rows?.[0]?.text
+      const text = raw == null ? null : typeof raw === 'string' ? raw : await (raw as unknown as oracledb.Lob).getData()
       if (!text) throw new Error(`Oracle: geen definitie gevonden voor ${owner}.${obj.name}`)
       return `${text};`
     },
