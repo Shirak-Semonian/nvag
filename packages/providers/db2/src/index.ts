@@ -13,6 +13,9 @@
  */
 
 import type {
+  BackupOptions,
+  BackupRestoreApi,
+  BackupResult,
   ColumnInfo,
   ConnectionConfig,
   DatabaseInfo,
@@ -28,6 +31,8 @@ import type {
   QueryChunk,
   QueryOptions,
   QueryStats,
+  RestoreOptions,
+  RestoreResult,
   SchemaInfo,
   SeqInfo,
   ServerInfo,
@@ -37,7 +42,7 @@ import type {
   TriggerInfo,
   ViewInfo
 } from '@nvag/contracts'
-import { buildCreateTable, splitStatements } from '@nvag/sql-dialect'
+import { buildCreateTable, splitStatements, buildBackupDatabase, buildRestoreDatabase } from '@nvag/sql-dialect'
 import { BridgeClient } from './bridge-client.ts'
 import * as meta from './db2-metadata.ts'
 import { parseDb2ErrorPosition } from './error-position.ts'
@@ -352,7 +357,65 @@ export function createDb2Provider(): DatabaseProvider {
       _executionId: string
     ): Promise<QueryStats> {
       return { rowCount: 0, durationMs: 0 }
-    }
+    },
+
+    // ------------------------------------------------------------------ F4
+    // Backup & Restore (DBA) — gated via `supportsBackupRestore` (true).
+    // Draait via de JDBC-bridge: BACKUP DB / RESTORE DB zijn catalogus-SQL.
+    backupRestore: {
+      async backupDatabase(
+        session: DbSession,
+        database: string,
+        targetPath: string,
+        _options?: BackupOptions
+      ): Promise<BackupResult> {
+        const handle = session.handle as Db2SessionHandle
+        const sqlText = buildBackupDatabase('db2', database, targetPath)
+        const start = performance.now()
+        try {
+          await drain(handle, sqlText)
+          return { ok: true, sql: sqlText, targetPath, durationMs: Math.round(performance.now() - start) }
+        } catch (err) {
+          return {
+            ok: false,
+            sql: sqlText,
+            targetPath,
+            durationMs: Math.round(performance.now() - start),
+            message: err instanceof Error ? err.message : String(err)
+          }
+        }
+      },
+
+      async restoreDatabase(
+        session: DbSession,
+        database: string,
+        sourcePath: string,
+        _options?: RestoreOptions
+      ): Promise<RestoreResult> {
+        const handle = session.handle as Db2SessionHandle
+        const sqlText = buildRestoreDatabase('db2', database, sourcePath)
+        const start = performance.now()
+        try {
+          await drain(handle, sqlText)
+          return { ok: true, sql: sqlText, sourcePath, durationMs: Math.round(performance.now() - start) }
+        } catch (err) {
+          return {
+            ok: false,
+            sql: sqlText,
+            sourcePath,
+            durationMs: Math.round(performance.now() - start),
+            message: err instanceof Error ? err.message : String(err)
+          }
+        }
+      }
+    } satisfies BackupRestoreApi
+  }
+}
+
+/** Draai één statement via de bridge en gooi bij een error-chunk. */
+async function drain(handle: Db2SessionHandle, sql: string): Promise<void> {
+  for await (const evt of handle.bridge.executeQuery(handle.connId, sql, 0)) {
+    if (evt.kind === 'error') throw new Error(evt.message)
   }
 }
 

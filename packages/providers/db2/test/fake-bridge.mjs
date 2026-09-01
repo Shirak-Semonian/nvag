@@ -237,6 +237,14 @@ function runQuery(id, sql, maxRows) {
     return done(id, rows.length)
   }
 
+  // --- BACKUP / RESTORE (F4-3) ---
+  if (/^BACKUP DB /i.test(sql.trim())) {
+    return done(id, 0)
+  }
+  if (/^RESTORE DB /i.test(sql.trim())) {
+    return done(id, 0)
+  }
+
   // --- Syntaxfout (contract: error-chunk + SQLERRMC) ---
   if (/^SELEC\b/i.test(sql.trim())) {
     return err(id, "DB2 SQL Error: SQLCODE=-104, SQLSTATE=42601, SQLERRMC=SELEC")
