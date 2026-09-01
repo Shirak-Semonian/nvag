@@ -204,6 +204,21 @@ export function registerIpcHandlers(): void {
       metadata.listSequences(connectionId, db, schema)
   )
   ipcMain.handle(
+    'metadata:listSynonyms',
+    (_e, connectionId: string, db: string, schema?: string) =>
+      metadata.listSynonyms(connectionId, db, schema)
+  )
+  ipcMain.handle(
+    'metadata:listUsers',
+    (_e, connectionId: string, db: string) =>
+      metadata.listUsers(connectionId, db)
+  )
+  ipcMain.handle(
+    'metadata:listRoles',
+    (_e, connectionId: string, db: string) =>
+      metadata.listRoles(connectionId, db)
+  )
+  ipcMain.handle(
     'metadata:getTableMetadata',
     (_e, connectionId: string, db: string, schema: string, table: string) =>
       metadata.getTableMetadata(connectionId, db, schema, table)

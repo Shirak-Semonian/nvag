@@ -78,6 +78,9 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
       // SAL-31: na geslaagde CREATE/DROP DATABASE de Object Explorer
       // automatisch laten vernieuwen (gebeurt ook na guard-bevestiging).
       if (opts?.refreshDbList) useAppStore.getState().bumpDbListRevision()
+      // SAL-32: na DDL op database-objecten (table/view/index/schema/user)
+      // de geopende objectfolders automatisch laten vernieuwen.
+      if (kind === 'admin' && !opts?.refreshDbList) useAppStore.getState().bumpDbObjectsRevision()
       if (kind === 'backup') {
         const br = r as {
           ok: boolean
@@ -125,6 +128,8 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
       // SAL-31: ook na een bevestigde (guard) CREATE/DROP DATABASE de
       // Object Explorer automatisch laten vernieuwen.
       if (pending.refreshDbList) useAppStore.getState().bumpDbListRevision()
+      // SAL-32: ook na bevestigde (guard) object-DDL de objectfolders verversen.
+      if (pending.kind === 'admin' && !pending.refreshDbList) useAppStore.getState().bumpDbObjectsRevision()
     } catch (err) {
       setMessage(`❌ ${err instanceof Error ? err.message : String(err)}`)
     } finally {

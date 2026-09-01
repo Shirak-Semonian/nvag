@@ -33,6 +33,9 @@ import type {
   RestoreResult,
   SchemaInfo,
   SeqInfo,
+  SynonymInfo,
+  DbUserInfo,
+  DbRoleInfo,
   ServerInfo,
   TableInfo,
   TableMetadata,
@@ -50,6 +53,7 @@ export interface SqliteSessionHandle {
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true, // SQLite: schema = main/temp (beperkt, maar aanwezig)
   supportsSequences: false, // SQLite: AUTOINCREMENT i.p.v. sequences
+  supportsSynonyms: false, // SQLite: geen synonyms
   supportsTriggers: true,
   supportsExecutionPlans: false,
   supportsMonitoring: false,
@@ -193,6 +197,18 @@ export function createSqliteProvider(): DatabaseProvider {
 
     async listSequences(): Promise<SeqInfo[]> {
       return [] // SQLite: AUTOINCREMENT
+    },
+
+    async listSynonyms(): Promise<SynonymInfo[]> {
+      return [] // SQLite: geen synonyms
+    },
+
+    async listUsers(): Promise<DbUserInfo[]> {
+      return [] // SQLite: geen gebruikers/rollen
+    },
+
+    async listRoles(): Promise<DbRoleInfo[]> {
+      return [] // SQLite: geen gebruikers/rollen
     },
 
     async getTableMetadata(

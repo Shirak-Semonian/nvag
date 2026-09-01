@@ -146,6 +146,9 @@ body {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
+  min-height: 22px;
+  border-radius: 3px;
+  margin: 0 3px;
 }
 
 .tree-node:hover {
@@ -157,20 +160,33 @@ body {
   color: #fff;
 }
 
-.tree-node.selected .tree-label {
+.tree-node.selected .tree-label,
+.tree-node.selected .tree-detail {
   color: #fff;
 }
 
+.tree-node.selected .tree-icon {
+  color: #b3d9ff;
+}
+
 .tree-arrow {
-  width: 14px;
+  width: 16px;
   color: var(--text-dim);
   font-size: 10px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tree-icon {
   width: 18px;
   text-align: center;
+  color: #9cdcfe;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
 }
 
 .tree-table .tree-label {
@@ -183,6 +199,195 @@ body {
 
 .tree-children {
   /* nested divs handled via paddingLeft */
+}
+
+/* SAL-32: chevron als SVG met rotatie bij open */
+.tree-chevron-svg {
+  transition: transform 0.15s ease;
+  display: block;
+}
+
+.tree-chevron-svg.open {
+  transform: rotate(90deg);
+}
+
+/* SAL-32: chevron-knop op tabel-nodes (rijklik = viewer, chevron = subobjecten) */
+.tree-arrow-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  border-radius: 3px;
+  width: 16px;
+  height: 16px;
+}
+
+.tree-arrow-btn:hover {
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+.tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* SAL-32: secundaire detailtekst (schema, type, doelobject) */
+.tree-detail {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.tree-server .tree-icon {
+  color: #ce9178;
+}
+
+.tree-database .tree-icon {
+  color: #d7ba7d;
+}
+
+.tree-folder .tree-icon {
+  color: #c5a55a;
+}
+
+.tree-table .tree-icon {
+  color: #9cdcfe;
+}
+
+.tree-view .tree-icon {
+  color: #4ec9b0;
+}
+
+.tree-procedure .tree-icon,
+.tree-function .tree-icon {
+  color: #dcdcaa;
+}
+
+.tree-trigger .tree-icon {
+  color: #f9a825;
+}
+
+.tree-sequence .tree-icon {
+  color: #b5cea8;
+}
+
+.tree-synonym .tree-icon {
+  color: #6cb2e8;
+}
+
+.tree-user .tree-icon,
+.tree-role .tree-icon {
+  color: #c586c0;
+}
+
+.tree-schema .tree-icon {
+  color: #6a9955;
+}
+
+.tree-column .tree-icon {
+  color: #9cdcfe;
+}
+
+.tree-key .tree-icon {
+  color: #dcdcaa;
+}
+
+.tree-constraint .tree-icon {
+  color: #ce9178;
+}
+
+.tree-index .tree-icon {
+  color: #4ec9b0;
+}
+
+/* SAL-32: lege state binnen een uitgeklapte folder */
+.tree-empty-child {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 12px;
+  padding: 2px 6px 6px;
+}
+
+/* SAL-32: per-node loading spinner */
+.tree-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* SAL-32: contextmenu */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  max-width: 280px;
+  background: #2d2d30;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12.5px;
+  padding: 6px 10px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.context-menu-item:hover {
+  background: #094771;
+  color: #fff;
+}
+
+.context-menu-item.danger {
+  color: #f48771;
+}
+
+.context-menu-item.danger:hover {
+  background: #5c1a1a;
+  color: #fff;
+}
+
+.context-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+  width: 16px;
+  flex: none;
+}
+
+.context-menu-item:hover .context-menu-icon {
+  color: #fff;
+}
+
+.context-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 6px;
 }
 
 /* ---------------------------------------------------------------- main */
@@ -1336,6 +1541,16 @@ button.danger:hover:not(:disabled) {
   cursor: pointer;
   font-size: 11px;
   line-height: 1.2;
+}
+
+/* SAL-32: refresh-knop per niveau verschijnt bij hover/focus */
+.tree-refresh-action {
+  visibility: hidden;
+}
+
+.tree-node:hover .tree-refresh-action,
+.tree-node:focus-within .tree-refresh-action {
+  visibility: visible;
 }
 
 /* F2-2: transacties */

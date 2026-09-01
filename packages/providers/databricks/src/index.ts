@@ -34,6 +34,9 @@ import type {
   QueryStats,
   SchemaInfo,
   SeqInfo,
+  SynonymInfo,
+  DbUserInfo,
+  DbRoleInfo,
   ServerInfo,
   TableInfo,
   TableMetadata,
@@ -51,6 +54,7 @@ export interface DatabricksSessionHandle {
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true,
   supportsSequences: false,
+  supportsSynonyms: false, // Databricks: geen synonyms (SAL-32)
   supportsTriggers: false,
   supportsExecutionPlans: false,
   supportsMonitoring: false,
@@ -237,6 +241,18 @@ export function createDatabricksProvider(): DatabaseProvider {
 
     async listSequences(): Promise<SeqInfo[]> {
       return []
+    },
+
+    async listSynonyms(): Promise<SynonymInfo[]> {
+      return [] // Databricks: geen synonyms (SAL-32)
+    },
+
+    async listUsers(): Promise<DbUserInfo[]> {
+      return [] // Databricks: security niet ondersteund (SAL-32)
+    },
+
+    async listRoles(): Promise<DbRoleInfo[]> {
+      return [] // Databricks: security niet ondersteund (SAL-32)
     },
 
     async getTableMetadata(

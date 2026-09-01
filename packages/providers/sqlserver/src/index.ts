@@ -21,7 +21,9 @@ import type {
   DatabaseInfo,
   DatabaseProvider,
   DbObjectRef,
+  DbRoleInfo,
   DbSession,
+  DbUserInfo,
   DependencyInfo,
   ForeignKeyInfo,
   FuncInfo,
@@ -39,6 +41,7 @@ import type {
   SchemaInfo,
   SeqInfo,
   ServerInfo,
+  SynonymInfo,
   TableInfo,
   TableMetadata,
   TestResult,
@@ -56,6 +59,7 @@ export interface SqlServerSessionHandle {
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true, // SQL Server: schemas (dbo, ...)
   supportsSequences: true,
+  supportsSynonyms: true, // sys.synonyms (SAL-32)
   supportsTriggers: true,
   supportsExecutionPlans: false, // F3
   supportsMonitoring: true, // F3
@@ -361,6 +365,52 @@ export function createSqlServerProvider(): DatabaseProvider {
       return result.recordset.map((r) => ({ name: r.name, schema: r.schema }))
     },
 
+    async listSynonyms(session: DbSession, db: string, schema?: string): Promise<SynonymInfo[]> {
+      const { pool } = session.handle as SqlServerSessionHandle
+      const dbQ = quoteIdentifier('tsql', db)
+      const schemaFilter = schema ? `WHERE s.name = ${quoteLiteral('tsql', schema)}` : ''
+      const result = await pool.request().query<{ schema: string; name: string; base_object: string }>(
+        `SELECT s.name AS [schema], sy.name AS name, sy.base_object_name AS base_object
+         FROM ${dbQ}.sys.synonyms sy
+         JOIN ${dbQ}.sys.schemas s ON sy.schema_id = s.schema_id
+         ${schemaFilter}
+         ORDER BY s.name, sy.name`
+      )
+      return result.recordset.map((r) => ({ name: r.name, schema: r.schema, baseObject: r.base_object }))
+    },
+
+    async listUsers(session: DbSession, db: string): Promise<DbUserInfo[]> {
+      const { pool } = session.handle as SqlServerSessionHandle
+      const dbQ = quoteIdentifier('tsql', db)
+      // SQL Server-principals: S = SQL-gebruiker, U = Windows-gebruiker,
+      // G = Windows-groep, K = externe gebruiker. Systeem-objecten 'sys' en
+      // 'INFORMATION_SCHEMA' worden niet als gebruikers getoond (SSMS doet dit ook).
+      const result = await pool.request().query<{ name: string; type: string; default_schema: string | null }>(
+        `SELECT name, type, default_schema_name AS default_schema
+         FROM ${dbQ}.sys.database_principals
+         WHERE type IN ('S','U','G','K')
+           AND name NOT IN ('sys','INFORMATION_SCHEMA')
+         ORDER BY name`
+      )
+      return result.recordset.map((r) => ({
+        name: r.name,
+        type: r.type,
+        defaultSchema: r.default_schema ?? undefined
+      }))
+    },
+
+    async listRoles(session: DbSession, db: string): Promise<DbRoleInfo[]> {
+      const { pool } = session.handle as SqlServerSessionHandle
+      const dbQ = quoteIdentifier('tsql', db)
+      const result = await pool.request().query<{ name: string; type: string }>(
+        `SELECT name, type
+         FROM ${dbQ}.sys.database_principals
+         WHERE type = 'R'
+         ORDER BY name`
+      )
+      return result.recordset.map((r) => ({ name: r.name, type: r.type }))
+    },
+
     async getTableMetadata(
       session: DbSession,
       db: string,
@@ -369,8 +419,9 @@ export function createSqlServerProvider(): DatabaseProvider {
     ): Promise<TableMetadata> {
       const { pool } = session.handle as SqlServerSessionHandle
       const dbQ = quoteIdentifier('tsql', db)
-      const schemaL = quoteLiteral('tsql', schema)
-      const tableL = quoteLiteral('tsql', table)
+      // SAL-32: OBJECT_ID('dbo'.'tbl') is géén geldig T-SQL — één literal:
+      // OBJECT_ID('dbo.tbl') (gevonden via live-validatie op docker-mssql).
+      const objectLit = quoteLiteral('tsql', `${schema}.${table}`)
 
       // Kolommen + PK-vlag
       const colResult = await pool.request().query<{
@@ -408,7 +459,7 @@ export function createSqlServerProvider(): DatabaseProvider {
              ON i.object_id = ic.object_id AND i.index_id = ic.index_id
            WHERE i.is_primary_key = 1
          ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
-         WHERE c.object_id = OBJECT_ID(${schemaL + '.' + tableL})
+         WHERE c.object_id = OBJECT_ID(${objectLit})
          ORDER BY c.column_id`
       )
 
@@ -456,7 +507,7 @@ export function createSqlServerProvider(): DatabaseProvider {
            ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
          JOIN ${dbQ}.sys.tables rt ON fk.referenced_object_id = rt.object_id
          JOIN ${dbQ}.sys.schemas rs ON rt.schema_id = rs.schema_id
-         WHERE fk.parent_object_id = OBJECT_ID(${schemaL + '.' + tableL})
+         WHERE fk.parent_object_id = OBJECT_ID(${objectLit})
          ORDER BY fk.name, fkc.constraint_column_id`
       )
       const fkMap = new Map<string, ForeignKeyInfo>()
@@ -494,7 +545,7 @@ export function createSqlServerProvider(): DatabaseProvider {
            ON i.object_id = ic.object_id AND i.index_id = ic.index_id
          JOIN ${dbQ}.sys.columns c
            ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-         WHERE i.object_id = OBJECT_ID(${schemaL + '.' + tableL})
+         WHERE i.object_id = OBJECT_ID(${objectLit})
            AND i.is_primary_key = 0
            AND i.type > 0
          ORDER BY i.name, ic.key_ordinal`
@@ -516,15 +567,15 @@ export function createSqlServerProvider(): DatabaseProvider {
       const conResult = await pool.request().query<{ name: string; type: string; definition: string | null }>(
         `SELECT name, 'CHECK' AS type, definition
          FROM ${dbQ}.sys.check_constraints
-         WHERE parent_object_id = OBJECT_ID(${schemaL + '.' + tableL})
+         WHERE parent_object_id = OBJECT_ID(${objectLit})
          UNION ALL
          SELECT dc.name, 'DEFAULT', dc.definition
          FROM ${dbQ}.sys.default_constraints dc
-         WHERE dc.parent_object_id = OBJECT_ID(${schemaL + '.' + tableL})
+         WHERE dc.parent_object_id = OBJECT_ID(${objectLit})
          UNION ALL
          SELECT i.name, 'UNIQUE', NULL
          FROM ${dbQ}.sys.indexes i
-         WHERE i.object_id = OBJECT_ID(${schemaL + '.' + tableL})
+         WHERE i.object_id = OBJECT_ID(${objectLit})
            AND i.is_unique = 1 AND i.is_primary_key = 0`
       )
       const constraints: ConstraintInfo[] = conResult.recordset.map((r) => ({
@@ -536,7 +587,7 @@ export function createSqlServerProvider(): DatabaseProvider {
       // Triggers
       const trigResult = await pool.request().query<{ name: string }>(
         `SELECT name FROM ${dbQ}.sys.triggers
-         WHERE parent_id = OBJECT_ID(${schemaL + '.' + tableL}) AND parent_class = 1
+         WHERE parent_id = OBJECT_ID(${objectLit}) AND parent_class = 1
          ORDER BY name`
       )
 
@@ -546,7 +597,7 @@ export function createSqlServerProvider(): DatabaseProvider {
                 referenced_schema_name AS [schema],
                 referenced_class_desc AS type
          FROM ${dbQ}.sys.sql_expression_dependencies
-         WHERE referencing_id = OBJECT_ID(${schemaL + '.' + tableL})
+         WHERE referencing_id = OBJECT_ID(${objectLit})
          ORDER BY referenced_schema_name, OBJECT_NAME(referenced_id)`
       )
       const dependencies: DependencyInfo[] = depResult.recordset.map((r) => ({
@@ -562,7 +613,7 @@ export function createSqlServerProvider(): DatabaseProvider {
         const rc = await pool.request().query<{ n: number }>(
           `SELECT SUM(rows) AS n
            FROM ${dbQ}.sys.partitions
-           WHERE object_id = OBJECT_ID(${schemaL + '.' + tableL}) AND index_id IN (0,1)`
+           WHERE object_id = OBJECT_ID(${objectLit}) AND index_id IN (0,1)`
         )
         rowCount = rc.recordset[0]?.n ?? 0
       } catch {

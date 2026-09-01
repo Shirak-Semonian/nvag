@@ -29,6 +29,9 @@ import type {
   QueryStats,
   SchemaInfo,
   SeqInfo,
+  SynonymInfo,
+  DbUserInfo,
+  DbRoleInfo,
   ServerInfo,
   TableInfo,
   TableMetadata,
@@ -47,6 +50,7 @@ type Conn = Awaited<ReturnType<typeof createConnection>>
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: false, // MySQL: database = schema
   supportsSequences: false, // AUTO_INCREMENT
+  supportsSynonyms: false, // MySQL: geen synonyms (SAL-32)
   supportsTriggers: true,
   supportsExecutionPlans: true,
   supportsMonitoring: true,
@@ -222,6 +226,18 @@ export function createMySqlProvider(): DatabaseProvider {
 
     async listSequences(): Promise<SeqInfo[]> {
       return [] // MySQL: AUTO_INCREMENT
+    },
+
+    async listSynonyms(): Promise<SynonymInfo[]> {
+      return [] // MySQL: geen synonyms (SAL-32)
+    },
+
+    async listUsers(): Promise<DbUserInfo[]> {
+      return [] // MySQL: nog niet ontsloten (SAL-32)
+    },
+
+    async listRoles(): Promise<DbRoleInfo[]> {
+      return [] // MySQL: nog niet ontsloten (SAL-32)
     },
 
     async getTableMetadata(

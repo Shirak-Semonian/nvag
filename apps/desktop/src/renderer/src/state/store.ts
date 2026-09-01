@@ -135,6 +135,9 @@ interface AppState {
   adminUsers: AdminUserInfo[]
   /** SAL-31: signaal na CREATE/DROP DATABASE via AdminDialog; ObjectExplorer herlaadt de databaselijst. */
   dbListRevision: number
+  /** SAL-32: signaal na DDL op database-objecten (CREATE/DROP TABLE/VIEW/INDEX/SCHEMA/USER);
+   *  ObjectExplorer herlaadt de geopende objectfolders zodat nieuwe objecten zonder app-herstart zichtbaar zijn. */
+  dbObjectsRevision: number
 
   loadConnections: () => Promise<void>
   saveConnection: (config: ConnectionConfig, secret?: ConnectionSecret) => Promise<ConnectionConfig>
@@ -247,6 +250,8 @@ interface AppState {
   loadAdminState: (connectionId: string) => Promise<void>
   /** SAL-31: verhoogt dbListRevision zodat ObjectExplorer de databaselijst herlaadt. */
   bumpDbListRevision: () => void
+  /** SAL-32: verhoogt dbObjectsRevision zodat ObjectExplorer geopende objectfolders herlaadt. */
+  bumpDbObjectsRevision: () => void
 }
 
 let tabCounter = 1
@@ -372,6 +377,7 @@ export const useAppStore = create<AppState>((set, get) => {
     adminCapabilities: null,
     adminUsers: [],
     dbListRevision: 0,
+    dbObjectsRevision: 0,
 
   async loadConnections() {
     const list = await window.nvag.connections.list()
@@ -1228,6 +1234,10 @@ export const useAppStore = create<AppState>((set, get) => {
 
   bumpDbListRevision() {
     set((s) => ({ dbListRevision: s.dbListRevision + 1 }))
+  },
+
+  bumpDbObjectsRevision() {
+    set((s) => ({ dbObjectsRevision: s.dbObjectsRevision + 1 }))
   }
   }
 })

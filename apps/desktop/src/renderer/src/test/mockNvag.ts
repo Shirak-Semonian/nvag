@@ -1,4 +1,5 @@
 import type {
+  AdminTableCreateRequest,
   ConnectionConfig,
   ConnectionSecret,
   DatabaseInfo,
@@ -7,6 +8,7 @@ import type {
   ExportResult,
   GuardSeverity,
   NvagIpcApi,
+  ProviderCapabilities,
   QueryChunk,
   QueryChunkEvent,
   QueryFileOpenResult,
@@ -28,7 +30,12 @@ export interface MockNvagOptions {
   views?: string[]
   procedures?: string[]
   functions?: string[]
+  synonyms?: string[]
+  users?: string[]
+  roles?: string[]
   tableMetadata?: Record<string, TableMetadata>
+  /** Overschrijft admin.capabilities (SAL-32: folder-gating per provider). */
+  capabilities?: ProviderCapabilities
   queryResults?: Record<string, QueryRunResponse>
   defaultQueryResult?: QueryRunResponse
   /** SQL → redenen waarom environment-safety de query blokkeert (F1-8: met severity). */
@@ -267,6 +274,12 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         (options.functions ?? []).map((name) => ({ name, schema: 'main' })),
       listTriggers: async () => [],
       listSequences: async () => [],
+      listSynonyms: async () =>
+        (options.synonyms ?? []).map((name) => ({ name, schema: 'main' })),
+      listUsers: async () =>
+        (options.users ?? []).map((name) => ({ name, type: 'S' })),
+      listRoles: async () =>
+        (options.roles ?? []).map((name) => ({ name, type: 'R' })),
       getTableMetadata: async (_connId: string, _db: string, _schema: string, _table: string): Promise<TableMetadata> => {
         const meta = options.tableMetadata?.[_table]
         if (meta) return meta
@@ -352,30 +365,56 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       },
       createSchema: async () => ({ ok: true, sql: '' }),
       dropSchema: async () => ({ ok: true, sql: '' }),
-      createTable: async () => ({ ok: true, sql: '' }),
-      dropTable: async () => ({ ok: true, sql: '' }),
-      createView: async () => ({ ok: true, sql: '' }),
-      dropView: async () => ({ ok: true, sql: '' }),
+      createTable: async (req: AdminTableCreateRequest) => {
+        // SAL-32: net als de echte provider beïnvloedt CREATE TABLE de
+        // tabel-lijst; de Object Explorer auto-refresh-test hangt hierop.
+        if (options.tables && req.table && !options.tables.includes(req.table)) {
+          options.tables.push(req.table)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropTable: async (_connId: string, _db: string, _schema: string, table: string) => {
+        if (options.tables) {
+          const i = options.tables.indexOf(table)
+          if (i >= 0) options.tables.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
+      createView: async (_connId: string, _db: string, _schema: string, name: string) => {
+        if (options.views && name && !options.views.includes(name)) {
+          options.views.push(name)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropView: async (_connId: string, _db: string, _schema: string, name: string) => {
+        if (options.views) {
+          const i = options.views.indexOf(name)
+          if (i >= 0) options.views.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
       createIndex: async () => ({ ok: true, sql: '' }),
       dropIndex: async () => ({ ok: true, sql: '' }),
       listUsers: async () => [],
       createUser: async () => ({ ok: true, sql: '' }),
       dropUser: async () => ({ ok: true, sql: '' }),
-      capabilities: async () => ({
-        supportsSchemas: true,
-        supportsSequences: false,
-        supportsTriggers: true,
-        supportsExecutionPlans: false,
-        supportsMonitoring: false,
-        supportsTransactions: true,
-        supportsIdentityColumns: true,
-        supportsGeneratedColumns: true,
-        supportsDdlAdmin: true,
-        supportsUsersAndRoles: false,
-        supportsBackupRestore: true,
-        maxResultRowsDefault: 1000,
-        dialect: 'sqlite' as const
-      }),
+      capabilities: async () =>
+        options.capabilities ?? {
+          supportsSchemas: true,
+          supportsSequences: false,
+          supportsSynonyms: false,
+          supportsTriggers: true,
+          supportsExecutionPlans: false,
+          supportsMonitoring: false,
+          supportsTransactions: true,
+          supportsIdentityColumns: true,
+          supportsGeneratedColumns: true,
+          supportsDdlAdmin: true,
+          supportsUsersAndRoles: false,
+          supportsBackupRestore: true,
+          maxResultRowsDefault: 1000,
+          dialect: 'sqlite' as const
+        },
       backupDatabase: async () => ({ ok: true, targetPath: '/tmp/backup.db', durationMs: 1 }),
       restoreDatabase: async () => ({ ok: true, sourcePath: '/tmp/backup.db', durationMs: 1 })
     },

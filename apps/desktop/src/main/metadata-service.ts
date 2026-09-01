@@ -6,12 +6,15 @@
 import type {
   DatabaseInfo,
   DbObjectRef,
+  DbRoleInfo,
+  DbUserInfo,
   FuncInfo,
   ProcInfo,
   SchemaInfo,
   ScriptKind,
   ScriptObjectResult,
   SeqInfo,
+  SynonymInfo,
   TableInfo,
   TableMetadata,
   TriggerInfo,
@@ -91,6 +94,31 @@ export async function listSequences(
 ): Promise<SeqInfo[]> {
   const { session, provider } = requireSession(connectionId)
   return provider.listSequences(session, db, schema)
+}
+
+export async function listSynonyms(
+  connectionId: string,
+  db: string,
+  schema?: string
+): Promise<SynonymInfo[]> {
+  const { session, provider } = requireSession(connectionId)
+  return provider.listSynonyms(session, db, schema)
+}
+
+export async function listUsers(
+  connectionId: string,
+  db: string
+): Promise<DbUserInfo[]> {
+  const { session, provider } = requireSession(connectionId)
+  return provider.listUsers(session, db)
+}
+
+export async function listRoles(
+  connectionId: string,
+  db: string
+): Promise<DbRoleInfo[]> {
+  const { session, provider } = requireSession(connectionId)
+  return provider.listRoles(session, db)
 }
 
 export async function getTableMetadata(

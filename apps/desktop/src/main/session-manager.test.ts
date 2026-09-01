@@ -21,6 +21,7 @@ import { registry } from './registry'
 const BASE_CAPS: Omit<ProviderCapabilities, 'dialect'> = {
   supportsSchemas: true,
   supportsSequences: false,
+  supportsSynonyms: false,
   supportsTriggers: true,
   supportsExecutionPlans: false,
   supportsMonitoring: false,
@@ -103,6 +104,15 @@ function makeProvider(
       return []
     },
     async listSequences() {
+      return []
+    },
+    async listSynonyms() {
+      return []
+    },
+    async listUsers() {
+      return []
+    },
+    async listRoles() {
       return []
     },
     async getTableMetadata() {

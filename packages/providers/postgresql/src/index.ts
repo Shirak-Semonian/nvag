@@ -28,6 +28,9 @@ import type {
   QueryStats,
   SchemaInfo,
   SeqInfo,
+  SynonymInfo,
+  DbUserInfo,
+  DbRoleInfo,
   ServerInfo,
   TableInfo,
   TableMetadata,
@@ -44,6 +47,7 @@ export interface PostgresSessionHandle {
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true,
   supportsSequences: true,
+  supportsSynonyms: false, // PostgreSQL: geen synonyms (SAL-32)
   supportsTriggers: true,
   supportsExecutionPlans: true,
   supportsMonitoring: true,
@@ -244,6 +248,18 @@ export function createPostgresProvider(): DatabaseProvider {
         [schema]
       )
       return r.rows.map((row) => ({ name: row.name, schema: row.schema }))
+    },
+
+    async listSynonyms(): Promise<SynonymInfo[]> {
+      return [] // PostgreSQL: geen synonyms (SAL-32)
+    },
+
+    async listUsers(): Promise<DbUserInfo[]> {
+      return [] // PostgreSQL: nog niet ontsloten (SAL-32)
+    },
+
+    async listRoles(): Promise<DbRoleInfo[]> {
+      return [] // PostgreSQL: nog niet ontsloten (SAL-32)
     },
 
     async getTableMetadata(

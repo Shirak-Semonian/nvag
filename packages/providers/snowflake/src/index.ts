@@ -32,6 +32,9 @@ import type {
   QueryStats,
   SchemaInfo,
   SeqInfo,
+  SynonymInfo,
+  DbUserInfo,
+  DbRoleInfo,
   ServerInfo,
   TableInfo,
   TableMetadata,
@@ -48,6 +51,7 @@ export interface SnowflakeSessionHandle {
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true,
   supportsSequences: true,
+  supportsSynonyms: false, // Snowflake: geen synonyms (SAL-32)
   supportsTriggers: false,
   supportsExecutionPlans: false,
   supportsMonitoring: false,
@@ -236,6 +240,18 @@ export function createSnowflakeProvider(): DatabaseProvider {
 
     async listSequences(): Promise<SeqInfo[]> {
       return []
+    },
+
+    async listSynonyms(): Promise<SynonymInfo[]> {
+      return [] // Snowflake: geen synonyms (SAL-32)
+    },
+
+    async listUsers(): Promise<DbUserInfo[]> {
+      return [] // Snowflake: security nog niet ontsloten (SAL-32)
+    },
+
+    async listRoles(): Promise<DbRoleInfo[]> {
+      return [] // Snowflake: security nog niet ontsloten (SAL-32)
     },
 
     async getTableMetadata(

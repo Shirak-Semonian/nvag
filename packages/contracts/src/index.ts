@@ -130,6 +130,26 @@ export interface SeqInfo {
   schema?: string
 }
 
+export interface SynonymInfo {
+  name: string
+  schema?: string
+  /** Doelobject van de synonym (bijv. 'dbo.klanten'). */
+  baseObject?: string
+}
+
+export interface DbUserInfo {
+  name: string
+  /** Principal-type (SQL Server: 'S' | 'U' | 'G' | ...). */
+  type?: string
+  defaultSchema?: string
+}
+
+export interface DbRoleInfo {
+  name: string
+  /** Principal-type (SQL Server: 'R' = database role). */
+  type?: string
+}
+
 export interface ColumnInfo {
   name: string
   dataType: string
@@ -299,6 +319,7 @@ export type SqlDialectId =
 export interface ProviderCapabilities {
   supportsSchemas: boolean // MySQL/MariaDB: geen schemas (db = schema)
   supportsSequences: boolean
+  supportsSynonyms: boolean // SQL Server: sys.synonyms; andere engines vaak n.v.t.
   supportsTriggers: boolean
   supportsExecutionPlans: boolean
   supportsMonitoring: boolean
@@ -407,6 +428,9 @@ export interface DatabaseProvider {
   listFunctions(session: DbSession, db: string, schema?: string): Promise<FuncInfo[]>
   listTriggers(session: DbSession, db: string, schema?: string): Promise<TriggerInfo[]>
   listSequences(session: DbSession, db: string, schema?: string): Promise<SeqInfo[]>
+  listSynonyms(session: DbSession, db: string, schema?: string): Promise<SynonymInfo[]>
+  listUsers(session: DbSession, db: string): Promise<DbUserInfo[]>
+  listRoles(session: DbSession, db: string): Promise<DbRoleInfo[]>
 
   getTableMetadata(
     session: DbSession,
@@ -500,6 +524,9 @@ export interface NvagIpcApi {
     listFunctions(connectionId: string, db: string, schema?: string): Promise<FuncInfo[]>
     listTriggers(connectionId: string, db: string, schema?: string): Promise<TriggerInfo[]>
     listSequences(connectionId: string, db: string, schema?: string): Promise<SeqInfo[]>
+    listSynonyms(connectionId: string, db: string, schema?: string): Promise<SynonymInfo[]>
+    listUsers(connectionId: string, db: string): Promise<DbUserInfo[]>
+    listRoles(connectionId: string, db: string): Promise<DbRoleInfo[]>
     getTableMetadata(
       connectionId: string,
       db: string,

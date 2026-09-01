@@ -35,6 +35,9 @@ import type {
   RestoreResult,
   SchemaInfo,
   SeqInfo,
+  SynonymInfo,
+  DbUserInfo,
+  DbRoleInfo,
   ServerInfo,
   TableInfo,
   TableMetadata,
@@ -59,6 +62,7 @@ export interface Db2SessionHandle {
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true, // DB2: schemas (SYSCAT.SCHEMATA)
   supportsSequences: true,
+  supportsSynonyms: false, // DB2: synonyms/security nog niet ontsloten (SAL-32)
   supportsTriggers: true,
   supportsExecutionPlans: false, // F3
   supportsMonitoring: false, // F3
@@ -222,6 +226,18 @@ export function createDb2Provider(): DatabaseProvider {
     async listSequences(session: DbSession, _db: string, schema?: string): Promise<SeqInfo[]> {
       const handle = session.handle as Db2SessionHandle
       return meta.mapSequences(await queryRows(handle, meta.listSequencesSql(schema)))
+    },
+
+    async listSynonyms(): Promise<SynonymInfo[]> {
+      return [] // DB2: synonyms/security nog niet ontsloten (SAL-32)
+    },
+
+    async listUsers(): Promise<DbUserInfo[]> {
+      return [] // DB2: synonyms/security nog niet ontsloten (SAL-32)
+    },
+
+    async listRoles(): Promise<DbRoleInfo[]> {
+      return [] // DB2: synonyms/security nog niet ontsloten (SAL-32)
     },
 
     async getTableMetadata(

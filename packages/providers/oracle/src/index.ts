@@ -32,6 +32,9 @@ import type {
   QueryStats,
   SchemaInfo,
   SeqInfo,
+  SynonymInfo,
+  DbUserInfo,
+  DbRoleInfo,
   ServerInfo,
   TableInfo,
   TableMetadata,
@@ -48,6 +51,7 @@ export interface OracleSessionHandle {
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true,
   supportsSequences: true,
+  supportsSynonyms: false, // Oracle: synonyms/security nog niet ontsloten (SAL-32)
   supportsTriggers: true,
   supportsExecutionPlans: false,
   supportsMonitoring: true,
@@ -226,6 +230,18 @@ export function createOracleProvider(): DatabaseProvider {
         { owner }
       )
       return (r.rows ?? []).map((row) => ({ name: row.name, schema: owner }))
+    },
+
+    async listSynonyms(): Promise<SynonymInfo[]> {
+      return [] // Oracle: synonyms/security nog niet ontsloten (SAL-32)
+    },
+
+    async listUsers(): Promise<DbUserInfo[]> {
+      return [] // Oracle: security nog niet ontsloten (SAL-32)
+    },
+
+    async listRoles(): Promise<DbRoleInfo[]> {
+      return [] // Oracle: security nog niet ontsloten (SAL-32)
     },
 
     async getTableMetadata(

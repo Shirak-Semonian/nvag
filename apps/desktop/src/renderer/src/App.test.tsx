@@ -61,7 +61,7 @@ beforeEach(() => {
     views: ['v_klanten'],
     tableMetadata: { klanten: sampleTableMetadata('klanten') },
     queryResults: {
-      'SELECT * FROM "klanten" LIMIT 100': sampleQueryResult(),
+      'SELECT * FROM "main"."klanten" LIMIT 100': sampleQueryResult(),
       'SELECT FOUT;': {
         executionId: 'exec-err',
         columns: [],
@@ -96,11 +96,11 @@ async function expandToTables(): Promise<void> {
   await connectViaDialog()
   fireEvent.click(screen.getByText('Databases'))
   await waitFor(() => expect(screen.getAllByText('main').length).toBeGreaterThan(0))
-  // database-niveau 'main' uitklappen → schema-niveau 'main'
+  // database-niveau 'main' uitklappen → objectfolders (SAL-32: SSMS-hiërarchie)
   fireEvent.click(screen.getAllByText('main')[0]!)
-  await waitFor(() => expect(screen.getAllByText('main').length).toBeGreaterThanOrEqual(2))
-  // schema-niveau 'main' uitklappen → tabellen/views
-  fireEvent.click(screen.getAllByText('main')[1]!)
+  await waitFor(() => expect(screen.getByText('Tables')).toBeTruthy())
+  // Tables-folder uitklappen → tabellen
+  fireEvent.click(screen.getByText('Tables'))
   await waitFor(() => expect(screen.getByText('klanten')).toBeTruthy())
 }
 
@@ -167,10 +167,10 @@ describe('App (renderer-integratie)', () => {
     await expandToTables()
     fireEvent.doubleClick(screen.getByText('klanten'))
 
-    // Nieuwe tab met gegenereerde SELECT + verbinding
+    // Nieuwe tab met gegenereerde SELECT + verbinding (schema-gekwalificeerd)
     await waitFor(() => {
       const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
-      expect(editor.value).toBe('SELECT * FROM "klanten" LIMIT 100')
+      expect(editor.value).toBe('SELECT * FROM "main"."klanten" LIMIT 100')
     })
 
     fireEvent.click(screen.getByRole('button', { name: '▶ Uitvoeren' }))
@@ -287,13 +287,13 @@ describe('App (renderer-integratie)', () => {
   })
 
   // ------------------------------------------------------------------ SAL-29
-  it('toont een metadata-fout bij uitklappen van een database i.p.v. te crashen (SAL-29)', async () => {
+  it('toont een metadata-fout bij uitklappen van een folder i.p.v. te crashen (SAL-29)', async () => {
     const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
     window.nvag = createMockNvag({
       connections: [conn],
       databases: [{ name: 'Klanten' }],
       metadataErrors: {
-        listSchemas: "The server principal 'sa' is not able to access the database 'Klanten'"
+        listTables: "The server principal 'sa' is not able to access the database 'Klanten'"
       }
     })
     useAppStore.setState({
@@ -308,17 +308,21 @@ describe('App (renderer-integratie)', () => {
     })
 
     render(<App />)
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
     // Server uitklappen → Databases-folder
-    fireEvent.click(screen.getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Databases')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(within(tree()).getByText('Databases')).toBeTruthy())
     // Databases-folder uitklappen → database 'Klanten'
-    fireEvent.click(screen.getByText('Databases'))
-    await waitFor(() => expect(screen.getByText('Klanten')).toBeTruthy())
-    // Database uitklappen → listSchemas faalt → fout in de boom, geen crash
-    fireEvent.click(screen.getByText('Klanten'))
+    fireEvent.click(within(tree()).getByText('Databases'))
+    await waitFor(() => expect(within(tree()).getByText('Klanten')).toBeTruthy())
+    // Database uitklappen → objectfolders
+    fireEvent.click(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(within(tree()).getByText('Tables')).toBeTruthy())
+    // Tables-folder uitklappen → listTables faalt → fout in de boom, geen crash
+    fireEvent.click(within(tree()).getByText('Tables'))
     await waitFor(() =>
       expect(
-        screen.getByText(/Kan schema's niet laden: The server principal 'sa' is not able to access the database 'Klanten'/)
+        within(tree()).getByText(/Kan gegevens niet laden: The server principal 'sa' is not able to access the database 'Klanten'/)
       ).toBeTruthy()
     )
   })
@@ -487,5 +491,217 @@ describe('App (renderer-integratie)', () => {
 
     await waitFor(() => expect(screen.queryByText('Klanten')).toBeNull())
     expect(screen.getByText(/✅ DROP DATABASE Klanten/)).toBeTruthy()
+  })
+
+  // ------------------------------------------------------------------ SAL-32
+  interface SqlServerExplorerState {
+    databases: DatabaseInfo[]
+    tables: string[]
+    views: string[]
+    procedures: string[]
+    functions: string[]
+    synonyms: string[]
+    users: string[]
+    roles: string[]
+  }
+
+  function openSqlServerExplorerFull(): SqlServerExplorerState {
+    const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    const state: SqlServerExplorerState = {
+      databases: [{ name: 'Klanten' }],
+      tables: ['klanten'],
+      views: ['v_klanten'],
+      procedures: ['sp_rapport'],
+      functions: ['fn_bereken'],
+      synonyms: ['syn_oud'],
+      users: ['app_ro'],
+      roles: ['db_datareader']
+    }
+    window.nvag = createMockNvag({
+      connections: [conn],
+      databases: state.databases,
+      tables: state.tables,
+      views: state.views,
+      procedures: state.procedures,
+      functions: state.functions,
+      synonyms: state.synonyms,
+      users: state.users,
+      roles: state.roles,
+      capabilities: {
+        supportsSchemas: true,
+        supportsSequences: true,
+        supportsSynonyms: true,
+        supportsTriggers: true,
+        supportsExecutionPlans: false,
+        supportsMonitoring: false,
+        supportsTransactions: true,
+        supportsIdentityColumns: true,
+        supportsGeneratedColumns: true,
+        supportsDdlAdmin: true,
+        supportsUsersAndRoles: true,
+        supportsBackupRestore: true,
+        maxResultRowsDefault: 1000,
+        dialect: 'tsql'
+      }
+    })
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-sql': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+    return state
+  }
+
+  async function expandSqlServerDb(): Promise<() => HTMLElement> {
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    fireEvent.click(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(within(tree()).getByText('Databases')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Databases'))
+    await waitFor(() => expect(within(tree()).getByText('Klanten')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(within(tree()).getByText('Tables')).toBeTruthy())
+    return tree
+  }
+
+  it('toont de SSMS-achtige hiërarchie met alle objectfolders (SAL-32)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    // Hoofdfolders onder de database
+    expect(within(tree()).getByText('Tables')).toBeTruthy()
+    expect(within(tree()).getByText('Views')).toBeTruthy()
+    expect(within(tree()).getByText('Synonyms')).toBeTruthy()
+    expect(within(tree()).getByText('Programmability')).toBeTruthy()
+    expect(within(tree()).getByText('Security')).toBeTruthy()
+    expect(within(tree()).getByText('Sequences')).toBeTruthy()
+
+    // Programmability → Stored Procedures / Functions / Database Triggers
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
+    expect(within(tree()).getByText('Functions')).toBeTruthy()
+    expect(within(tree()).getByText('Database Triggers')).toBeTruthy()
+
+    // Security → Users / Roles / Schemas
+    fireEvent.click(within(tree()).getByText('Security'))
+    await waitFor(() => expect(within(tree()).getByText('Users')).toBeTruthy())
+    expect(within(tree()).getByText('Roles')).toBeTruthy()
+    expect(within(tree()).getByText('Schemas')).toBeTruthy()
+  })
+
+  it('laadt objecten per folder: tabellen, views, synonyms, procedures, users, rollen (SAL-32)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Tables'))
+    await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Views'))
+    await waitFor(() => expect(within(tree()).getByText('v_klanten')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Synonyms'))
+    await waitFor(() => expect(within(tree()).getByText('syn_oud')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Stored Procedures'))
+    await waitFor(() => expect(within(tree()).getByText('sp_rapport')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Functions'))
+    await waitFor(() => expect(within(tree()).getByText('fn_bereken')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Security'))
+    await waitFor(() => expect(within(tree()).getByText('Users')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Users'))
+    await waitFor(() => expect(within(tree()).getByText('app_ro')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Roles'))
+    await waitFor(() => expect(within(tree()).getByText('db_datareader')).toBeTruthy())
+  })
+
+  it('toont tabel-subobjecten (Columns/Keys/Constraints/Triggers/Indexes) bij uitklappen via chevron (SAL-32)', async () => {
+    render(<App />)
+    await expandToTables()
+
+    // Chevron op de tabel klapt de subobjecten uit (rijklik blijft de viewer)
+    fireEvent.click(screen.getByRole('button', { name: 'Tabel uitklappen' }))
+    await waitFor(() => expect(screen.getByText('Columns')).toBeTruthy())
+    expect(screen.getByText('Keys')).toBeTruthy()
+    expect(screen.getByText('Constraints')).toBeTruthy()
+    expect(screen.getByText('Triggers')).toBeTruthy()
+    expect(screen.getByText('Indexes')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Columns'))
+    await waitFor(() => expect(screen.getByText('id')).toBeTruthy())
+    expect(screen.getByText('naam')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Keys'))
+    await waitFor(() => expect(screen.getByText('PK_klanten')).toBeTruthy())
+
+    // Inklappen via de chevron verwijdert de subobjecten weer
+    fireEvent.click(screen.getByRole('button', { name: 'Tabel inklappen' }))
+    await waitFor(() => expect(screen.queryByText('Columns')).toBeNull())
+  })
+
+  it('toont een nieuwe tabel na handmatige refresh van de Tables-folder (SAL-32)', async () => {
+    const state = openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Tables'))
+    await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
+
+    // Server-side wijziging: nieuwe tabel buiten Nvag om aangemaakt
+    state.tables.push('nieuwe_tabel')
+    fireEvent.click(within(tree()).getByRole('button', { name: 'Vernieuwen Tables' }))
+    await waitFor(() => expect(within(tree()).getByText('nieuwe_tabel')).toBeTruthy())
+    expect(within(tree()).getByText('klanten')).toBeTruthy()
+
+    // Verwijderde tabel verdwijnt na een nieuwe refresh
+    const idx = state.tables.indexOf('klanten')
+    state.tables.splice(idx, 1)
+    fireEvent.click(within(tree()).getByRole('button', { name: 'Vernieuwen Tables' }))
+    await waitFor(() => expect(within(tree()).queryByText('klanten')).toBeNull())
+    expect(within(tree()).getByText('nieuwe_tabel')).toBeTruthy()
+  })
+
+  it('ververst objectfolders automatisch na CREATE TABLE via de Admin-knop (SAL-32)', async () => {
+    openSqlServerExplorerFull()
+    useAppStore.getState().addTab({ connectionId: 'conn-sql' })
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Tables'))
+    await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
+
+    // Admin-dialoog: nieuwe tabel aanmaken
+    fireEvent.click(screen.getByRole('button', { name: /🛠 Admin/ }))
+    await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('tab', { name: 'Tabellen' }))
+    fireEvent.change(screen.getByPlaceholderText('naam'), { target: { value: 'nieuwe_tabel' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+
+    // Object Explorer herlaadt de geopende Tables-folder automatisch
+    await waitFor(() => expect(within(tree()).getByText('nieuwe_tabel')).toBeTruthy())
+    expect(screen.getByText(/✅ CREATE TABLE nieuwe_tabel/)).toBeTruthy()
+  })
+
+  it('toont een contextmenu per objecttype met refresh en Script Object (SAL-32)', async () => {
+    render(<App />)
+    await expandToTables()
+
+    fireEvent.contextMenu(screen.getByText('klanten'))
+    await waitFor(() => expect(screen.getByText('Vernieuwen')).toBeTruthy())
+    expect(screen.getByText('Tabelgegevens bekijken')).toBeTruthy()
+    expect(screen.getByText('Eigenschappen')).toBeTruthy()
+    expect(screen.getByText('Script Object als CREATE')).toBeTruthy()
+    expect(screen.getByText('Script Object als SELECT')).toBeTruthy()
+
+    // Script Object als CREATE opent een querytab met de gegenereerde CREATE TABLE
+    fireEvent.click(screen.getByText('Script Object als CREATE'))
+    await waitFor(() => {
+      const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
+      expect(editor.value).toContain('CREATE TABLE "main"."klanten" (')
+    })
   })
 })

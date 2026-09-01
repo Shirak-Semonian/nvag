@@ -42,6 +42,7 @@ function baseCapabilities(maxResultRowsDefault: number): ProviderCapabilities {
   return {
     supportsSchemas: true,
     supportsSequences: false,
+    supportsSynonyms: false,
     supportsTriggers: true,
     supportsExecutionPlans: false,
     supportsMonitoring: false,
@@ -81,6 +82,9 @@ function fakeProvider(
     listFunctions: async () => [],
     listTriggers: async () => [],
     listSequences: async () => [],
+    listSynonyms: async () => [],
+    listUsers: async () => [],
+    listRoles: async () => [],
     getTableMetadata: async () => ({
       columns: [],
       primaryKey: [],

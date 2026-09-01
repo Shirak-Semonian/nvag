@@ -114,6 +114,7 @@ describe('F4 AdminDialog backup/restore', () => {
     const full: ProviderCapabilities = {
       supportsSchemas: true,
       supportsSequences: false,
+      supportsSynonyms: false,
       supportsTriggers: true,
       supportsExecutionPlans: false,
       supportsMonitoring: false,

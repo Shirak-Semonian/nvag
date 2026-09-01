@@ -16,6 +16,7 @@ describe('contracts', () => {
     const caps: ProviderCapabilities = {
       supportsSchemas: true,
       supportsSequences: false,
+      supportsSynonyms: false,
       supportsTriggers: false,
       supportsExecutionPlans: false,
       supportsMonitoring: false,
