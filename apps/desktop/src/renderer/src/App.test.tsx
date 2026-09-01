@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { DatabaseInfo } from '@nvag/contracts'
 import App from './App'
 import { useAppStore } from './state/store'
@@ -45,8 +45,10 @@ function resetStore(): void {
     tabs: [],
     activeTabId: null,
     showConnectionDialog: false,
+    showAdminDialog: false,
     connectionDialogMode: 'create',
-    editingConnectionId: null
+    editingConnectionId: null,
+    dbListRevision: 0
   })
 }
 
@@ -356,5 +358,134 @@ describe('App (renderer-integratie)', () => {
     fireEvent.click(screen.getByText('Databases'))
     await waitFor(() => expect(screen.getByText('NieuweTestDB')).toBeTruthy())
     expect(screen.getByText('Klanten')).toBeTruthy()
+  })
+
+  // ------------------------------------------------------------------ SAL-31
+  function openSqlServerExplorer(): { databases: DatabaseInfo[] } {
+    const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    const databases: DatabaseInfo[] = [{ name: 'Klanten' }]
+    window.nvag = createMockNvag({
+      connections: [conn],
+      databases
+    })
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-sql': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+    return { databases }
+  }
+
+  async function expandDatabasesFolder(): Promise<void> {
+    // Met een actieve tab toont ook de toolbar (database-dropdown) dezelfde
+    // namen; scope daarom op de boom zelf.
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    fireEvent.click(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(within(tree()).getByText('Databases')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Databases'))
+    await waitFor(() => expect(within(tree()).getByText('Klanten')).toBeTruthy())
+  }
+
+  it('toont de refresh-knop disabled zolang er geen verbinding open is (SAL-31)', () => {
+    render(<App />)
+    const refresh = screen.getByRole('button', { name: 'Databases vernieuwen' }) as HTMLButtonElement
+    expect(refresh.disabled).toBe(true)
+  })
+
+  it('refresh-knop herlaadt de databaselijst: nieuwe db verschijnt, verwijderde verdwijnt (SAL-31)', async () => {
+    const { databases } = openSqlServerExplorer()
+    render(<App />)
+    await expandDatabasesFolder()
+
+    // Server-side wijziging: nieuwe database aangemaakt buiten Nvag om
+    databases.push({ name: 'NieuweTestDB' })
+    fireEvent.click(screen.getByRole('button', { name: 'Databases vernieuwen' }))
+    await waitFor(() => expect(screen.getByText('NieuweTestDB')).toBeTruthy())
+    expect(screen.getByText('Klanten')).toBeTruthy()
+
+    // Verwijderde database verdwijnt na een nieuwe refresh
+    const idx = databases.findIndex((d) => d.name === 'Klanten')
+    databases.splice(idx, 1)
+    fireEvent.click(screen.getByRole('button', { name: 'Databases vernieuwen' }))
+    await waitFor(() => expect(screen.queryByText('Klanten')).toBeNull())
+    expect(screen.getByText('NieuweTestDB')).toBeTruthy()
+  })
+
+  it('toont een fout bij een mislukte refresh in de boom i.p.v. te crashen (SAL-31)', async () => {
+    const mockOpts: { metadataErrors?: Record<string, string> } = {}
+    const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    window.nvag = createMockNvag({
+      connections: [conn],
+      databases: [{ name: 'Klanten' }]
+    })
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-sql': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+    // Na de eerste succesvolle load begint listDatabases te falen (simuleert
+    // een serverfout tijdens het vernieuwen).
+    const originalList = window.nvag.metadata.listDatabases
+    window.nvag.metadata.listDatabases = async (connId: string) => {
+      if (mockOpts.metadataErrors?.listDatabases) throw new Error(mockOpts.metadataErrors.listDatabases)
+      return originalList(connId)
+    }
+
+    render(<App />)
+    await expandDatabasesFolder()
+    mockOpts.metadataErrors = { listDatabases: 'Kan databases niet bereiken' }
+    fireEvent.click(screen.getByRole('button', { name: 'Databases vernieuwen' }))
+    await waitFor(() =>
+      expect(screen.getByText(/Kan gegevens niet laden: Kan databases niet bereiken/)).toBeTruthy()
+    )
+    // De boom blijft bruikbaar: header + folder bestaan nog
+    expect(screen.getByText('Object Explorer')).toBeTruthy()
+    expect(screen.getByText('Databases')).toBeTruthy()
+  })
+
+  it('ververst de databaselijst automatisch na CREATE DATABASE via de Admin-knop (SAL-31)', async () => {
+    openSqlServerExplorer()
+    useAppStore.getState().addTab({ connectionId: 'conn-sql' })
+    render(<App />)
+    await expandDatabasesFolder()
+
+    // Admin-dialoog openen via de toolbar (actieve tab heeft een open sessie)
+    fireEvent.click(screen.getByRole('button', { name: /🛠 Admin/ }))
+    await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Naam'), { target: { value: 'NieuweTestDB' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+
+    // Object Explorer herlaadt automatisch: nieuwe database verschijnt zonder handmatige refresh
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    await waitFor(() => expect(within(tree()).getByText('NieuweTestDB')).toBeTruthy())
+    expect(within(tree()).getByText('Klanten')).toBeTruthy()
+    expect(screen.getByText(/✅ CREATE DATABASE NieuweTestDB/)).toBeTruthy()
+    // Ook de database-dropdown van de actieve tab is ververst
+    expect(screen.getByRole('option', { name: 'NieuweTestDB' })).toBeTruthy()
+  })
+
+  it('ververst de databaselijst automatisch na DROP DATABASE via de Admin-knop (SAL-31)', async () => {
+    openSqlServerExplorer()
+    useAppStore.getState().addTab({ connectionId: 'conn-sql' })
+    render(<App />)
+    await expandDatabasesFolder()
+
+    fireEvent.click(screen.getByRole('button', { name: /🛠 Admin/ }))
+    await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Naam'), { target: { value: 'Klanten' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+
+    await waitFor(() => expect(screen.queryByText('Klanten')).toBeNull())
+    expect(screen.getByText(/✅ DROP DATABASE Klanten/)).toBeTruthy()
   })
 })

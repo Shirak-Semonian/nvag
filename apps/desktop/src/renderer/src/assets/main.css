@@ -93,6 +93,31 @@ body {
   background: var(--bg-input);
 }
 
+/* SAL-31: refresh-knop in de Object Explorer header */
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.icon-btn.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .tree {
   flex: 1;
   overflow-y: auto;

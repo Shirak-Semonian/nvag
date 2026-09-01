@@ -335,8 +335,21 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     },
 
     admin: {
-      createDatabase: async () => ({ ok: true, sql: '' }),
-      dropDatabase: async () => ({ ok: true, sql: '' }),
+      createDatabase: async (_connId: string, name: string) => {
+        // SAL-31: net als de echte provider beïnvloedt CREATE DATABASE de
+        // databaselijst; de Object Explorer-refresh-test hangt hierop.
+        if (options.databases && !options.databases.some((d) => d.name === name)) {
+          options.databases.push({ name })
+        }
+        return { ok: true, sql: '' }
+      },
+      dropDatabase: async (_connId: string, name: string) => {
+        if (options.databases) {
+          const i = options.databases.findIndex((d) => d.name === name)
+          if (i >= 0) options.databases.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
       createSchema: async () => ({ ok: true, sql: '' }),
       dropSchema: async () => ({ ok: true, sql: '' }),
       createTable: async () => ({ ok: true, sql: '' }),

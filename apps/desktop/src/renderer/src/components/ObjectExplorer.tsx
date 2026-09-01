@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   DatabaseInfo,
   DbObjectRef,
@@ -35,10 +35,24 @@ export function ObjectExplorer(): React.JSX.Element {
   const openConnectionDialog = useAppStore((s) => s.openConnectionDialog)
   const openTableQuery = useAppStore((s) => s.openTableQuery)
   const openTableDataTab = useAppStore((s) => s.openTableDataTab)
+  // SAL-31: AdminDialog verhoogt dit signaal na CREATE/DROP DATABASE zodat
+  // de databaselijst automatisch opnieuw wordt opgehaald.
+  const dbListRevision = useAppStore((s) => s.dbListRevision)
 
   const [tree, setTree] = useState<TreeNode[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selection, setSelection] = useState<ObjectViewerSelection | null>(null)
+  /** Lijst-refresh bezig (SAL-31: knop toont spinner, blokkeert dubbelklik). */
+  const [refreshing, setRefreshing] = useState(false)
+  /** Meest recente boom voor refreshDatabases (stable callback). */
+  const treeRef = useRef<TreeNode[]>([])
+  useEffect(() => {
+    treeRef.current = tree
+  }, [tree])
+
+  // SAL-31: refresh-knop alleen bruikbaar wanneer er minstens één open sessie
+  // is (alleen dan bestaat een dbs:-folder in de boom).
+  const hasOpenDbFolders = tree.some((n) => n.children.some((c) => c.key.startsWith('dbs:')))
 
   // Boom opbouwen uit connections (alleen servers + folders zichtbaar)
   useEffect(() => {
@@ -137,6 +151,36 @@ export function ObjectExplorer(): React.JSX.Element {
     },
     [patchNode]
   )
+
+  /**
+   * SAL-31: haalt de databaselijst van alle open verbindingen opnieuw op
+   * (verse query, geen cache). Gebruikt treeRef zodat de callback stabiel is
+   * en ook vanuit de dbListRevision-effect zonder loopeffecten draait.
+   */
+  const refreshDatabases = useCallback(async (): Promise<void> => {
+    const folderNodes: TreeNode[] = []
+    const collect = (nodes: TreeNode[]): void => {
+      for (const n of nodes) {
+        if (n.kind === 'folder' && n.key.startsWith('dbs:')) folderNodes.push(n)
+        if (n.children.length > 0) collect(n.children)
+      }
+    }
+    collect(treeRef.current)
+    if (folderNodes.length === 0) return
+    setRefreshing(true)
+    try {
+      // Fouten per folder tonen via de SAL-29-foutweergave in de boom
+      // (loadChildren vangt ze af); de rest van de boom blijft bruikbaar.
+      await Promise.all(folderNodes.map((n) => loadChildren(n)))
+    } finally {
+      setRefreshing(false)
+    }
+  }, [loadChildren])
+
+  // SAL-31: automatische refresh na CREATE/DROP DATABASE via de Admin-knop.
+  useEffect(() => {
+    if (dbListRevision > 0) void refreshDatabases()
+  }, [dbListRevision, refreshDatabases])
 
   const toggle = async (node: TreeNode): Promise<void> => {
     if (node.kind === 'table' || node.kind === 'view') return
@@ -237,9 +281,26 @@ export function ObjectExplorer(): React.JSX.Element {
     <div className="object-explorer">
       <div className="panel-header">
         <span>Object Explorer</span>
-        <button className="icon-btn" title="Nieuwe verbinding" onClick={() => openConnectionDialog('create')}>
-          ➕
-        </button>
+        <div className="panel-actions">
+          <button
+            className={`icon-btn ${refreshing ? 'spin' : ''}`}
+            title={
+              refreshing
+                ? 'Bezig met vernieuwen…'
+                : hasOpenDbFolders
+                  ? 'Vernieuwen (databaselijst opnieuw ophalen)'
+                  : 'Vernieuwen (open eerst een verbinding)'
+            }
+            aria-label="Databases vernieuwen"
+            disabled={!hasOpenDbFolders || refreshing}
+            onClick={() => void refreshDatabases()}
+          >
+            ⟳
+          </button>
+          <button className="icon-btn" title="Nieuwe verbinding" onClick={() => openConnectionDialog('create')}>
+            ➕
+          </button>
+        </div>
       </div>
       <div className="tree">
         {tree.length === 0 && <div className="tree-empty">Geen verbindingen. Klik ➕ om er een toe te voegen.</div>}

@@ -14,6 +14,11 @@ type AdminTab = 'database' | 'schema' | 'table' | 'view' | 'index' | 'users' | '
 
 type AdminActionFn = (confirmed?: boolean) => Promise<AdminActionResult>
 
+/** SAL-31: opties per admin-actie; refreshDbList laat ObjectExplorer de databaselijst herladen. */
+interface AdminRunOpts {
+  refreshDbList?: boolean
+}
+
 interface BackupAdminActionFn {
   (confirmed?: boolean): Promise<BackupAdminActionFnResult>
 }
@@ -24,6 +29,7 @@ interface PendingConfirm {
   reasons: string[]
   kind: 'admin' | 'backup'
   rerun: () => Promise<AdminActionResult | BackupAdminActionFnResult>
+  refreshDbList?: boolean
 }
 
 type BackupAdminActionFnResult = {
@@ -60,14 +66,18 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
   const run = async (
     fn: AdminActionFn | BackupAdminActionFn,
     label: string,
-    kind: 'admin' | 'backup' = 'admin'
+    kind: 'admin' | 'backup' = 'admin',
+    opts?: AdminRunOpts
   ): Promise<void> => {
     try {
       const r = await fn()
       if (!r.ok && r.blocked && r.blocked.length > 0) {
-        setPending({ label, sql: r.sql ?? '', reasons: r.blocked, kind, rerun: () => fn(true) })
+        setPending({ label, sql: r.sql ?? '', reasons: r.blocked, kind, rerun: () => fn(true), refreshDbList: opts?.refreshDbList })
         return
       }
+      // SAL-31: na geslaagde CREATE/DROP DATABASE de Object Explorer
+      // automatisch laten vernieuwen (gebeurt ook na guard-bevestiging).
+      if (opts?.refreshDbList) useAppStore.getState().bumpDbListRevision()
       if (kind === 'backup') {
         const br = r as {
           ok: boolean
@@ -112,6 +122,9 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
         const ar = r as AdminActionResult
         setMessage(`✅ ${pending.label}\n${ar.sql}`)
       }
+      // SAL-31: ook na een bevestigde (guard) CREATE/DROP DATABASE de
+      // Object Explorer automatisch laten vernieuwen.
+      if (pending.refreshDbList) useAppStore.getState().bumpDbListRevision()
     } catch (err) {
       setMessage(`❌ ${err instanceof Error ? err.message : String(err)}`)
     } finally {
@@ -186,7 +199,7 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
   )
 }
 
-function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
+function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string, kind?: 'admin' | 'backup', opts?: AdminRunOpts) => Promise<void> }): React.JSX.Element {
   const [name, setName] = useState('')
   if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
   return (
@@ -199,14 +212,14 @@ function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null
         <button
           className="primary"
           disabled={!name}
-          onClick={() => onRun((confirmed) => window.nvag.admin.createDatabase(connectionId, name, confirmed), `CREATE DATABASE ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.createDatabase(connectionId, name, confirmed), `CREATE DATABASE ${name}`, 'admin', { refreshDbList: true })}
         >
           Creëren
         </button>
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun((confirmed) => window.nvag.admin.dropDatabase(connectionId, name, confirmed), `DROP DATABASE ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropDatabase(connectionId, name, confirmed), `DROP DATABASE ${name}`, 'admin', { refreshDbList: true })}
         >
           Verwijderen
         </button>

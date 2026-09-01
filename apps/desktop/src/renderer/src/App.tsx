@@ -58,6 +58,9 @@ function App(): React.JSX.Element {
   const refreshTransactionState = useAppStore((s) => s.refreshTransactionState)
   const openAdminDialog = useAppStore((s) => s.openAdminDialog)
   const showAdminDialog = useAppStore((s) => s.showAdminDialog)
+  // SAL-31: na CREATE/DROP DATABASE via AdminDialog ook de database-dropdown
+  // van de actieve tab opnieuw laden.
+  const dbListRevision = useAppStore((s) => s.dbListRevision)
 
   const [bottomTab, setBottomTab] = useState<BottomTab>('results')
   const [now, setNow] = useState(() => Date.now())
@@ -89,7 +92,7 @@ function App(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [activeTab?.connectionId, openSessions, activeTabId])
+  }, [activeTab?.connectionId, openSessions, activeTabId, dbListRevision])
 
   // Execution timer: tikt alleen zolang een query draait (SAL-17).
   useEffect(() => {

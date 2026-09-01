@@ -245,17 +245,24 @@ export function createSqlServerProvider(): DatabaseProvider {
 
     async listDatabases(session: DbSession): Promise<DatabaseInfo[]> {
       const { pool } = session.handle as SqlServerSessionHandle
-      const result = await pool.request().query<{ name: string; size: number; status: string }>(
-        `SELECT name,
-                CAST(SUM(size) * 8 * 1024 AS bigint) AS size,
-                state_desc AS status
-         FROM sys.databases
-         GROUP BY name, state_desc
-         ORDER BY name`
+      // SAL-31: sys.databases heeft géén `size`-kolom (die zit in
+      // sys.master_files). Grootte per database = som over alle bestanden
+      // (data + log) × 8 KB per page. LEFT JOIN zodat ook databases zonder
+      // bestandsrijen (of een offline db) als sizeBytes 0 terugkomen i.p.v.
+      // de hele lijst te laten crashen met "Invalid column name 'size'".
+      const result = await pool.request().query<{ name: string; size: number | null; status: string }>(
+        `SELECT d.name,
+                CAST(ISNULL(SUM(mf.size), 0) * 8 * 1024 AS bigint) AS size,
+                d.state_desc AS status
+         FROM sys.databases d
+         LEFT JOIN sys.master_files mf ON mf.database_id = d.database_id
+         GROUP BY d.name, d.state_desc
+         ORDER BY d.name`
       )
       return result.recordset.map((r) => ({
         name: r.name,
-        sizeBytes: r.size,
+        // tedious geeft bigint terug als JS-bigint; het contract verwacht number.
+        sizeBytes: r.size == null ? 0 : Number(r.size),
         status: r.status
       }))
     },
