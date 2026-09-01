@@ -240,6 +240,18 @@ export interface QueryOptions {
   maxRows?: number
   /** SQL-selectie uit de editor; zonder selectie = hele tekst. */
   selection?: { start: number; end: number }
+  /**
+   * Unieke uitvoerings-id. Providers registreren de actieve request hiermee,
+   * zodat `cancel(session, executionId)` de juiste request kan afbreken
+   * (cruciaal bij parallelle queries/meerdere tabs).
+   */
+  executionId?: string
+  /**
+   * AbortSignaal waarmee de runner een annulering doorgeeft. Providers moeten
+   * hun wacht-punten (awaits/streams) met dit signaal afbreken zodat de
+   * async-generator schoon eindigt en er geen resources achterblijven.
+   */
+  signal?: AbortSignal
 }
 
 export interface QueryColumn {

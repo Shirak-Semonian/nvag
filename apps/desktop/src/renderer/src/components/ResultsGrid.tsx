@@ -283,9 +283,24 @@ export function ResultsGrid({
         ]
 
   if (sets.length === 1 && sets[0]?.columns.length === 0 && !result.error) {
+    if (result.cancelled) {
+      return (
+        <div className="results-empty">
+          Query geannuleerd door gebruiker. {sets[0]?.rowCount ?? 0} rij(en) verwerkt in {result.durationMs} ms.
+        </div>
+      )
+    }
     return (
       <div className="results-empty">
         Query uitgevoerd. {sets[0]?.rowCount ?? 0} rij(en) beïnvloed in {result.durationMs} ms.
+      </div>
+    )
+  }
+
+  if (result.cancelled && sets.length === 1 && sets[0]?.rows.length === 0) {
+    return (
+      <div className="results-empty">
+        Query geannuleerd door gebruiker.
       </div>
     )
   }

@@ -704,4 +704,46 @@ describe('App (renderer-integratie)', () => {
       expect(editor.value).toContain('CREATE TABLE "main"."klanten" (')
     })
   })
+
+  it('toont de statusflow Uitvoeren → Bezig… → Annuleren → Geannuleerd en laat daarna direct opnieuw uitvoeren (SAL-33)', async () => {
+    window.nvag = createMockNvag({
+      connections: [sampleConnection()],
+      tables: ['klanten'],
+      views: ['v_klanten'],
+      tableMetadata: { klanten: sampleTableMetadata('klanten') },
+      hangingQuerySql: ['SELECT * FROM "main"."klanten" LIMIT 100'],
+      startHandler: (_executionId, emit) => {
+        // Query blijft lopen (geen done) tot de gebruiker annuleert. Net als
+        // de echte runner blokkeert `start` tot de uitvoering echt klaar is.
+        emit({ kind: 'columns', columns: [{ name: 'id' }, { name: 'naam' }] })
+        emit({ kind: 'rows', rows: [{ values: [1, 'Jan'] }] })
+        return new Promise(() => {
+          // nooit resolve
+        })
+      },
+      onCancel: (_executionId, emit) => {
+        // Net als de echte runner: na de provider-cancel komt done(cancelled).
+        emit({ kind: 'done', rowCount: 1, durationMs: 5, cancelled: true })
+      }
+    })
+    render(<App />)
+    await expandToTables()
+    fireEvent.doubleClick(screen.getByText('klanten'))
+    await waitFor(() => {
+      const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
+      expect(editor.value).toBe('SELECT * FROM "main"."klanten" LIMIT 100')
+    })
+
+    // Uitvoeren → Bezig… met timer en actieve Annuleren-knop.
+    fireEvent.click(screen.getByRole('button', { name: '▶ Uitvoeren' }))
+    await waitFor(() => expect(screen.getByText(/Bezig…/)).toBeTruthy())
+    const cancelButton = screen.getByRole('button', { name: /■ Annuleren/ })
+    expect((cancelButton as HTMLButtonElement).disabled).toBe(false)
+
+    // Annuleren → Geannuleerd (eindstatus) en de Uitvoeren-knop is terug.
+    fireEvent.click(cancelButton)
+    await waitFor(() => expect(screen.getByText(/Geannuleerd/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Uitvoeren' })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: /■ Annuleren/ })).toBeNull()
+  })
 })

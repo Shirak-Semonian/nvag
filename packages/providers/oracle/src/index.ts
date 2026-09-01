@@ -48,6 +48,27 @@ export interface OracleSessionHandle {
   conn: oracledb.Connection
 }
 
+/** Resolveert zodra het signaal afgaat (voor het race-mechanisme in executeQuery). */
+function abortPromise(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    signal.addEventListener('abort', () => resolve(), { once: true })
+  })
+}
+
+/** Wacht op een promise maar eindig direct wanneer het abort-signaal afgaat. */
+async function raceWithSignal<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal
+): Promise<{ aborted: boolean; value?: T }> {
+  if (!signal) return { aborted: false, value: await promise }
+  if (signal.aborted) return { aborted: true }
+  return Promise.race([
+    promise.then((value) => ({ aborted: false, value })),
+    abortPromise(signal).then(() => ({ aborted: true }))
+  ])
+}
+
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true,
   supportsSequences: true,
@@ -426,11 +447,25 @@ export function createOracleProvider(): DatabaseProvider {
           : stmt
 
       const start = performance.now()
+      // SAL-33: race het abort-signaal zodat de generator nooit blijft hangen;
+      // echte server-side cancel (oracledb.break) vereist een eigen break-
+      // handler — cancel() meldt duidelijk dat dit (nog) niet ondersteund is.
+      const q = conn.execute(capped, {}, {
+        outFormat: oracledb.OUT_FORMAT_OBJECT,
+        maxRows: isSelect ? maxRows : 0
+      })
       try {
-        const result = await conn.execute(capped, {}, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-          maxRows: isSelect ? maxRows : 0
-        })
+        const { aborted, value } = await raceWithSignal(q, opts.signal)
+        if (aborted) {
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+          return
+        }
+        const result = value!
         if (isSelect) {
           const meta = result.metaData ?? []
           const columns = meta.map((m) => ({ name: m.name, dataType: m.dbTypeName ?? undefined }))
@@ -457,15 +492,28 @@ export function createOracleProvider(): DatabaseProvider {
           }
         }
       } catch (err) {
-        yield {
-          kind: 'error',
-          message: err instanceof Error ? err.message : String(err)
+        if (opts.signal?.aborted) {
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+        } else {
+          yield {
+            kind: 'error',
+            message: err instanceof Error ? err.message : String(err)
+          }
         }
       }
     },
 
     async cancel(): Promise<void> {
-      // oracledb break vereist een eigen break-handler; F2-4 laat cancel bewust no-op.
+      // oracledb.break vereist een eigen break-handler (F2-4); tot die tijd is
+      // dit géén stille no-op: de gebruiker krijgt een duidelijke melding.
+      throw new Error(
+        'Oracle: annuleren van een actieve query wordt (nog) niet ondersteund. De query wordt lokaal gestopt; de server-side uitvoering kan nog doorlopen.'
+      )
     },
 
     async getExecutionStats(): Promise<QueryStats> {

@@ -51,6 +51,27 @@ export interface DatabricksSessionHandle {
   session: Awaited<ReturnType<DBSQLClient['openSession']>>
 }
 
+/** Resolveert zodra het signaal afgaat (voor het race-mechanisme in executeQuery). */
+function abortPromise(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    signal.addEventListener('abort', () => resolve(), { once: true })
+  })
+}
+
+/** Wacht op een promise maar eindig direct wanneer het abort-signaal afgaat. */
+async function raceWithSignal<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal
+): Promise<{ aborted: boolean; value?: T }> {
+  if (!signal) return { aborted: false, value: await promise }
+  if (signal.aborted) return { aborted: true }
+  return Promise.race([
+    promise.then((value) => ({ aborted: false, value })),
+    abortPromise(signal).then(() => ({ aborted: true }))
+  ])
+}
+
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true,
   supportsSequences: false,
@@ -335,18 +356,35 @@ export function createDatabricksProvider(): DatabaseProvider {
           : stmtText
 
       const start = performance.now()
-      try {
+      // SAL-33: race het abort-signaal zodat de generator nooit blijft hangen;
+      // echte server-side cancel is voor Databricks niet beschikbaar — cancel()
+      // meldt dat duidelijk (geen stille no-op).
+      const q = (async (): Promise<{ columns: { name: string; dataType?: string }[]; rows: Record<string, unknown>[] }> => {
         const stmt = await s.executeStatement(capped)
         const schema = await stmt.getSchema()
         const columns =
           schema?.columns.map((c) => ({ name: c.columnName, dataType: undefined })) ?? []
         const rows = (await stmt.fetchAll()) as Record<string, unknown>[]
         await stmt.close()
+        return { columns, rows }
+      })()
+      try {
+        const { aborted, value } = await raceWithSignal(q, opts.signal)
+        if (aborted) {
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+          return
+        }
+        const { columns, rows } = value!
         if (isSelect) {
           yield { kind: 'columns', columns }
           const out: QueryRow[] = []
           for (const row of rows) {
-            out.push({ values: columns.map((c) => toCell((row as Record<string, unknown>)[c.name])) })
+            out.push({ values: columns.map((c) => toCell(row[c.name])) })
             if (out.length >= 1000) {
               yield { kind: 'rows', rows: out }
               out.length = 0
@@ -358,12 +396,25 @@ export function createDatabricksProvider(): DatabaseProvider {
           yield { kind: 'done', rowCount: rows.length, durationMs: Math.round(performance.now() - start) }
         }
       } catch (err) {
-        yield { kind: 'error', message: err instanceof Error ? err.message : String(err) }
+        if (opts.signal?.aborted) {
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+        } else {
+          yield { kind: 'error', message: err instanceof Error ? err.message : String(err) }
+        }
       }
     },
 
     async cancel(): Promise<void> {
-      // @databricks/sql biedt geen directe cancel-API; no-op.
+      // @databricks/sql biedt geen directe cancel-API voor een actieve query.
+      // Dit is géén stille no-op: de gebruiker krijgt een duidelijke melding.
+      throw new Error(
+        'Databricks: annuleren van een actieve query wordt niet ondersteund door de driver. De query wordt lokaal gestopt; de server-side uitvoering kan nog doorlopen.'
+      )
     },
 
     async getExecutionStats(): Promise<QueryStats> {

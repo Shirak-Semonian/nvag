@@ -163,6 +163,22 @@ export function applyTopLimit(sql: string, maxRows: number): string {
   return prefix + rest.replace(/^(\s*SELECT\s+)/i, `$1TOP (${maxRows}) `)
 }
 
+/** Actieve mssql-requests per executionId (SAL-33): koppelt cancel(executionId)
+ * aan de juiste request, ook bij parallelle queries/meerdere tabs. */
+interface ActiveSqlServerRequest {
+  request: sql.Request
+  pool: sql.ConnectionPool
+  cancelled: boolean
+}
+const activeRequests = new Map<string, ActiveSqlServerRequest>()
+
+/** Herken een annuleringsfout van mssql/tedious (RequestError 'ECANCEL'). */
+function isCancellationError(err: unknown): boolean {
+  if (err && typeof err === 'object' && (err as { code?: string }).code === 'ECANCEL') return true
+  const message = err instanceof Error ? err.message : String(err)
+  return /cancel/i.test(message)
+}
+
 export function createSqlServerProvider(): DatabaseProvider {
   const sessions = new Map<string, DbSession>()
 
@@ -239,6 +255,19 @@ export function createSqlServerProvider(): DatabaseProvider {
 
     async close(session: DbSession): Promise<void> {
       const { pool } = session.handle as SqlServerSessionHandle
+      // Nog actieve requests van deze sessie beëindigen (voorkomt dat een
+      // cancel/sluiting requests in de pool of op de server achterlaat).
+      for (const [executionId, entry] of activeRequests) {
+        if (entry.pool === pool) {
+          entry.cancelled = true
+          try {
+            entry.request.cancel()
+          } catch {
+            // request is al beëindigd
+          }
+          activeRequests.delete(executionId)
+        }
+      }
       try {
         await pool.close()
       } catch {
@@ -657,6 +686,8 @@ export function createSqlServerProvider(): DatabaseProvider {
     ): AsyncIterable<QueryChunk> {
       const { pool } = session.handle as SqlServerSessionHandle
       const maxRows = opts.maxRows ?? CAPABILITIES.maxResultRowsDefault
+      const executionId = opts.executionId
+      const signal = opts.signal
 
       const statements = splitStatements(sqlText)
       if (statements.length === 0) {
@@ -682,6 +713,11 @@ export function createSqlServerProvider(): DatabaseProvider {
       if (isSelect) {
         const request = pool.request()
         request.stream = true
+        const entry: ActiveSqlServerRequest | null = executionId
+          ? { request, pool, cancelled: false }
+          : null
+        if (executionId && entry) activeRequests.set(executionId, entry)
+
         const queue: QueryChunk[] = []
         let waiters: Array<() => void> = []
         const push = (c: QueryChunk): void => {
@@ -696,6 +732,7 @@ export function createSqlServerProvider(): DatabaseProvider {
           })
 
         let done = false
+        let cancelled = false
         let streamError: { message: string; position?: { line: number; column: number } } | undefined
 
         // Rijen batchen in chunks van 1000 (zelfde aanpak als de sqlite-provider)
@@ -707,55 +744,128 @@ export function createSqlServerProvider(): DatabaseProvider {
             rowBuffer = []
           }
         }
+        const wake = (): void => {
+          const w = waiters
+          waiters = []
+          for (const fn of w) fn()
+        }
+
+        // Echte cancel (SAL-33): mssql stuurt een attention-signaal naar de
+        // server; de server beëindigt de query. De request wordt daarna via
+        // het ECANCEL-error-event als geannuleerd afgesloten (geen rode fout).
+        let requestStarted = false
+        const cancelRequest = (): void => {
+          if (entry) entry.cancelled = true
+          cancelled = true
+          if (requestStarted) {
+            try {
+              request.cancel()
+            } catch {
+              // request is al beëindigd
+            }
+          }
+        }
+        const onAbort = (): void => {
+          cancelRequest()
+          done = true
+          flushRows()
+          wake()
+        }
+        if (signal) {
+          if (signal.aborted) onAbort()
+          else signal.addEventListener('abort', onAbort, { once: true })
+        }
 
         request.on('recordset', (columns) => {
           push({ kind: 'columns', columns: (Object.values(columns) as { name: string }[]).map(columnName) })
         })
         request.on('row', (row) => {
+          if (cancelled) return
           const values = (Object.values(row) as unknown[]).map(toCell)
           rowBuffer.push({ values })
           if (rowBuffer.length >= ROW_CHUNK) flushRows()
         })
         request.on('error', (err) => {
+          const message = err instanceof Error ? err.message : String(err)
+          if (cancelled || entry?.cancelled === true || isCancellationError(err)) {
+            // Annulering is géén fout: eindig schoon als done(cancelled).
+            cancelled = true
+            done = true
+            flushRows()
+            wake()
+            return
+          }
           streamError = {
-            message: err instanceof Error ? err.message : String(err),
+            message,
             position:
-              wrapErrorPosition('tsql', err instanceof Error ? err.message : String(err), stmt) ??
+              wrapErrorPosition('tsql', message, stmt) ??
               undefined
           }
+          // Ook bij een echte fout de loop wekken (voorkomt hangen).
+          done = true
+          wake()
         })
         request.on('done', () => {
           flushRows()
           done = true
-          const w = waiters
-          waiters = []
-          for (const fn of w) fn()
+          wake()
         })
 
-        request.query(capped)
+        try {
+          request.query(capped)
+          requestStarted = true
+          // Racede een annulering vóór de request-start? Dan nu alsnog cancelen.
+          if (signal?.aborted) cancelRequest()
 
-        let rowCount = 0
-        while (!done || queue.length > 0) {
-          if (queue.length > 0) {
-            const chunk = queue.shift()!
-            if (chunk.kind === 'rows') rowCount += chunk.rows.length
-            yield chunk
+          let rowCount = 0
+          while (!done || queue.length > 0) {
+            if (queue.length > 0) {
+              const chunk = queue.shift()!
+              if (chunk.kind === 'rows') rowCount += chunk.rows.length
+              yield chunk
+            } else {
+              await wait()
+            }
+          }
+          if (cancelled) {
+            yield {
+              kind: 'done',
+              rowCount,
+              durationMs: Math.round(performance.now() - start),
+              cancelled: true
+            }
+          } else if (streamError !== undefined) {
+            yield { kind: 'error', message: streamError.message, position: streamError.position }
           } else {
-            await wait()
+            yield {
+              kind: 'done',
+              rowCount,
+              durationMs: Math.round(performance.now() - start)
+            }
           }
-        }
-        if (streamError !== undefined) {
-          yield { kind: 'error', message: streamError.message, position: streamError.position }
-        } else {
-          yield {
-            kind: 'done',
-            rowCount,
-            durationMs: Math.round(performance.now() - start)
-          }
+        } finally {
+          if (signal) signal.removeEventListener('abort', onAbort)
+          if (executionId) activeRequests.delete(executionId)
         }
       } else {
+        const request = pool.request()
+        const entry: ActiveSqlServerRequest | null = executionId
+          ? { request, pool, cancelled: false }
+          : null
+        if (executionId && entry) activeRequests.set(executionId, entry)
+        const onAbort = (): void => {
+          if (entry) entry.cancelled = true
+          try {
+            request.cancel()
+          } catch {
+            // request is al beëindigd
+          }
+        }
+        if (signal) {
+          if (signal.aborted) onAbort()
+          else signal.addEventListener('abort', onAbort, { once: true })
+        }
         try {
-          const request = pool.request()
           const result = await request.query(capped)
           const rowCount = (result.rowsAffected ?? []).reduce((a, b) => a + (b ?? 0), 0)
           yield {
@@ -765,19 +875,40 @@ export function createSqlServerProvider(): DatabaseProvider {
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
-          yield {
-            kind: 'error',
-            message,
-            position: wrapErrorPosition('tsql', message, stmt) ?? undefined
+          const cancelledByUser = entry?.cancelled === true || isCancellationError(err)
+          if (cancelledByUser) {
+            yield {
+              kind: 'done',
+              rowCount: 0,
+              durationMs: Math.round(performance.now() - start),
+              cancelled: true
+            }
+          } else {
+            yield {
+              kind: 'error',
+              message,
+              position: wrapErrorPosition('tsql', message, stmt) ?? undefined
+            }
           }
+        } finally {
+          if (signal) signal.removeEventListener('abort', onAbort)
+          if (executionId) activeRequests.delete(executionId)
         }
       }
     },
 
-    async cancel(): Promise<void> {
-      // mssql ondersteunt request.cancel(); de actieve request is echter niet
-      // eenvoudig per executionId terug te vinden (F1-4 runner cancelled lokaal).
-      // In F1 bewust een no-op; echte cancel volgt met execution-tracking.
+    async cancel(session: DbSession, executionId: string): Promise<void> {
+      // Echte cancel (SAL-33): vind de actieve request via executionId en
+      // stuur een attention-signaal naar SQL Server (request.cancel()).
+      void session
+      const entry = activeRequests.get(executionId)
+      if (!entry) return
+      entry.cancelled = true
+      try {
+        entry.request.cancel()
+      } catch {
+        // request is al beëindigd
+      }
     },
 
     async getExecutionStats(

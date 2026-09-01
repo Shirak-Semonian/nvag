@@ -1237,6 +1237,26 @@ button.primary:hover:not(:disabled) {
   white-space: nowrap;
 }
 
+/* SAL-33: statusweergave van de actieve uitvoering (Uitvoeren → Bezig… → Annuleren → Geannuleerd) */
+.exec-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.exec-status.running {
+  color: var(--green, #6fce72);
+}
+
+.exec-status.cancelling {
+  color: var(--yellow);
+}
+
+.exec-status.cancelled {
+  color: var(--orange, #e2a03f);
+}
+
 button.danger {
   background: #8b1e1e;
   border-color: #a83232;

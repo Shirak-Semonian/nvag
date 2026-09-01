@@ -59,6 +59,27 @@ export interface Db2SessionHandle {
   database: string
 }
 
+/** Resolveert zodra het signaal afgaat (voor het race-mechanisme in executeQuery). */
+function abortPromise(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    signal.addEventListener('abort', () => resolve(), { once: true })
+  })
+}
+
+/** Wacht op een promise maar eindig direct wanneer het abort-signaal afgaat. */
+async function raceWithSignal<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal
+): Promise<{ aborted: boolean; value?: T }> {
+  if (!signal) return { aborted: false, value: await promise }
+  if (signal.aborted) return { aborted: true }
+  return Promise.race([
+    promise.then((value) => ({ aborted: false, value })),
+    abortPromise(signal).then(() => ({ aborted: true }))
+  ])
+}
+
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: true, // DB2: schemas (SYSCAT.SCHEMATA)
   supportsSequences: true,
@@ -332,7 +353,23 @@ export function createDb2Provider(): DatabaseProvider {
 
       try {
         let rowCount = 0
-        for await (const evt of handle.bridge.executeQuery(handle.connId, capped, maxRows)) {
+        // SAL-33: manuale iteratie met abort-race zodat de generator nooit
+        // blijft hangen; de JDBC-bridge heeft geen cancel-API — cancel()
+        // meldt dat duidelijk (geen stille no-op).
+        const bridgeIter = handle.bridge.executeQuery(handle.connId, capped, maxRows)[Symbol.asyncIterator]()
+        for (;;) {
+          const { aborted, value } = await raceWithSignal(bridgeIter.next(), opts.signal)
+          if (aborted) {
+            yield {
+              kind: 'done',
+              rowCount,
+              durationMs: Math.round(performance.now() - start),
+              cancelled: true
+            }
+            return
+          }
+          if (value!.done) break
+          const evt = value!.value
           if (evt.kind === 'columns') {
             yield { kind: 'columns', columns: evt.columns }
           } else if (evt.kind === 'rows') {
@@ -354,18 +391,30 @@ export function createDb2Provider(): DatabaseProvider {
           }
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        yield {
-          kind: 'error',
-          message,
-          position: parseDb2ErrorPosition(stmt, message) ?? undefined
+        if (opts.signal?.aborted) {
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+        } else {
+          const message = err instanceof Error ? err.message : String(err)
+          yield {
+            kind: 'error',
+            message,
+            position: parseDb2ErrorPosition(stmt, message) ?? undefined
+          }
         }
       }
     },
 
     async cancel(_session: DbSession, _executionId: string): Promise<void> {
-      // F1: bridge draait queries op dezelfde verbinding; echte cancel volgt
-      // met execution-tracking (zelfde aanpak als de sqlserver-provider).
+      // De JDBC-bridge biedt geen cancel-API voor een actieve query. Dit is
+      // géén stille no-op: de gebruiker krijgt een duidelijke melding.
+      throw new Error(
+        'Db2: annuleren van een actieve query wordt niet ondersteund door de JDBC-bridge. De query wordt lokaal gestopt; de server-side uitvoering kan nog doorlopen.'
+      )
     },
 
     async getExecutionStats(

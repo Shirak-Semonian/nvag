@@ -10,6 +10,20 @@
  *   `cancel(id)`    — vraagt annulering aan; de runner stopt en stuurt een
  *                     done-chunk met `cancelled: true`.
  *
+ * SAL-33: annuleren is nu een ECHTE provider-cancel, niet alleen lokaal
+ * stoppen met consumeren:
+ *   - `run()` maakt per uitvoering een AbortController aan; `start()` geeft
+ *     `executionId` + `signal` mee aan `provider.executeQuery(...)`.
+ *   - `cancel()` roept `provider.cancel(session, executionId)` aan (SQL
+ *     Server: request.cancel() → attention-signaal → server stopt de query)
+ *     en breekt daarna de stream af via `signal.abort()`.
+ *   - Providers die geen echte cancel ondersteunen melden dit (cancel() gooit
+ *     een duidelijke fout); de runner stuurt dan een warning-chunk in plaats
+ *     van stil te doen alsof er gecanceld is.
+ *   - Resources (actief/prepared-maps en provider-request-maps) worden altijd
+ *     in `finally` vrijgemaakt; na annuleren is direct een nieuwe query
+ *     mogelijk (geen kapotte pool/request).
+ *
  * De maxRows-cap (standaard provider.capabilities.maxResultRowsDefault) wordt
  * hier afgedwongen op het aantal rijen dat naar de renderer gaat; bij
  * overschrijding stopt de runner en stuurt een warning-chunk.
@@ -54,6 +68,8 @@ interface PreparedExecution {
 interface ActiveExecution {
   sender: QuerySender
   cancelRequested: boolean
+  /** SAL-33: breekt de provider-iterable af; provider-cancel koppelt hieraan. */
+  abortController: AbortController
 }
 
 export class QueryRunner {
@@ -77,7 +93,11 @@ export class QueryRunner {
     }
     const provider = registry.get(session.providerId)
     const executionId = randomUUID()
-    this.active.set(executionId, { sender, cancelRequested: false })
+    this.active.set(executionId, {
+      sender,
+      cancelRequested: false,
+      abortController: new AbortController()
+    })
     this.prepared.set(executionId, {
       session,
       providerId: provider.id,
@@ -115,9 +135,18 @@ export class QueryRunner {
     }
 
     try {
+      // Annulering vóór de start (run → cancel → start): direct beëindigen,
+      // de provider-query wordt dan nooit gestart.
+      if (active.cancelRequested) {
+        send({ kind: 'done', rowCount: 0, durationMs: 0, cancelled: true })
+        return
+      }
+
       const iter = provider.executeQuery(session, req.sql, {
         maxRows,
-        selection: req.selection
+        selection: req.selection,
+        executionId,
+        signal: active.abortController.signal
       })
       for await (const chunk of iter) {
         if (active.cancelRequested) break
@@ -129,6 +158,7 @@ export class QueryRunner {
           if (remaining <= 0) {
             truncated = true
             warnTruncated()
+            active.abortController.abort()
             break
           }
           if (chunk.rows.length > remaining) {
@@ -136,6 +166,7 @@ export class QueryRunner {
             delivered += remaining
             truncated = true
             warnTruncated()
+            active.abortController.abort()
             break
           }
           send(chunk)
@@ -150,7 +181,7 @@ export class QueryRunner {
           send({
             ...chunk,
             truncated: truncated || chunk.truncated === true,
-            cancelled: active.cancelRequested
+            cancelled: active.cancelRequested || chunk.cancelled === true
           })
           finished = true
           break
@@ -167,12 +198,27 @@ export class QueryRunner {
         })
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err)
-      send({
-        kind: 'error',
-        message: error
-      })
+      if (active.cancelRequested) {
+        // Provider gooide tijdens een annulering (bijv. abort-achtige fout):
+        // dat is géén rode foutmelding maar een nette annulering.
+        send({
+          kind: 'done',
+          rowCount: delivered,
+          durationMs: Math.round(performance.now() - start),
+          truncated,
+          cancelled: true
+        })
+      } else {
+        error = err instanceof Error ? err.message : String(err)
+        send({
+          kind: 'error',
+          message: error
+        })
+      }
     } finally {
+      // Zorg dat de provider-iterable (en daarmee request/stream) altijd
+      // beëindigd wordt, ook bij truncation/break vóór het natuurlijke einde.
+      active.abortController.abort()
       this.active.delete(executionId)
       this.prepared.delete(executionId)
 
@@ -220,15 +266,32 @@ export class QueryRunner {
     if (!active || active.cancelRequested) return
     active.cancelRequested = true
 
-    // Provider-cancel aanroepen waar ondersteund (bijv. sessie sluiten).
+    // Eerst de provider-cancel (echte server-side cancel waar ondersteund),
+    // daarna de stream afbreken zodat de generator schoon eindigt.
     const prepared = this.prepared.get(executionId)
+    let cancelError: unknown
     if (prepared) {
       const provider = registry.get(prepared.providerId)
       try {
         await provider.cancel(prepared.session, executionId)
-      } catch {
-        // cancel is best-effort; de runner stopt hoe dan ook met consumeren.
+      } catch (err) {
+        cancelError = err
       }
+    }
+    active.abortController.abort()
+
+    // Geen stille no-op: wanneer de provider geen echte cancel ondersteunt
+    // (of de cancel zelf faalt), krijgt de gebruiker een duidelijke melding.
+    if (cancelError !== undefined && !active.sender.isDestroyed()) {
+      const message =
+        cancelError instanceof Error ? cancelError.message : String(cancelError)
+      active.sender.send('query:chunk', {
+        executionId,
+        chunk: {
+          kind: 'warning',
+          message: `Annuleren niet volledig ondersteund door de provider: ${message} De query wordt lokaal gestopt; de server-side uitvoering kan nog kort doorlopen.`
+        }
+      })
     }
   }
 

@@ -42,6 +42,23 @@ import { buildLimit, containsKeyword, quoteIdentifier, splitStatements } from '@
 
 export interface PostgresSessionHandle {
   client: Client
+  /** SAL-33: clientconfig (in-memory) voor de aparte cancel-verbinding. */
+  cancelConfig: ReturnType<typeof buildClientConfig>
+}
+
+/** Actieve pg-query per executionId (SAL-33): cancel via pg_cancel_backend. */
+interface ActivePgQuery {
+  processId: number
+  cancelConfig: ReturnType<typeof buildClientConfig>
+}
+const activePgQueries = new Map<string, ActivePgQuery>()
+
+/** PostgreSQL-cancel-fout (SQLSTATE 57014 / 'canceling statement...'). */
+function isPgCancelError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code
+  if (code === '57014') return true
+  const message = err instanceof Error ? err.message : String(err)
+  return /canceling statement due to user request/i.test(message)
 }
 
 const CAPABILITIES: ProviderCapabilities = {
@@ -90,6 +107,27 @@ function positionFromPgError(err: unknown, sql: string): { line: number; column:
   return { line, column: safe - lineStart + 1 }
 }
 
+/** Resolveert zodra het signaal afgaat (voor het race-mechanisme in executeQuery). */
+function abortPromise(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    signal.addEventListener('abort', () => resolve(), { once: true })
+  })
+}
+
+/** Wacht op een promise maar eindig direct wanneer het abort-signaal afgaat. */
+async function raceWithSignal<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal
+): Promise<{ aborted: boolean; value?: T }> {
+  if (!signal) return { aborted: false, value: await promise }
+  if (signal.aborted) return { aborted: true }
+  return Promise.race([
+    promise.then((value) => ({ aborted: false, value })),
+    abortPromise(signal).then(() => ({ aborted: true }))
+  ])
+}
+
 export function createPostgresProvider(): DatabaseProvider {
   return {
     id: 'postgresql',
@@ -98,10 +136,11 @@ export function createPostgresProvider(): DatabaseProvider {
     capabilities: CAPABILITIES,
 
     async connect(config: ConnectionConfig, secret?: ConnectionSecret): Promise<DbSession> {
-      const client = new Client(buildClientConfig(config, secret))
+      const cancelConfig = buildClientConfig(config, secret)
+      const client = new Client(cancelConfig)
       await client.connect()
       const session: DbSession = {
-        handle: { client } satisfies PostgresSessionHandle,
+        handle: { client, cancelConfig } satisfies PostgresSessionHandle,
         connectionId: config.id,
         providerId: 'postgresql',
         database: config.database ?? config.host
@@ -452,6 +491,8 @@ export function createPostgresProvider(): DatabaseProvider {
     ): AsyncIterable<QueryChunk> {
       const { client } = session.handle as PostgresSessionHandle
       const maxRows = opts.maxRows ?? CAPABILITIES.maxResultRowsDefault
+      const executionId = opts.executionId
+      const signal = opts.signal
 
       const statements = splitStatements(sql)
       if (statements.length === 0) {
@@ -472,8 +513,28 @@ export function createPostgresProvider(): DatabaseProvider {
       const capped = isSelect && !containsKeyword(stmt, 'LIMIT') ? `${stmt} ${buildLimit('postgres', maxRows)}`.trim() : stmt
 
       const start = performance.now()
+      // SAL-33: echte cancel — `provider.cancel()` roept pg_cancel_backend aan
+      // (via een aparte verbinding); daarnaast raced het abort-signaal de
+      // wacht op de query, zodat de generator nooit blijft hangen.
+      const q = client.query(capped)
+      const { cancelConfig } = session.handle as PostgresSessionHandle
+      if (executionId) {
+        const processId = (client as unknown as { processID: number }).processID
+        activePgQueries.set(executionId, { processId, cancelConfig })
+      }
+
       try {
-        const result = await client.query(capped)
+        const { aborted, value } = await raceWithSignal(q, signal)
+        if (aborted) {
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+          return
+        }
+        const result = value!
         if (isSelect) {
           const columns = (result.fields ?? []).map((f) => ({ name: f.name, dataType: f.dataTypeID ? String(f.dataTypeID) : undefined }))
           yield { kind: 'columns', columns }
@@ -500,17 +561,45 @@ export function createPostgresProvider(): DatabaseProvider {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        yield {
-          kind: 'error',
-          message,
-          position: positionFromPgError(err, stmt)
+        if (signal?.aborted || isPgCancelError(err)) {
+          // Annulering is géén fout.
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+        } else {
+          yield {
+            kind: 'error',
+            message,
+            position: positionFromPgError(err, stmt)
+          }
         }
+      } finally {
+        if (executionId) activePgQueries.delete(executionId)
       }
     },
 
-    async cancel(): Promise<void> {
-      // pg Client biedt geen cross-query cancel zonder server-side PID-tracking.
-      // F1-4: cancel via pg_cancel_backend op basis van actieve query (uitbreiding).
+    async cancel(_session: DbSession, executionId: string): Promise<void> {
+      // Echte cancel (SAL-33): pg_cancel_backend op de actieve backend-PID,
+      // uitgevoerd via een aparte verbinding (de hoofdclient is bezet).
+      const entry = activePgQueries.get(executionId)
+      if (!entry) return
+      let cancelClient: Client | undefined
+      try {
+        cancelClient = new Client(entry.cancelConfig)
+        await cancelClient.connect()
+        await cancelClient.query('SELECT pg_cancel_backend($1)', [entry.processId])
+      } finally {
+        if (cancelClient) {
+          try {
+            await cancelClient.end()
+          } catch {
+            // negeren
+          }
+        }
+      }
     },
 
     async getExecutionStats(): Promise<QueryStats> {

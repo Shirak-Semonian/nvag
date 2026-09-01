@@ -52,8 +52,12 @@ export interface MockNvagOptions {
     executionId: string,
     emit: (chunk: QueryChunk) => void
   ) => Promise<void> | void
-  /** Wordt aangeroepen wanneer `query.cancel` wordt aangeroepen. */
-  onCancel?: (executionId: string) => void
+  /** SQL waarvan `start` niet automatisch done emitteert maar naar
+   *  `startHandler` gaat (SAL-33: hangende query voor cancel-tests). */
+  hangingQuerySql?: string[]
+  /** Wordt aangeroepen wanneer `query.cancel` wordt aangeroepen (SAL-33: mag
+   *  via `emit` het done(cancelled)-chunk sturen, zoals de echte runner doet). */
+  onCancel?: (executionId: string, emit: (chunk: QueryChunk) => void) => void
 }
 
 const SERVER_INFO: ServerInfo = {
@@ -103,6 +107,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
   const useDatabaseCalls: { connectionId: string; database: string }[] = []
   const chunkListeners = new Set<(evt: QueryChunkEvent) => void>()
   const pendingRuns = new Map<string, QueryRunResponse>()
+  const pendingSql = new Map<string, string>()
   let sessionSeq = 0
   let execSeq = 0
   /** Database van een geopende sessie (useDatabase-mock; F1-10). */
@@ -202,6 +207,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         }
         execSeq += 1
         const executionId = `exec-${execSeq}`
+        pendingSql.set(executionId, req.sql)
         pendingRuns.set(
           executionId,
           options.queryResults?.[req.sql] ?? options.defaultQueryResult ?? defaultResult()
@@ -212,6 +218,15 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         const response = pendingRuns.get(executionId)
         if (response) {
           pendingRuns.delete(executionId)
+          // SAL-33: hangende query's gaan naar de startHandler (geen automatische done).
+          const sql = pendingSql.get(executionId)
+          pendingSql.delete(executionId)
+          if (sql && options.hangingQuerySql?.includes(sql)) {
+            if (options.startHandler) {
+              await options.startHandler(executionId, (chunk) => emit({ executionId, chunk }))
+            }
+            return
+          }
           if (response.error && response.columns.length === 0 && response.rows.length === 0) {
             emit({ executionId, chunk: { kind: 'error', message: response.error, position: response.errorPosition } })
             emit({ executionId, chunk: { kind: 'done', rowCount: 0, durationMs: response.durationMs } })
@@ -239,7 +254,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         }
       },
       cancel: async (executionId: string) => {
-        options.onCancel?.(executionId)
+        options.onCancel?.(executionId, (chunk) => emit({ executionId, chunk }))
       },
       onChunk: (cb: (evt: QueryChunkEvent) => void) => {
         chunkListeners.add(cb)

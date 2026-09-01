@@ -263,26 +263,40 @@ function App(): React.JSX.Element {
                 </select>
                 {activeTab.running ? (
                   <>
+                    <span
+                      className={`exec-status ${activeTab.cancelling ? 'cancelling' : 'running'}`}
+                      title={activeTab.cancelling ? 'Annuleren wordt verwerkt…' : 'Query wordt uitgevoerd'}
+                    >
+                      ◉ {activeTab.cancelling ? 'Annuleren…' : 'Bezig…'}
+                    </span>
                     <button
                       className="danger"
                       onClick={() => cancelQuery(activeTab.id)}
-                      title="Query annuleren"
+                      disabled={activeTab.cancelling}
+                      title={activeTab.cancelling ? 'Annuleren wordt verwerkt…' : 'Query annuleren'}
                     >
-                      ■ Annuleren
+                      ■ {activeTab.cancelling ? 'Annuleren…' : 'Annuleren'}
                     </button>
                     <span className="exec-timer" title="Verstreken tijd">
                       ⏱ {formatElapsed(elapsedMs)}
                     </span>
                   </>
                 ) : (
-                  <button
-                    className="primary"
-                    onClick={() => runQuery(activeTab.id)}
-                    disabled={!activeTab.connectionId || !openSessions[activeTab.connectionId]}
-                    title="Uitvoeren (F5 / Ctrl+Enter)"
-                  >
-                    ▶ Uitvoeren
-                  </button>
+                  <>
+                    {activeTab.result?.cancelled && (
+                      <span className="exec-status cancelled" title="Query geannuleerd door gebruiker">
+                        ✕ Geannuleerd
+                      </span>
+                    )}
+                    <button
+                      className="primary"
+                      onClick={() => runQuery(activeTab.id)}
+                      disabled={!activeTab.connectionId || !openSessions[activeTab.connectionId]}
+                      title="Uitvoeren (F5 / Ctrl+Enter)"
+                    >
+                      ▶ Uitvoeren
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => openQueryFile()}

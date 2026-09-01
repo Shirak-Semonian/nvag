@@ -395,6 +395,7 @@ export function createSqliteProvider(): DatabaseProvider {
     ): AsyncIterable<QueryChunk> {
       const { db } = session.handle as SqliteSessionHandle
       const maxRows = opts.maxRows ?? CAPABILITIES.maxResultRowsDefault
+      const signal = opts.signal
 
       // Statements splitsen op ';' (quote/comment-bewust; F1: echte parser per dialect).
       // Contract: maximaal één statement per executeQuery; node:sqlite zou de
@@ -419,6 +420,7 @@ export function createSqliteProvider(): DatabaseProvider {
       let totalRows = 0
       let returnedColumns = false
       let currentStmt = ''
+      let cancelled = false
 
       try {
         const stmt = statements[0]!
@@ -451,7 +453,13 @@ export function createSqliteProvider(): DatabaseProvider {
           const it = st.iterate() as Iterable<Record<string, unknown>>
           let rows: QueryRow[] = []
           let stmtCount = 0
+          // SAL-33: batch-level cancel — node:sqlite heeft geen interrupt-API;
+          // de runner stopt tussen rij-batches (en de iterator wordt beëindigd).
           for (const row of it) {
+            if (signal?.aborted) {
+              cancelled = true
+              break
+            }
             stmtCount++
             rows.push({ values: cols.map((c) => toCell(row[c.name])) })
             if (rows.length >= 1000) {
@@ -459,16 +467,25 @@ export function createSqliteProvider(): DatabaseProvider {
               rows = []
             }
           }
-          if (rows.length > 0) yield { kind: 'rows', rows }
+          if (!cancelled && rows.length > 0) yield { kind: 'rows', rows }
           totalRows += stmtCount
         } else {
           const result = st.run()
           totalRows += Number(result.changes ?? 0)
         }
-        yield {
-          kind: 'done',
-          rowCount: totalRows,
-          durationMs: Math.round(performance.now() - start)
+        if (cancelled) {
+          yield {
+            kind: 'done',
+            rowCount: totalRows,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+        } else {
+          yield {
+            kind: 'done',
+            rowCount: totalRows,
+            durationMs: Math.round(performance.now() - start)
+          }
         }
       } catch (err) {
         yield {
@@ -480,8 +497,12 @@ export function createSqliteProvider(): DatabaseProvider {
     },
 
     async cancel(): Promise<void> {
-      // node:sqlite biedt geen cancel-API; fallback is sessie sluiten (ADR/R5)
-      // In F0 bewust een no-op; UI toont cancel alleen waar mogelijk.
+      // node:sqlite heeft geen interrupt/cancel-API; de runner stopt de
+      // consumptie tussen rij-batches (batch-level). Dit is géén stille no-op:
+      // de gebruiker krijgt een duidelijke melding.
+      throw new Error(
+        'SQLite: annuleren werkt alleen tussen rij-batches; de lopende lokale query stopt zodra de huidige batch klaar is.'
+      )
     },
 
     async getExecutionStats(

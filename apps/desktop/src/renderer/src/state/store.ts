@@ -45,6 +45,8 @@ export interface QueryTabState {
   executionId: string | null
   /** Starttijd van de actieve uitvoering (execution timer). */
   startedAt: number | null
+  /** SAL-33: annulering wordt verwerkt (cancel-IPC verstuurd, wachten op done). */
+  cancelling?: boolean
   /** Pad van een geopend/opgeslagen querybestand (optioneel). */
   filePath?: string
   /** Bewerkingsvlag: true zodra SQL afwijkt van het bestand op schijf. */
@@ -343,7 +345,8 @@ function initialTab(): QueryTabState {
     result: null,
     running: false,
     executionId: null,
-    startedAt: null
+    startedAt: null,
+    cancelling: false
   }
 }
 
@@ -433,7 +436,8 @@ export const useAppStore = create<AppState>((set, get) => {
       result: null,
       running: false,
       executionId: null,
-      startedAt: null
+      startedAt: null,
+      cancelling: false
     }
     set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
   },
@@ -457,7 +461,8 @@ export const useAppStore = create<AppState>((set, get) => {
       result: null,
       running: false,
       executionId: null,
-      startedAt: null
+      startedAt: null,
+      cancelling: false
     }
     set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
   },
@@ -474,7 +479,8 @@ export const useAppStore = create<AppState>((set, get) => {
       result: null,
       running: false,
       executionId: null,
-      startedAt: null
+      startedAt: null,
+      cancelling: false
     }
     set((s) => ({ tabs: [...s.tabs, copy], activeTabId: copy.id }))
   },
@@ -646,7 +652,7 @@ export const useAppStore = create<AppState>((set, get) => {
     set((s) => ({
       tabs: s.tabs.map((t) =>
         t.id === tabId
-          ? { ...t, running: true, result: null, executionId: null, startedAt: Date.now() }
+          ? { ...t, running: true, result: null, executionId: null, startedAt: Date.now(), cancelling: false }
           : t
       )
     }))
@@ -666,7 +672,7 @@ export const useAppStore = create<AppState>((set, get) => {
         acc.error = chunk.message
         acc.errorPosition = chunk.position
         acc.messages.push({ severity: 'error', text: chunk.message, position: chunk.position })
-        patchTab({ result: buildResult(acc, executionId), running: false, executionId: null, startedAt: null })
+        patchTab({ result: buildResult(acc, executionId), running: false, executionId: null, startedAt: null, cancelling: false })
         unsubscribe?.()
         return
       } else {
@@ -681,7 +687,7 @@ export const useAppStore = create<AppState>((set, get) => {
             acc.messages.push({ severity: 'warning', text: 'Resultaat afgekapt op de max-rij-cap.' })
           }
         }
-        patchTab({ result: buildResult(acc, executionId), running: false, executionId: null, startedAt: null })
+        patchTab({ result: buildResult(acc, executionId), running: false, executionId: null, startedAt: null, cancelling: false })
         unsubscribe?.()
         return
       }
@@ -790,7 +796,39 @@ export const useAppStore = create<AppState>((set, get) => {
   async cancelQuery(tabId) {
     const tab = get().tabs.find((t) => t.id === tabId)
     if (!tab?.running || !tab.executionId) return
-    await window.nvag.query.cancel(tab.executionId)
+    // SAL-33: statusflow — tijdens de cancel-verwerking toont de toolbar
+    // "Annuleren…" (knop disabled); het done-chunk zet de tab terug.
+    const patchTab = (patch: Partial<QueryTabState>): void => {
+      set((s) => ({
+        tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, ...patch } : t))
+      }))
+    }
+    patchTab({ cancelling: true })
+    try {
+      await window.nvag.query.cancel(tab.executionId)
+    } catch (err) {
+      // Cancel zelf faalde: melding tonen en de knop weer actief maken.
+      // De query kan daarna opnieuw geprobeerd worden te annuleren.
+      const text = err instanceof Error ? err.message : String(err)
+      const current = get().tabs.find((t) => t.id === tabId)
+      patchTab({
+        cancelling: false,
+        result: {
+          executionId: current?.executionId ?? '',
+          columns: current?.result?.columns ?? [],
+          rows: current?.result?.rows ?? [],
+          truncated: current?.result?.truncated ?? false,
+          rowCount: current?.result?.rowCount ?? 0,
+          durationMs: current?.result?.durationMs ?? 0,
+          error: `Annuleren mislukt: ${text}`,
+          messages: [
+            ...(current?.result?.messages ?? []),
+            { severity: 'error', text: `Annuleren mislukt: ${text}` }
+          ]
+        }
+      })
+    }
+    // De `cancelling`-vlag wordt door het done/error-chunk teruggezet.
   },
 
   async openQueryFile() {

@@ -59,7 +59,12 @@ function baseCapabilities(maxResultRowsDefault: number): ProviderCapabilities {
 
 function fakeProvider(
   iter: AsyncIterable<QueryChunk>,
-  opts: { maxResultRowsDefault?: number; onCancel?: () => void } = {}
+  opts: {
+    maxResultRowsDefault?: number
+    onCancel?: () => void
+    onExecuteQuery?: (opts: unknown) => void
+    cancelError?: Error
+  } = {}
 ): DatabaseProvider {
   return {
     id: 'sqlite',
@@ -95,8 +100,17 @@ function fakeProvider(
       dependencies: []
     }),
     getObjectDefinition: async () => 'SELECT 1;',
-    executeQuery: () => iter,
-    cancel: opts.onCancel ? async () => opts.onCancel?.() : async () => {},
+    executeQuery: (_session, _sql, qopts) => {
+      opts.onExecuteQuery?.(qopts)
+      return iter
+    },
+    cancel: opts.cancelError
+      ? async () => {
+          throw opts.cancelError
+        }
+      : opts.onCancel
+        ? async () => opts.onCancel?.()
+        : async () => {},
     getExecutionStats: async () => ({ rowCount: 0, durationMs: 0 })
   }
 }
@@ -221,5 +235,136 @@ describe('QueryRunner (main, SAL-17)', () => {
     expect(sent.map((e) => e.chunk.kind)).toEqual(['columns', 'error'])
     const error = sent[1]?.chunk
     expect(error).toMatchObject({ kind: 'error', position: { line: 1, column: 8 } })
+  })
+
+  // ------------------------------------------------------------------ SAL-33
+  // Echte cancel: executionId + signal naar de provider, provider.cancel()
+  // wordt aangeroepen, de stream breekt af en de status is done(cancelled).
+  // ------------------------------------------------------------------
+
+  it('geeft executionId en signal door aan executeQuery (SAL-33)', async () => {
+    const { sender } = fakeSender()
+    vi.spyOn(sessionManager, 'getByConnectionId').mockReturnValue(FAKE_SESSION)
+    let captured: { executionId?: string; signal?: AbortSignal } = {}
+    const provider = fakeProvider(simpleStream(), {
+      onExecuteQuery: (qopts) => {
+        captured = qopts as { executionId?: string; signal?: AbortSignal }
+      }
+    })
+    vi.spyOn(registry, 'get').mockReturnValue(provider)
+
+    const runner = new QueryRunner()
+    const { executionId } = runner.run({ connectionId: 'conn-1', sql: 'SELECT 1' }, sender)
+    await runner.start(executionId)
+
+    expect(captured.executionId).toBe(executionId)
+    expect(captured.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('annuleren breekt de provider-iterable af via het abort-signaal (geen hang)', async () => {
+    const { sender, sent } = fakeSender()
+    vi.spyOn(sessionManager, 'getByConnectionId').mockReturnValue(FAKE_SESSION)
+    const onCancel = vi.fn()
+    // Generator die (net als de echte providers) wacht op het abort-signaal:
+    // zodra abort afgaat, eindigt de wacht en stopt de stream.
+    let signalRef: AbortSignal | undefined
+    const iter: AsyncIterable<QueryChunk> = {
+      async *[Symbol.asyncIterator]() {
+        yield { kind: 'columns', columns: [{ name: 'id' }] }
+        yield { kind: 'rows', rows: [{ values: [1] }] }
+        await new Promise<void>((resolve) => {
+          if (signalRef?.aborted) return resolve()
+          signalRef?.addEventListener('abort', () => resolve(), { once: true })
+        })
+        yield { kind: 'rows', rows: [{ values: [2] }] }
+        yield { kind: 'done', rowCount: 2, durationMs: 1 }
+      }
+    }
+    const provider = fakeProvider(iter, {
+      onCancel,
+      onExecuteQuery: (qopts) => {
+        signalRef = (qopts as { signal?: AbortSignal }).signal
+      }
+    })
+    vi.spyOn(registry, 'get').mockReturnValue(provider)
+
+    const runner = new QueryRunner()
+    const { executionId } = runner.run({ connectionId: 'conn-1', sql: 'SELECT 1' }, sender)
+    const startPromise = runner.start(executionId)
+
+    await new Promise((r) => setTimeout(r, 5))
+    expect(sent.filter((e) => e.chunk.kind === 'rows').length).toBe(1)
+
+    await runner.cancel(executionId)
+    expect(onCancel).toHaveBeenCalled()
+    await startPromise
+
+    expect(runner.activeCount).toBe(0)
+    const done = sent[sent.length - 1]?.chunk
+    expect(done).toMatchObject({ kind: 'done', cancelled: true })
+    // De tweede rows-chunk wordt niet meer verstuurd.
+    expect(totalRowsSent(sent)).toBe(1)
+  })
+
+  it('annuleert vóór start: done(cancelled) zonder de provider-query te starten', async () => {
+    const { sender, sent } = fakeSender()
+    vi.spyOn(sessionManager, 'getByConnectionId').mockReturnValue(FAKE_SESSION)
+    const onExecuteQuery = vi.fn()
+    const provider = fakeProvider(simpleStream(), { onExecuteQuery })
+    vi.spyOn(registry, 'get').mockReturnValue(provider)
+
+    const runner = new QueryRunner()
+    const { executionId } = runner.run({ connectionId: 'conn-1', sql: 'SELECT 1' }, sender)
+    await runner.cancel(executionId)
+    await runner.start(executionId)
+
+    expect(onExecuteQuery).not.toHaveBeenCalled()
+    const done = sent[sent.length - 1]?.chunk
+    expect(done).toMatchObject({ kind: 'done', cancelled: true })
+    expect(runner.activeCount).toBe(0)
+  })
+
+  it('stuurt een warning-chunk wanneer de provider-cancel faalt (geen stille no-op)', async () => {
+    const { sender, sent } = fakeSender()
+    vi.spyOn(sessionManager, 'getByConnectionId').mockReturnValue(FAKE_SESSION)
+    let signalRef: AbortSignal | undefined
+    const iter: AsyncIterable<QueryChunk> = {
+      async *[Symbol.asyncIterator]() {
+        yield { kind: 'columns', columns: [{ name: 'id' }] }
+        await new Promise<void>((resolve) => {
+          if (signalRef?.aborted) return resolve()
+          signalRef?.addEventListener('abort', () => resolve(), { once: true })
+        })
+        yield { kind: 'done', rowCount: 0, durationMs: 1 }
+      }
+    }
+    const provider = fakeProvider(iter, {
+      cancelError: new Error('annuleren niet ondersteund door provider X'),
+      onExecuteQuery: (qopts) => {
+        signalRef = (qopts as { signal?: AbortSignal }).signal
+      }
+    })
+    vi.spyOn(registry, 'get').mockReturnValue(provider)
+
+    const runner = new QueryRunner()
+    const { executionId } = runner.run({ connectionId: 'conn-1', sql: 'SELECT 1' }, sender)
+    const startPromise = runner.start(executionId)
+
+    await new Promise((r) => setTimeout(r, 5))
+    await runner.cancel(executionId)
+    await startPromise
+
+    const warnings = sent.filter((e) => e.chunk.kind === 'warning')
+    expect(warnings.length).toBeGreaterThanOrEqual(1)
+    const warning = warnings[0]!.chunk
+    expect(warning).toMatchObject({ kind: 'warning' })
+    if (warning.kind === 'warning') {
+      expect(warning.message).toMatch(/niet volledig ondersteund/)
+      expect(warning.message).toMatch(/provider X/)
+    }
+    // De uitvoering eindigt lokaal als geannuleerd (met de duidelijke melding).
+    const done = sent[sent.length - 1]?.chunk
+    expect(done).toMatchObject({ kind: 'done', cancelled: true })
+    expect(runner.activeCount).toBe(0)
   })
 })

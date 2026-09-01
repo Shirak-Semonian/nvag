@@ -43,9 +43,39 @@ import { buildLimit, containsKeyword, splitStatements } from '@nvag/sql-dialect'
 
 export interface MySqlSessionHandle {
   conn: Awaited<ReturnType<typeof createConnection>>
+  /** SAL-33: verbindingsconfig (in-memory) voor de aparte KILL-verbinding. */
+  connConfig: ReturnType<typeof buildConnConfig>
 }
 
 type Conn = Awaited<ReturnType<typeof createConnection>>
+
+/** Actieve MySQL-query per executionId (SAL-33): cancel via KILL QUERY. */
+interface ActiveMySqlQuery {
+  threadId: number
+  connConfig: ReturnType<typeof buildConnConfig>
+}
+const activeMySqlQueries = new Map<string, ActiveMySqlQuery>()
+
+/** Resolveert zodra het signaal afgaat (voor het race-mechanisme in executeQuery). */
+function abortPromise(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    signal.addEventListener('abort', () => resolve(), { once: true })
+  })
+}
+
+/** Wacht op een promise maar eindig direct wanneer het abort-signaal afgaat. */
+async function raceWithSignal<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal
+): Promise<{ aborted: boolean; value?: T }> {
+  if (!signal) return { aborted: false, value: await promise }
+  if (signal.aborted) return { aborted: true }
+  return Promise.race([
+    promise.then((value) => ({ aborted: false, value })),
+    abortPromise(signal).then(() => ({ aborted: true }))
+  ])
+}
 
 const CAPABILITIES: ProviderCapabilities = {
   supportsSchemas: false, // MySQL: database = schema
@@ -90,9 +120,10 @@ export function createMySqlProvider(): DatabaseProvider {
     capabilities: CAPABILITIES,
 
     async connect(config: ConnectionConfig, secret?: ConnectionSecret): Promise<DbSession> {
-      const conn = await createConnection(buildConnConfig(config, secret))
+      const connConfig = buildConnConfig(config, secret)
+      const conn = await createConnection(connConfig)
       const session: DbSession = {
-        handle: { conn } satisfies MySqlSessionHandle,
+        handle: { conn, connConfig } satisfies MySqlSessionHandle,
         connectionId: config.id,
         providerId: 'mysql',
         database: config.database ?? ''
@@ -395,8 +426,10 @@ export function createMySqlProvider(): DatabaseProvider {
       sql: string,
       opts: QueryOptions
     ): AsyncIterable<QueryChunk> {
-      const { conn } = session.handle as MySqlSessionHandle
+      const { conn, connConfig } = session.handle as MySqlSessionHandle
       const maxRows = opts.maxRows ?? CAPABILITIES.maxResultRowsDefault
+      const executionId = opts.executionId
+      const signal = opts.signal
 
       const statements = splitStatements(sql)
       if (statements.length === 0) {
@@ -417,8 +450,26 @@ export function createMySqlProvider(): DatabaseProvider {
       const capped = isSelect && !containsKeyword(stmt, 'LIMIT') ? `${stmt} ${buildLimit('mysql', maxRows)}`.trim() : stmt
 
       const start = performance.now()
+      // SAL-33: echte cancel — `provider.cancel()` voert KILL QUERY <threadId>
+      // uit via een aparte verbinding; daarnaast raced het abort-signaal de
+      // wacht op de query zodat de generator nooit blijft hangen.
+      const q = conn.query(capped)
+      if (executionId) {
+        activeMySqlQueries.set(executionId, { threadId: conn.threadId, connConfig })
+      }
+
       try {
-        const [result] = await conn.query(capped)
+        const { aborted, value } = await raceWithSignal(q, signal)
+        if (aborted) {
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+          return
+        }
+        const result = value![0]
         if (isSelect) {
           const rowsArr = (result as Record<string, unknown>[]) ?? []
           const columns = rowsArr.length > 0 ? Object.keys(rowsArr[0]!) : []
@@ -449,15 +500,45 @@ export function createMySqlProvider(): DatabaseProvider {
           }
         }
       } catch (err) {
-        yield {
-          kind: 'error',
-          message: err instanceof Error ? err.message : String(err)
+        const message = err instanceof Error ? err.message : String(err)
+        if (signal?.aborted) {
+          // Annulering is géén fout.
+          yield {
+            kind: 'done',
+            rowCount: 0,
+            durationMs: Math.round(performance.now() - start),
+            cancelled: true
+          }
+        } else {
+          yield {
+            kind: 'error',
+            message
+          }
         }
+      } finally {
+        if (executionId) activeMySqlQueries.delete(executionId)
       }
     },
 
-    async cancel(): Promise<void> {
-      // mysql2: geen cross-query cancel zonder connectionId-tracking; F1-4 uitbreiding.
+    async cancel(_session: DbSession, executionId: string): Promise<void> {
+      // Echte cancel (SAL-33): KILL QUERY <threadId> op een aparte verbinding
+      // (de hoofdverbinding is bezet met de actieve query). Vereist de
+      // PROCESS-privilege (of dezelfde gebruiker); anders gooit dit en meldt
+      // de runner dat cancel niet volledig ondersteund wordt.
+      const entry = activeMySqlQueries.get(executionId)
+      if (!entry) return
+      const killConn = await createConnection(entry.connConfig)
+      try {
+        // threadId is altijd een geheel getal van de server — safe om te
+        // interpoleren (KILL accepteert geen placeholders in alle versies).
+        await killConn.query(`KILL QUERY ${Number(entry.threadId)}`)
+      } finally {
+        try {
+          await killConn.end()
+        } catch {
+          // negeren
+        }
+      }
     },
 
     async getExecutionStats(): Promise<QueryStats> {
