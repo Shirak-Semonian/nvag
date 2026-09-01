@@ -133,7 +133,7 @@ export function ObjectExplorer(): React.JSX.Element {
         return
       }
 
-      setTree((t) => patchNode(t, node.key, (n) => ({ ...n, children, loaded: true })))
+      setTree((t) => patchNode(t, node.key, (n) => ({ ...n, children, loaded: true, error: undefined })))
     },
     [patchNode]
   )
@@ -145,7 +145,15 @@ export function ObjectExplorer(): React.JSX.Element {
       next.delete(node.key)
     } else {
       next.add(node.key)
-      if (!node.loaded) await loadChildren(node)
+      // SAL-30: bij (her)uitklappen van een lazy node altijd de actuele lijst
+      // ophalen. Een node die eerder is geladen (loaded=true) kan stale zijn
+      // na DDL via de Admin-knop (bijv. CREATE DATABASE); de metadata-services
+      // cachen niet, dus een verse query toont een nieuwe database direct.
+      // Server-nodes slaan we over: hun children (Databases-folder) komen uit
+      // de sessie-state, niet uit metadata.
+      if (node.kind === 'folder' || node.kind === 'database' || node.kind === 'schema') {
+        await loadChildren(node)
+      }
     }
     setExpanded(next)
   }

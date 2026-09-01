@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { DatabaseInfo } from '@nvag/contracts'
 import App from './App'
 import { useAppStore } from './state/store'
 import {
@@ -318,5 +319,42 @@ describe('App (renderer-integratie)', () => {
         screen.getByText(/Kan schema's niet laden: The server principal 'sa' is not able to access the database 'Klanten'/)
       ).toBeTruthy()
     )
+  })
+
+  // ------------------------------------------------------------------ SAL-30
+  it('toont een nieuw aangemaakte database bij heruitklappen van Databases (SAL-30)', async () => {
+    const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    const databases: DatabaseInfo[] = [{ name: 'Klanten' }]
+    window.nvag = createMockNvag({
+      connections: [conn],
+      databases
+    })
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-sql': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+
+    render(<App />)
+    // Server uitklappen → Databases-folder
+    fireEvent.click(screen.getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Databases')).toBeTruthy())
+    // Databases-folder uitklappen → bestaande database zichtbaar
+    fireEvent.click(screen.getByText('Databases'))
+    await waitFor(() => expect(screen.getByText('Klanten')).toBeTruthy())
+    // Databases inklappen (kinderen verdwijnen uit de boom)
+    fireEvent.click(screen.getByText('Databases'))
+    await waitFor(() => expect(screen.queryByText('Klanten')).toBeNull())
+    // Nieuwe database aangemaakt via de Admin-knop (CREATE DATABASE)
+    databases.push({ name: 'NieuweTestDB' })
+    // Heruitklappen → actuele lijst inclusief de nieuwe database
+    fireEvent.click(screen.getByText('Databases'))
+    await waitFor(() => expect(screen.getByText('NieuweTestDB')).toBeTruthy())
+    expect(screen.getByText('Klanten')).toBeTruthy()
   })
 })
