@@ -50,6 +50,9 @@ jobs:
       - name: Build
         run: pnpm --filter desktop build
 
+      - name: Install rpm tooling (fpm/rpmbuild)
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
       - name: Package (AppImage / tar.gz / deb / rpm)
         run: pnpm --filter desktop exec electron-builder --linux AppImage tar.gz deb rpm
 

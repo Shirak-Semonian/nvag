@@ -2,9 +2,11 @@ appId: nl.nvag.app
 productName: Nvag
 directories:
   buildResources: build
+  output: release
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!dist{,/**/*}'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
@@ -38,6 +40,7 @@ linux:
   maintainer: Nvag (Shirak Semonian)
   category: Development
   synopsis: Database Management Studio
+  artifactName: ${productName}-${version}.${ext}
 appImage:
   artifactName: ${productName}-${version}.${ext}
 npmRebuild: false
