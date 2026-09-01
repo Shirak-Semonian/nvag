@@ -4,6 +4,7 @@ import type {
   AdminActionResult,
   AdminUserInfo,
   AuditEntry,
+  BackupResult,
   ConnectionConfig,
   DashboardData,
   DataDiff,
@@ -26,6 +27,7 @@ import type {
   QueryFileSaveResult,
   QueryPerformanceStats,
   QueryRunStartResponse,
+  RestoreResult,
   SchemaDiff,
   SchemaInfo,
   ScriptObjectResult,
@@ -122,7 +124,9 @@ const api: NvagIpcApi = {
     listUsers: handle<AdminUserInfo[]>('admin:listUsers'),
     createUser: handle<AdminActionResult>('admin:createUser'),
     dropUser: handle<AdminActionResult>('admin:dropUser'),
-    capabilities: handle<ProviderCapabilities>('admin:capabilities')
+    capabilities: handle<ProviderCapabilities>('admin:capabilities'),
+    backupDatabase: handle<BackupResult>('admin:backupDatabase'),
+    restoreDatabase: handle<RestoreResult>('admin:restoreDatabase')
   },
   performance: {
     getStats: handle<QueryPerformanceStats & { explain?: ExplainResult }>('performance:getStats')

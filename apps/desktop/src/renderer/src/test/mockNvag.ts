@@ -345,10 +345,12 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         supportsGeneratedColumns: true,
         supportsDdlAdmin: true,
         supportsUsersAndRoles: false,
-        supportsBackupRestore: false,
+        supportsBackupRestore: true,
         maxResultRowsDefault: 1000,
         dialect: 'sqlite' as const
-      })
+      }),
+      backupDatabase: async () => ({ ok: true, targetPath: '/tmp/backup.db', durationMs: 1 }),
+      restoreDatabase: async () => ({ ok: true, sourcePath: '/tmp/backup.db', durationMs: 1 })
     },
 
     performance: {

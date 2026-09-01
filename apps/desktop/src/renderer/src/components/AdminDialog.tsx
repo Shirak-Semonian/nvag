@@ -10,15 +10,31 @@ import { useEffect, useState } from 'react'
 import type { AdminActionResult, AdminColumnDef } from '@nvag/contracts'
 import { useAppStore } from '../state/store'
 
-type AdminTab = 'database' | 'schema' | 'table' | 'view' | 'index' | 'users'
+type AdminTab = 'database' | 'schema' | 'table' | 'view' | 'index' | 'users' | 'backup'
 
 type AdminActionFn = (confirmed?: boolean) => Promise<AdminActionResult>
+
+interface BackupAdminActionFn {
+  (confirmed?: boolean): Promise<BackupAdminActionFnResult>
+}
 
 interface PendingConfirm {
   label: string
   sql: string
   reasons: string[]
-  rerun: () => Promise<AdminActionResult>
+  kind: 'admin' | 'backup'
+  rerun: () => Promise<AdminActionResult | BackupAdminActionFnResult>
+}
+
+type BackupAdminActionFnResult = {
+  ok: boolean
+  sql?: string
+  targetPath?: string
+  sourcePath?: string
+  durationMs?: number
+  message?: string
+  blocked?: string[]
+  guardSeverity?: 'warn' | 'confirm'
 }
 
 export function AdminDialog({ connectionId }: { connectionId: string | null }): React.JSX.Element {
@@ -39,16 +55,37 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
    * Voert een admin-actie uit met environment-safety (F2-3):
    * - `warn`-niveau (CREATE buiten PROD): uitvoeren + waarschuwing tonen.
    * - `confirm`-niveau (DROP/ALTER/PROD): bevestiging vragen met de SQL.
+   * F4: ook backup/restore-resultaten (zonder SQL) worden getoond.
    */
-  const run = async (fn: AdminActionFn, label: string): Promise<void> => {
+  const run = async (
+    fn: AdminActionFn | BackupAdminActionFn,
+    label: string,
+    kind: 'admin' | 'backup' = 'admin'
+  ): Promise<void> => {
     try {
       const r = await fn()
       if (!r.ok && r.blocked && r.blocked.length > 0) {
-        setPending({ label, sql: r.sql, reasons: r.blocked, rerun: () => fn(true) })
+        setPending({ label, sql: r.sql ?? '', reasons: r.blocked, kind, rerun: () => fn(true) })
         return
       }
-      const warning = r.warning && r.warning.length > 0 ? `\n⚠ ${r.warning.join(', ')}` : ''
-      setMessage(`✅ ${label}\n${r.sql}${warning}`)
+      if (kind === 'backup') {
+        const br = r as {
+          ok: boolean
+          targetPath?: string
+          sourcePath?: string
+          durationMs?: number
+          message?: string
+        }
+        const where = br.targetPath ? ` → ${br.targetPath}` : br.sourcePath ? ` ← ${br.sourcePath}` : ''
+        const meta = br.durationMs !== undefined ? ` (${br.durationMs} ms)` : ''
+        setMessage(
+          `✅ ${label}${where}${meta}${br.message ? `\n⚠ ${br.message}` : ''}`
+        )
+        return
+      }
+      const ar = r as AdminActionResult
+      const warning = ar.warning && ar.warning.length > 0 ? `\n⚠ ${ar.warning.join(', ')}` : ''
+      setMessage(`✅ ${label}\n${ar.sql}${warning}`)
     } catch (err) {
       setMessage(`❌ ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -58,7 +95,23 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
     if (!pending) return
     try {
       const r = await pending.rerun()
-      setMessage(`✅ ${pending.label}\n${r.sql}`)
+      if (pending.kind === 'backup') {
+        const br = r as {
+          ok: boolean
+          targetPath?: string
+          sourcePath?: string
+          durationMs?: number
+          message?: string
+        }
+        const where = br.targetPath ? ` → ${br.targetPath}` : br.sourcePath ? ` ← ${br.sourcePath}` : ''
+        const meta = br.durationMs !== undefined ? ` (${br.durationMs} ms)` : ''
+        setMessage(
+          `✅ ${pending.label}${where}${meta}${br.message ? `\n⚠ ${br.message}` : ''}`
+        )
+      } else {
+        const ar = r as AdminActionResult
+        setMessage(`✅ ${pending.label}\n${ar.sql}`)
+      }
     } catch (err) {
       setMessage(`❌ ${err instanceof Error ? err.message : String(err)}`)
     } finally {
@@ -68,6 +121,7 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
 
   const supportsSchemas = caps?.supportsSchemas ?? false
   const supportsUsers = caps?.supportsUsersAndRoles ?? false
+  const supportsBackup = caps?.supportsBackupRestore ?? false
 
   return (
     <div className="modal-backdrop" onClick={close}>
@@ -79,7 +133,7 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
           </button>
         </div>
         <div className="admin-tabs" role="tablist">
-          {(['database', 'schema', 'table', 'view', 'index', 'users'] as AdminTab[]).map((t) => (
+          {(['database', 'schema', 'table', 'view', 'index', 'users', 'backup'] as AdminTab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -87,10 +141,16 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
               aria-selected={tab === t}
               className={`admin-tab ${tab === t ? 'active' : ''}`}
               onClick={() => setTab(t)}
-              disabled={t === 'users' && !supportsUsers}
-              title={t === 'users' && !supportsUsers ? 'Provider ondersteunt geen users/roles' : undefined}
+              disabled={(t === 'users' && !supportsUsers) || (t === 'backup' && !supportsBackup)}
+              title={
+                (t === 'users' && !supportsUsers
+                  ? 'Provider ondersteunt geen users/roles'
+                  : t === 'backup' && !supportsBackup
+                    ? 'Provider ondersteunt geen backup/restore'
+                    : undefined)
+              }
             >
-              {t === 'database' ? 'Databases' : t === 'schema' ? 'Schemas' : t === 'table' ? 'Tabellen' : t === 'view' ? 'Views' : t === 'index' ? 'Indexen' : 'Users'}
+              {t === 'database' ? 'Databases' : t === 'schema' ? 'Schemas' : t === 'table' ? 'Tabellen' : t === 'view' ? 'Views' : t === 'index' ? 'Indexen' : t === 'users' ? 'Users' : 'Backup'}
             </button>
           ))}
         </div>
@@ -101,6 +161,7 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
           {tab === 'view' && <ViewAdminTab connectionId={connectionId} onRun={run} />}
           {tab === 'index' && <IndexAdminTab connectionId={connectionId} onRun={run} />}
           {tab === 'users' && <UsersAdminTab connectionId={connectionId} onRun={run} users={users} />}
+          {tab === 'backup' && <BackupAdminTab connectionId={connectionId} onRun={run} />}
         </div>
         {pending && (
           <div className="admin-confirm">
@@ -409,6 +470,83 @@ function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | 
         ))}
         {users.length === 0 && <div className="results-empty">Geen gebruikers (of niet ondersteund).</div>}
       </div>
+    </div>
+  )
+}
+
+/**
+ * F4: Backup & Restore (DBA) — gated via `supportsBackupRestore`.
+ * - Backup: database + doelpad → BACKUP DATABASE (guard: warn buiten PROD,
+ *   confirm op PROD).
+ * - Restore: database + bronpad → RESTORE DATABASE (guard: altijd confirm).
+ * Gebruikt dezelfde guard-confirm-flow als de andere admin-acties.
+ */
+function BackupAdminTab({
+  connectionId,
+  onRun
+}: {
+  connectionId: string | null
+  onRun: (fn: BackupAdminActionFn, label: string, kind: 'backup') => Promise<void>
+}): React.JSX.Element {
+  const [database, setDatabase] = useState('')
+  const [targetPath, setTargetPath] = useState('')
+  const [sourcePath, setSourcePath] = useState('')
+  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
+  return (
+    <div className="admin-form">
+      <label>
+        Database{' '}
+        <input value={database} onChange={(e) => setDatabase(e.target.value)} placeholder="bijv. main / SalesDB" />
+      </label>
+
+      <div className="f2-panel-row">
+        <label>
+          Backup naar (pad){' '}
+          <input value={targetPath} onChange={(e) => setTargetPath(e.target.value)} placeholder="/pad/naar/backup.db" />
+        </label>
+      </div>
+      <div className="admin-actions">
+        <button
+          className="primary"
+          disabled={!database || !targetPath}
+          onClick={() =>
+            onRun(
+              (confirmed) => window.nvag.admin.backupDatabase(connectionId, database, targetPath, confirmed),
+              `BACKUP ${database}`,
+              'backup'
+            )
+          }
+        >
+          Backup maken
+        </button>
+      </div>
+
+      <hr className="admin-separator" />
+
+      <div className="f2-panel-row">
+        <label>
+          Herstellen vanuit (pad){' '}
+          <input value={sourcePath} onChange={(e) => setSourcePath(e.target.value)} placeholder="/pad/naar/bron-backup.db" />
+        </label>
+      </div>
+      <div className="admin-actions">
+        <button
+          className="danger"
+          disabled={!database || !sourcePath}
+          onClick={() =>
+            onRun(
+              (confirmed) => window.nvag.admin.restoreDatabase(connectionId, database, sourcePath, confirmed),
+              `RESTORE ${database}`,
+              'backup'
+            )
+          }
+        >
+          Herstellen
+        </button>
+      </div>
+      <p className="admin-hint">
+        RESTORE overschrijft de database en vraagt altijd bevestiging.
+      </p>
     </div>
   )
 }
