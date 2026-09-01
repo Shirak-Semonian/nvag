@@ -34,6 +34,10 @@ export interface MockNvagOptions {
   /** SQL → redenen waarom environment-safety de query blokkeert (F1-8: met severity). */
   blockedQueries?: Record<string, string[] | { reasons: string[]; severity?: GuardSeverity }>
   failOpenConnectionIds?: string[]
+  /** Metadata-methoden die moeten falen: methodenaam → foutmelding (SAL-29). */
+  metadataErrors?: Record<string, string>
+  /** Databases die listDatabases retourneert (default: ['main']). */
+  databases?: DatabaseInfo[]
   openFileResult?: QueryFileOpenResult
   saveFileResult?: QueryFileSaveResult
   /** Overschrijft de default `start`-streaming (voor cancel/progressie-tests). */
@@ -241,12 +245,22 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     },
 
     metadata: {
-      listDatabases: async (): Promise<DatabaseInfo[]> => [{ name: 'main' }],
-      listSchemas: async (): Promise<SchemaInfo[]> => [{ name: 'main' }],
-      listTables: async (): Promise<TableInfo[]> =>
-        (options.tables ?? []).map((name) => ({ name, schema: 'main', type: 'table' })),
-      listViews: async (): Promise<ViewInfo[]> =>
-        (options.views ?? []).map((name) => ({ name, schema: 'main' })),
+      listDatabases: async (): Promise<DatabaseInfo[]> => {
+        if (options.metadataErrors?.listDatabases) throw new Error(options.metadataErrors.listDatabases)
+        return options.databases ?? [{ name: 'main' }]
+      },
+      listSchemas: async (): Promise<SchemaInfo[]> => {
+        if (options.metadataErrors?.listSchemas) throw new Error(options.metadataErrors.listSchemas)
+        return [{ name: 'main' }]
+      },
+      listTables: async (): Promise<TableInfo[]> => {
+        if (options.metadataErrors?.listTables) throw new Error(options.metadataErrors.listTables)
+        return (options.tables ?? []).map((name) => ({ name, schema: 'main', type: 'table' }))
+      },
+      listViews: async (): Promise<ViewInfo[]> => {
+        if (options.metadataErrors?.listViews) throw new Error(options.metadataErrors.listViews)
+        return (options.views ?? []).map((name) => ({ name, schema: 'main' }))
+      },
       listProcedures: async () =>
         (options.procedures ?? []).map((name) => ({ name, schema: 'main', type: 'procedure' as const })),
       listFunctions: async () =>

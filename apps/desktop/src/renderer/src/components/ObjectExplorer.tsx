@@ -21,6 +21,8 @@ interface TreeNode {
   children: TreeNode[]
   /** true zodra children zijn geladen (lazy) */
   loaded: boolean
+  /** Fout bij het laden van de children (SAL-29: tonen i.p.v. crash/leeg). */
+  error?: string
   /** Voor tabel/view: geparste context (dubbelklik SELECT, klik details). */
   ref?: { connId: string; db: string; schema?: string; name: string }
   /** Omgeving van de server-connectie (F1-8: kleurbadge in object explorer). */
@@ -68,51 +70,67 @@ export function ObjectExplorer(): React.JSX.Element {
       let children: TreeNode[] = []
       const [, connId, dbName, schemaName] = node.key.split(':')
 
-      if (node.kind === 'folder' && node.key.startsWith('dbs:')) {
-        const dbs = await window.nvag.metadata.listDatabases(connId)
-        children = dbs.map((d: DatabaseInfo) => ({
-          key: `db:${connId}:${d.name}`,
-          label: d.name,
-          icon: '📁',
-          kind: 'database',
-          children: [],
-          loaded: false
-        }))
-      } else if (node.kind === 'database') {
-        const schemas = await window.nvag.metadata.listSchemas(connId, dbName)
-        children = schemas.map((s: SchemaInfo) => ({
-          key: `schema:${connId}:${dbName}:${s.name}`,
-          label: s.name,
-          icon: '📂',
-          kind: 'schema',
-          children: [],
-          loaded: false
-        }))
-      } else if (node.kind === 'schema') {
-        const [tables, views] = await Promise.all([
-          window.nvag.metadata.listTables(connId, dbName, schemaName),
-          window.nvag.metadata.listViews(connId, dbName, schemaName)
-        ])
-        children = [
-          ...tables.map((t: TableInfo) => ({
-            key: `table:${connId}:${dbName}:${schemaName}:${t.name}`,
-            label: t.name,
-            icon: '📋',
-            kind: 'table' as const,
+      try {
+        if (node.kind === 'folder' && node.key.startsWith('dbs:')) {
+          const dbs = await window.nvag.metadata.listDatabases(connId)
+          children = dbs.map((d: DatabaseInfo) => ({
+            key: `db:${connId}:${d.name}`,
+            label: d.name,
+            icon: '📁',
+            kind: 'database',
             children: [],
-            loaded: true,
-            ref: { connId, db: dbName, schema: schemaName, name: t.name }
-          })),
-          ...views.map((v: ViewInfo) => ({
-            key: `view:${connId}:${dbName}:${schemaName}:${v.name}`,
-            label: v.name,
-            icon: '👁️',
-            kind: 'view' as const,
-            children: [],
-            loaded: true,
-            ref: { connId, db: dbName, schema: schemaName, name: v.name }
+            loaded: false
           }))
-        ]
+        } else if (node.kind === 'database') {
+          const schemas = await window.nvag.metadata.listSchemas(connId, dbName)
+          children = schemas.map((s: SchemaInfo) => ({
+            key: `schema:${connId}:${dbName}:${s.name}`,
+            label: s.name,
+            icon: '📂',
+            kind: 'schema',
+            children: [],
+            loaded: false
+          }))
+        } else if (node.kind === 'schema') {
+          const [tables, views] = await Promise.all([
+            window.nvag.metadata.listTables(connId, dbName, schemaName),
+            window.nvag.metadata.listViews(connId, dbName, schemaName)
+          ])
+          children = [
+            ...tables.map((t: TableInfo) => ({
+              key: `table:${connId}:${dbName}:${schemaName}:${t.name}`,
+              label: t.name,
+              icon: '📋',
+              kind: 'table' as const,
+              children: [],
+              loaded: true,
+              ref: { connId, db: dbName, schema: schemaName, name: t.name }
+            })),
+            ...views.map((v: ViewInfo) => ({
+              key: `view:${connId}:${dbName}:${schemaName}:${v.name}`,
+              label: v.name,
+              icon: '👁️',
+              kind: 'view' as const,
+              children: [],
+              loaded: true,
+              ref: { connId, db: dbName, schema: schemaName, name: v.name }
+            }))
+          ]
+        }
+      } catch (err) {
+        // SAL-29: een metadata-fout (bijv. SQL Server: geen toegang tot de
+        // database) is geen crash — toon de fout in de boom, de rest van de
+        // boom blijft bruikbaar.
+        const text = err instanceof Error ? err.message : String(err)
+        setTree((t) =>
+          patchNode(t, node.key, (n) => ({
+            ...n,
+            children: [],
+            loaded: true,
+            error: `Kan ${node.kind === 'database' ? "schema's" : node.kind === 'schema' ? 'objecten' : 'gegevens'} niet laden: ${text}`
+          }))
+        )
+        return
       }
 
       setTree((t) => patchNode(t, node.key, (n) => ({ ...n, children, loaded: true })))
@@ -202,6 +220,7 @@ export function ObjectExplorer(): React.JSX.Element {
           {isOpen && node.children.length > 0 && (
             <div className="tree-children">{renderNodes(node.children, depth + 1)}</div>
           )}
+          {isOpen && node.error && <div className="tree-error">{node.error}</div>}
         </div>
       )
     })

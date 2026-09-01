@@ -105,6 +105,14 @@ body {
   font-style: italic;
 }
 
+.tree-error {
+  color: #e06c75;
+  padding: 2px 6px 4px 22px;
+  font-size: 12px;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .tree-node {
   display: flex;
   align-items: center;

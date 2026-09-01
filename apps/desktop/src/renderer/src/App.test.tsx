@@ -282,4 +282,41 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(screen.getByText(/bestand niet gevonden/)).toBeTruthy())
     expect(useAppStore.getState().tabs[0]?.connectionId).toBeNull()
   })
+
+  // ------------------------------------------------------------------ SAL-29
+  it('toont een metadata-fout bij uitklappen van een database i.p.v. te crashen (SAL-29)', async () => {
+    const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    window.nvag = createMockNvag({
+      connections: [conn],
+      databases: [{ name: 'Klanten' }],
+      metadataErrors: {
+        listSchemas: "The server principal 'sa' is not able to access the database 'Klanten'"
+      }
+    })
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-sql': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+
+    render(<App />)
+    // Server uitklappen → Databases-folder
+    fireEvent.click(screen.getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Databases')).toBeTruthy())
+    // Databases-folder uitklappen → database 'Klanten'
+    fireEvent.click(screen.getByText('Databases'))
+    await waitFor(() => expect(screen.getByText('Klanten')).toBeTruthy())
+    // Database uitklappen → listSchemas faalt → fout in de boom, geen crash
+    fireEvent.click(screen.getByText('Klanten'))
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Kan schema's niet laden: The server principal 'sa' is not able to access the database 'Klanten'/)
+      ).toBeTruthy()
+    )
+  })
 })

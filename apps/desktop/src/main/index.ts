@@ -5,6 +5,12 @@ import icon from '../../resources/icon.png?asset'
 import { registerBuiltinProviders } from './registry'
 import { bootstrapApp } from './ipc-bootstrap'
 import { sessionManager } from './session-manager'
+import { installCrashGuards } from './crash-guard'
+
+// SAL-29: zo vroeg mogelijk installeren — een verbroken stdout/stderr-pipe
+// (EPIPE) tijdens het loggen van een IPC-fout mag nooit een crashdialoog
+// in het main process veroorzaken.
+installCrashGuards()
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
