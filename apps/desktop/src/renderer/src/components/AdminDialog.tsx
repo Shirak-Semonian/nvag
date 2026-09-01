@@ -7,10 +7,19 @@
  */
 
 import { useEffect, useState } from 'react'
-import type { AdminColumnDef } from '@nvag/contracts'
+import type { AdminActionResult, AdminColumnDef } from '@nvag/contracts'
 import { useAppStore } from '../state/store'
 
 type AdminTab = 'database' | 'schema' | 'table' | 'view' | 'index' | 'users'
+
+type AdminActionFn = (confirmed?: boolean) => Promise<AdminActionResult>
+
+interface PendingConfirm {
+  label: string
+  sql: string
+  reasons: string[]
+  rerun: () => Promise<AdminActionResult>
+}
 
 export function AdminDialog({ connectionId }: { connectionId: string | null }): React.JSX.Element {
   const caps = useAppStore((s) => s.adminCapabilities)
@@ -20,17 +29,40 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
 
   const [tab, setTab] = useState<AdminTab>('database')
   const [message, setMessage] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingConfirm | null>(null)
 
   useEffect(() => {
     if (connectionId) void loadAdminState(connectionId)
   }, [connectionId, loadAdminState])
 
-  const run = async (fn: () => Promise<{ sql: string }>, label: string): Promise<void> => {
+  /**
+   * Voert een admin-actie uit met environment-safety (F2-3):
+   * - `warn`-niveau (CREATE buiten PROD): uitvoeren + waarschuwing tonen.
+   * - `confirm`-niveau (DROP/ALTER/PROD): bevestiging vragen met de SQL.
+   */
+  const run = async (fn: AdminActionFn, label: string): Promise<void> => {
     try {
       const r = await fn()
-      setMessage(`✅ ${label}\n${r.sql}`)
+      if (!r.ok && r.blocked && r.blocked.length > 0) {
+        setPending({ label, sql: r.sql, reasons: r.blocked, rerun: () => fn(true) })
+        return
+      }
+      const warning = r.warning && r.warning.length > 0 ? `\n⚠ ${r.warning.join(', ')}` : ''
+      setMessage(`✅ ${label}\n${r.sql}${warning}`)
     } catch (err) {
       setMessage(`❌ ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  const confirmPending = async (): Promise<void> => {
+    if (!pending) return
+    try {
+      const r = await pending.rerun()
+      setMessage(`✅ ${pending.label}\n${r.sql}`)
+    } catch (err) {
+      setMessage(`❌ ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setPending(null)
     }
   }
 
@@ -70,13 +102,30 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
           {tab === 'index' && <IndexAdminTab connectionId={connectionId} onRun={run} />}
           {tab === 'users' && <UsersAdminTab connectionId={connectionId} onRun={run} users={users} />}
         </div>
+        {pending && (
+          <div className="admin-confirm">
+            <div className="guard-reasons">
+              {pending.reasons.map((r, i) => (
+                <div key={i} className="msg-warning">⚠️ {r}</div>
+              ))}
+            </div>
+            <p>De volgende SQL wordt uitgevoerd:</p>
+            <pre className="guard-sql">{pending.sql}</pre>
+            <div className="modal-actions">
+              <button type="button" onClick={() => setPending(null)}>Annuleren</button>
+              <button type="button" className="danger" onClick={() => void confirmPending()}>
+                Toch uitvoeren
+              </button>
+            </div>
+          </div>
+        )}
         {message && <pre className="admin-message">{message}</pre>}
       </div>
     </div>
   )
 }
 
-function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: () => Promise<{ sql: string }>, label: string) => Promise<void> }): React.JSX.Element {
+function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
   const [name, setName] = useState('')
   if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
   return (
@@ -89,14 +138,14 @@ function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null
         <button
           className="primary"
           disabled={!name}
-          onClick={() => onRun(() => window.nvag.admin.createDatabase(connectionId, name), `CREATE DATABASE ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.createDatabase(connectionId, name, confirmed), `CREATE DATABASE ${name}`)}
         >
           Creëren
         </button>
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun(() => window.nvag.admin.dropDatabase(connectionId, name), `DROP DATABASE ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropDatabase(connectionId, name, confirmed), `DROP DATABASE ${name}`)}
         >
           Verwijderen
         </button>
@@ -105,7 +154,7 @@ function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null
   )
 }
 
-function SchemaAdminTab({ connectionId, onRun, supportsSchemas }: { connectionId: string | null; onRun: (fn: () => Promise<{ sql: string }>, label: string) => Promise<void>; supportsSchemas: boolean }): React.JSX.Element {
+function SchemaAdminTab({ connectionId, onRun, supportsSchemas }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void>; supportsSchemas: boolean }): React.JSX.Element {
   const [name, setName] = useState('')
   if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
   if (!supportsSchemas) return <div className="results-empty">Deze provider ondersteunt geen aparte schemas.</div>
@@ -119,14 +168,14 @@ function SchemaAdminTab({ connectionId, onRun, supportsSchemas }: { connectionId
         <button
           className="primary"
           disabled={!name}
-          onClick={() => onRun(() => window.nvag.admin.createSchema(connectionId, '', name), `CREATE SCHEMA ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.createSchema(connectionId, '', name, confirmed), `CREATE SCHEMA ${name}`)}
         >
           Creëren
         </button>
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun(() => window.nvag.admin.dropSchema(connectionId, '', name), `DROP SCHEMA ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropSchema(connectionId, '', name, confirmed), `DROP SCHEMA ${name}`)}
         >
           Verwijderen
         </button>
@@ -135,7 +184,7 @@ function SchemaAdminTab({ connectionId, onRun, supportsSchemas }: { connectionId
   )
 }
 
-function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: () => Promise<{ sql: string }>, label: string) => Promise<void> }): React.JSX.Element {
+function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
   const [table, setTable] = useState('')
   const [schema, setSchema] = useState('')
   const [columns, setColumns] = useState<AdminColumnDef[]>([{ name: 'id', dataType: 'INTEGER', primaryKey: true }])
@@ -201,7 +250,7 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
           disabled={!table || columns.some((c) => !c.name || !c.dataType)}
           onClick={() =>
             onRun(
-              () => window.nvag.admin.createTable({ connectionId, database: '', schema: schema || undefined, table, columns }),
+              (confirmed) => window.nvag.admin.createTable({ connectionId, database: '', schema: schema || undefined, table, columns }, confirmed),
               `CREATE TABLE ${table}`
             )
           }
@@ -211,7 +260,7 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
         <button
           className="danger"
           disabled={!table}
-          onClick={() => onRun(() => window.nvag.admin.dropTable(connectionId, '', schema || 'main', table), `DROP TABLE ${table}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropTable(connectionId, '', schema || 'main', table, confirmed), `DROP TABLE ${table}`)}
         >
           Tabel verwijderen
         </button>
@@ -220,7 +269,7 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
   )
 }
 
-function ViewAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: () => Promise<{ sql: string }>, label: string) => Promise<void> }): React.JSX.Element {
+function ViewAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
   const [name, setName] = useState('')
   const [schema, setSchema] = useState('')
   const [selectSql, setSelectSql] = useState('SELECT * FROM ')
@@ -247,14 +296,14 @@ function ViewAdminTab({ connectionId, onRun }: { connectionId: string | null; on
         <button
           className="primary"
           disabled={!name || !selectSql.trim()}
-          onClick={() => onRun(() => window.nvag.admin.createView(connectionId, '', schema || 'main', name, selectSql), `CREATE VIEW ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.createView(connectionId, '', schema || 'main', name, selectSql, confirmed), `CREATE VIEW ${name}`)}
         >
           Creëren
         </button>
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun(() => window.nvag.admin.dropView(connectionId, '', schema || 'main', name), `DROP VIEW ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropView(connectionId, '', schema || 'main', name, confirmed), `DROP VIEW ${name}`)}
         >
           Verwijderen
         </button>
@@ -263,7 +312,7 @@ function ViewAdminTab({ connectionId, onRun }: { connectionId: string | null; on
   )
 }
 
-function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: () => Promise<{ sql: string }>, label: string) => Promise<void> }): React.JSX.Element {
+function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
   const [name, setName] = useState('')
   const [table, setTable] = useState('')
   const [schema, setSchema] = useState('')
@@ -300,7 +349,7 @@ function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; o
           disabled={!name || !table || cols.length === 0}
           onClick={() =>
             onRun(
-              () => window.nvag.admin.createIndex({ connectionId, database: '', schema: schema || undefined, index: { name, table, schema: schema || undefined, columns: cols, unique } }),
+              (confirmed) => window.nvag.admin.createIndex({ connectionId, database: '', schema: schema || undefined, index: { name, table, schema: schema || undefined, columns: cols, unique } }, confirmed),
               `CREATE INDEX ${name}`
             )
           }
@@ -310,7 +359,7 @@ function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; o
         <button
           className="danger"
           disabled={!name || !table}
-          onClick={() => onRun(() => window.nvag.admin.dropIndex(connectionId, '', schema || 'main', table, name), `DROP INDEX ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropIndex(connectionId, '', schema || 'main', table, name, confirmed), `DROP INDEX ${name}`)}
         >
           Verwijderen
         </button>
@@ -319,7 +368,7 @@ function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; o
   )
 }
 
-function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | null; onRun: (fn: () => Promise<{ sql: string }>, label: string) => Promise<void>; users: { name: string; role?: string }[] }): React.JSX.Element {
+function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void>; users: { name: string; role?: string }[] }): React.JSX.Element {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
@@ -339,14 +388,14 @@ function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | 
         <button
           className="primary"
           disabled={!name}
-          onClick={() => onRun(() => window.nvag.admin.createUser({ connectionId, name, password: password || undefined }), `CREATE USER ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.createUser({ connectionId, name, password: password || undefined }, confirmed), `CREATE USER ${name}`)}
         >
           Gebruiker aanmaken
         </button>
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun(() => window.nvag.admin.dropUser(connectionId, name), `DROP USER ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropUser(connectionId, name, confirmed), `DROP USER ${name}`)}
         >
           Verwijderen
         </button>

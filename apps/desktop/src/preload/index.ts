@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
+  AdminActionResult,
   AdminUserInfo,
   AuditEntry,
   ConnectionConfig,
@@ -108,19 +109,19 @@ const api: NvagIpcApi = {
     status: handle<TransactionStatus>('transactions:status')
   },
   admin: {
-    createDatabase: handle<{ ok: boolean; sql: string }>('admin:createDatabase'),
-    dropDatabase: handle<{ ok: boolean; sql: string }>('admin:dropDatabase'),
-    createSchema: handle<{ ok: boolean; sql: string }>('admin:createSchema'),
-    dropSchema: handle<{ ok: boolean; sql: string }>('admin:dropSchema'),
-    createTable: handle<{ ok: boolean; sql: string }>('admin:createTable'),
-    dropTable: handle<{ ok: boolean; sql: string }>('admin:dropTable'),
-    createView: handle<{ ok: boolean; sql: string }>('admin:createView'),
-    dropView: handle<{ ok: boolean; sql: string }>('admin:dropView'),
-    createIndex: handle<{ ok: boolean; sql: string }>('admin:createIndex'),
-    dropIndex: handle<{ ok: boolean; sql: string }>('admin:dropIndex'),
+    createDatabase: handle<AdminActionResult>('admin:createDatabase'),
+    dropDatabase: handle<AdminActionResult>('admin:dropDatabase'),
+    createSchema: handle<AdminActionResult>('admin:createSchema'),
+    dropSchema: handle<AdminActionResult>('admin:dropSchema'),
+    createTable: handle<AdminActionResult>('admin:createTable'),
+    dropTable: handle<AdminActionResult>('admin:dropTable'),
+    createView: handle<AdminActionResult>('admin:createView'),
+    dropView: handle<AdminActionResult>('admin:dropView'),
+    createIndex: handle<AdminActionResult>('admin:createIndex'),
+    dropIndex: handle<AdminActionResult>('admin:dropIndex'),
     listUsers: handle<AdminUserInfo[]>('admin:listUsers'),
-    createUser: handle<{ ok: boolean; sql: string }>('admin:createUser'),
-    dropUser: handle<{ ok: boolean; sql: string }>('admin:dropUser'),
+    createUser: handle<AdminActionResult>('admin:createUser'),
+    dropUser: handle<AdminActionResult>('admin:dropUser'),
     capabilities: handle<ProviderCapabilities>('admin:capabilities')
   },
   performance: {

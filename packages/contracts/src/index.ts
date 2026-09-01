@@ -528,19 +528,19 @@ export interface NvagIpcApi {
 
   // F2-3: Database Administration (eis 9)
   admin: {
-    createDatabase(connectionId: string, name: string): Promise<{ ok: boolean; sql: string }>
-    dropDatabase(connectionId: string, name: string): Promise<{ ok: boolean; sql: string }>
-    createSchema(connectionId: string, database: string, name: string): Promise<{ ok: boolean; sql: string }>
-    dropSchema(connectionId: string, database: string, name: string): Promise<{ ok: boolean; sql: string }>
-    createTable(req: AdminTableCreateRequest): Promise<{ ok: boolean; sql: string }>
-    dropTable(connectionId: string, database: string, schema: string, table: string): Promise<{ ok: boolean; sql: string }>
-    createView(connectionId: string, database: string, schema: string, name: string, sql: string): Promise<{ ok: boolean; sql: string }>
-    dropView(connectionId: string, database: string, schema: string, name: string): Promise<{ ok: boolean; sql: string }>
-    createIndex(req: AdminIndexCreateRequest): Promise<{ ok: boolean; sql: string }>
-    dropIndex(connectionId: string, database: string, schema: string, table: string, index: string): Promise<{ ok: boolean; sql: string }>
+    createDatabase(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropDatabase(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    createSchema(connectionId: string, database: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropSchema(connectionId: string, database: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    createTable(req: AdminTableCreateRequest, confirmed?: boolean): Promise<AdminActionResult>
+    dropTable(connectionId: string, database: string, schema: string, table: string, confirmed?: boolean): Promise<AdminActionResult>
+    createView(connectionId: string, database: string, schema: string, name: string, sql: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropView(connectionId: string, database: string, schema: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    createIndex(req: AdminIndexCreateRequest, confirmed?: boolean): Promise<AdminActionResult>
+    dropIndex(connectionId: string, database: string, schema: string, table: string, index: string, confirmed?: boolean): Promise<AdminActionResult>
     listUsers(connectionId: string): Promise<AdminUserInfo[]>
-    createUser(req: AdminUserRequest): Promise<{ ok: boolean; sql: string }>
-    dropUser(connectionId: string, name: string): Promise<{ ok: boolean; sql: string }>
+    createUser(req: AdminUserRequest, confirmed?: boolean): Promise<AdminActionResult>
+    dropUser(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
     /** Capabilities van de provider (voor UI-gating). */
     capabilities(connectionId: string): Promise<ProviderCapabilities>
   }
@@ -960,6 +960,25 @@ export interface AdminUserRequest {
   connectionId: string
   name: string
   password?: string
+}
+
+/**
+ * Resultaat van een admin-DDL-actie (F2-3, eis 9).
+ * Bij een guard-blokkade op `confirm`-niveau (DROP/ALTER/PROD) wordt
+ * `ok: false` + `blocked` geretourneerd; de UI vraagt bevestiging en
+ * voert dezelfde actie opnieuw uit met `confirmed: true`.
+ * Op `warn`-niveau (CREATE buiten PROD) wordt de actie uitgevoerd en
+ * staat de reden in `warning`.
+ */
+export interface AdminActionResult {
+  ok: boolean
+  /** De gegenereerde/uitgevoerde SQL (altijd zichtbaar). */
+  sql: string
+  /** Guard-redenen (alleen bij `ok: false`; `guardSeverity` is dan 'confirm'). */
+  blocked?: string[]
+  guardSeverity?: GuardSeverity
+  /** Waarschuwing bij een uitgevoerde actie op `warn`-niveau. */
+  warning?: string[]
 }
 
 // F2-4: Query Performance (eis 11)

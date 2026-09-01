@@ -286,67 +286,67 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('admin:capabilities', (_e, connectionId: string) =>
     admin.capabilities(connectionId)
   )
-  ipcMain.handle('admin:createDatabase', async (_e, connectionId: string, name: string) => {
-    const r = await admin.createDatabase(connectionId, name)
-    audit('admin.ddl', `CREATE DATABASE ${name}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:createDatabase', async (_e, connectionId: string, name: string, confirmed?: boolean) => {
+    const r = await admin.createDatabase(connectionId, name, confirmed)
+    if (r.ok) audit('admin.ddl', `CREATE DATABASE ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropDatabase', async (_e, connectionId: string, name: string) => {
-    const r = await admin.dropDatabase(connectionId, name)
-    audit('admin.ddl', `DROP DATABASE ${name}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:dropDatabase', async (_e, connectionId: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropDatabase(connectionId, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP DATABASE ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:createSchema', async (_e, connectionId: string, database: string, name: string) => {
-    const r = await admin.createSchema(connectionId, database, name)
-    audit('admin.ddl', `CREATE SCHEMA ${name}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:createSchema', async (_e, connectionId: string, database: string, name: string, confirmed?: boolean) => {
+    const r = await admin.createSchema(connectionId, database, name, confirmed)
+    if (r.ok) audit('admin.ddl', `CREATE SCHEMA ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropSchema', async (_e, connectionId: string, database: string, name: string) => {
-    const r = await admin.dropSchema(connectionId, database, name)
-    audit('admin.ddl', `DROP SCHEMA ${name}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:dropSchema', async (_e, connectionId: string, database: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropSchema(connectionId, database, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP SCHEMA ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:createTable', async (_e, req: AdminTableCreateRequest) => {
-    const r = await admin.createTable(req.connectionId, req.database, req.schema, req.table, req.columns)
-    audit('admin.ddl', `CREATE TABLE ${req.schema ? req.schema + '.' : ''}${req.table}`, { server: connectionStore.get(req.connectionId)?.name })
+  ipcMain.handle('admin:createTable', async (_e, req: AdminTableCreateRequest, confirmed?: boolean) => {
+    const r = await admin.createTable(req.connectionId, req.database, req.schema, req.table, req.columns, confirmed)
+    if (r.ok) audit('admin.ddl', `CREATE TABLE ${req.schema ? req.schema + '.' : ''}${req.table}`, { server: connectionStore.get(req.connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropTable', async (_e, connectionId: string, database: string, schema: string, table: string) => {
-    const r = await admin.dropTable(connectionId, database, schema, table)
-    audit('admin.ddl', `DROP TABLE ${schema ? schema + '.' : ''}${table}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:dropTable', async (_e, connectionId: string, database: string, schema: string, table: string, confirmed?: boolean) => {
+    const r = await admin.dropTable(connectionId, database, schema, table, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP TABLE ${schema ? schema + '.' : ''}${table}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:createView', async (_e, connectionId: string, database: string, schema: string, name: string, selectSql: string) => {
-    const r = await admin.createView(connectionId, database, schema, name, selectSql)
-    audit('admin.ddl', `CREATE VIEW ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:createView', async (_e, connectionId: string, database: string, schema: string, name: string, selectSql: string, confirmed?: boolean) => {
+    const r = await admin.createView(connectionId, database, schema, name, selectSql, confirmed)
+    if (r.ok) audit('admin.ddl', `CREATE VIEW ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropView', async (_e, connectionId: string, database: string, schema: string, name: string) => {
-    const r = await admin.dropView(connectionId, database, schema, name)
-    audit('admin.ddl', `DROP VIEW ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:dropView', async (_e, connectionId: string, database: string, schema: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropView(connectionId, database, schema, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP VIEW ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:createIndex', async (_e, req: AdminIndexCreateRequest) => {
-    const r = await admin.createIndex(req.connectionId, req.database, req.schema, req.index)
-    audit('admin.ddl', `CREATE INDEX ${req.index.name}`, { server: connectionStore.get(req.connectionId)?.name })
+  ipcMain.handle('admin:createIndex', async (_e, req: AdminIndexCreateRequest, confirmed?: boolean) => {
+    const r = await admin.createIndex(req.connectionId, req.database, req.schema, req.index, confirmed)
+    if (r.ok) audit('admin.ddl', `CREATE INDEX ${req.index.name}`, { server: connectionStore.get(req.connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropIndex', async (_e, connectionId: string, database: string, schema: string, table: string, index: string) => {
-    const r = await admin.dropIndex(connectionId, database, schema, table, index)
-    audit('admin.ddl', `DROP INDEX ${index}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:dropIndex', async (_e, connectionId: string, database: string, schema: string, table: string, index: string, confirmed?: boolean) => {
+    const r = await admin.dropIndex(connectionId, database, schema, table, index, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP INDEX ${index}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
   ipcMain.handle('admin:listUsers', async (_e, connectionId: string) =>
     admin.listUsers(connectionId)
   )
-  ipcMain.handle('admin:createUser', async (_e, req: AdminUserRequest) => {
-    const r = await admin.createUser(req.connectionId, req.name, req.password)
-    audit('admin.ddl', `CREATE USER ${req.name}`, { server: connectionStore.get(req.connectionId)?.name })
+  ipcMain.handle('admin:createUser', async (_e, req: AdminUserRequest, confirmed?: boolean) => {
+    const r = await admin.createUser(req.connectionId, req.name, req.password, confirmed)
+    if (r.ok) audit('admin.ddl', `CREATE USER ${req.name}`, { server: connectionStore.get(req.connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropUser', async (_e, connectionId: string, name: string) => {
-    const r = await admin.dropUser(connectionId, name)
-    audit('admin.ddl', `DROP USER ${name}`, { server: connectionStore.get(connectionId)?.name })
+  ipcMain.handle('admin:dropUser', async (_e, connectionId: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropUser(connectionId, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP USER ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
 

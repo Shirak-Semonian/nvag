@@ -3,13 +3,17 @@
  *
  * Genereert dialect-correcte DDL (via @nvag/sql-dialect) en voert die uit
  * op de actieve sessie. Alle operaties passeren de environment-safety-guard
- * (DROP/ALTER/CREATE worden bevestigd op basis van de omgeving).
+ * met dezelfde semantiek als de query-runner (F1-8):
+ * - `warn`-niveau (CREATE buiten PROD): uitvoeren mét waarschuwing.
+ * - `confirm`-niveau (DROP/ALTER, of alles op PROD): blokkeren tot de
+ *   gebruiker bevestigt (via de AdminDialog; `confirmed: true`).
  *
  * Users/roles: alleen waar de provider-capability `supportsUsersAndRoles`
  * dat aangeeft (PostgreSQL implementeert het; SQLite niet).
  */
 
 import type {
+  AdminActionResult,
   AdminColumnDef,
   AdminIndexDef,
   AdminUserInfo,
@@ -42,18 +46,37 @@ export function capabilities(connectionId: string): ProviderCapabilities {
   return provider.capabilities
 }
 
-/** Voert een DDL-statement uit, met guard-check en audit-log. */
-async function runDdl(
+/**
+ * Voert een DDL-statement uit met guard-check (warn/confirm-semantiek).
+ * Retourneert bij een `confirm`-blokkade `{ ok: false, blocked, guardSeverity }`
+ * zodat de UI een bevestiging kan tonen; de actie zelf wordt dan niet uitgevoerd.
+ */
+export async function runDdl(
   connectionId: string,
   sql: string,
-  action: 'admin.ddl'
-): Promise<{ ok: boolean; sql: string }> {
+  action: 'admin.ddl',
+  confirmed?: boolean
+): Promise<AdminActionResult> {
   const { session, provider } = requireSession(connectionId)
   const conn = connectionStore.get(connectionId)
   if (conn) {
     const guard = checkQuery(sql, conn.environment)
     if (!guard.allowed) {
-      throw new Error(`Geblokkeerd door environment safety (${guard.reasons.join(', ')}).`)
+      if (guard.severity === 'confirm' && !confirmed) {
+        return { ok: false, sql, blocked: guard.reasons, guardSeverity: 'confirm' }
+      }
+      // warn-niveau (of bevestigde confirm): doorlopen met waarschuwing.
+      if (guard.severity === 'warn') {
+        try {
+          for await (const chunk of provider.executeQuery(session, sql, {})) {
+            if (chunk.kind === 'error') throw new Error(chunk.message)
+          }
+        } catch (err) {
+          throw err
+        }
+        void action
+        return { ok: true, sql, warning: guard.reasons }
+      }
     }
   }
   for await (const chunk of provider.executeQuery(session, sql, {})) {
@@ -65,28 +88,28 @@ async function runDdl(
   return { ok: true, sql }
 }
 
-export async function createDatabase(connectionId: string, name: string) {
+export async function createDatabase(connectionId: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   const sql = buildCreateDatabase(provider.capabilities.dialect, name)
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
-export async function dropDatabase(connectionId: string, name: string) {
+export async function dropDatabase(connectionId: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   const sql = buildDrop(provider.capabilities.dialect, 'DATABASE', name)
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
-export async function createSchema(connectionId: string, _database: string, name: string) {
+export async function createSchema(connectionId: string, _database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsSchemas && provider.capabilities.dialect !== 'mysql') {
     throw new Error('Deze provider ondersteunt geen aparte schemas.')
   }
   const sql = buildCreateSchema(provider.capabilities.dialect, name)
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
-export async function dropSchema(connectionId: string, database: string, name: string) {
+export async function dropSchema(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsSchemas) {
     throw new Error('Deze provider ondersteunt geen aparte schemas.')
@@ -97,7 +120,7 @@ export async function dropSchema(connectionId: string, database: string, name: s
       ? buildDrop('mysql', 'DATABASE', name)
       : buildDrop(provider.capabilities.dialect, 'SCHEMA', name)
   void database
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
 export async function createTable(
@@ -105,7 +128,8 @@ export async function createTable(
   database: string,
   schema: string | undefined,
   table: string,
-  columns: AdminColumnDef[]
+  columns: AdminColumnDef[],
+  confirmed?: boolean
 ) {
   const { provider } = requireSession(connectionId)
   if (columns.length === 0) {
@@ -118,19 +142,20 @@ export async function createTable(
     columns
   )
   void database
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
 export async function dropTable(
   connectionId: string,
   database: string,
   schema: string,
-  table: string
+  table: string,
+  confirmed?: boolean
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildDrop(provider.capabilities.dialect, 'TABLE', table, { schema: schema || null })
   void database
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
 export async function createView(
@@ -138,27 +163,29 @@ export async function createView(
   database: string,
   schema: string,
   name: string,
-  selectSql: string
+  selectSql: string,
+  confirmed?: boolean
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildCreateView(provider.capabilities.dialect, schema || null, name, selectSql)
   void database
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
 export async function dropView(
   connectionId: string,
   database: string,
   schema: string,
-  name: string
+  name: string,
+  confirmed?: boolean
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildDrop(provider.capabilities.dialect, 'VIEW', name, { schema: schema || null })
   void database
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
-export async function createIndex(connectionId: string, database: string, schema: string | undefined, index: AdminIndexDef) {
+export async function createIndex(connectionId: string, database: string, schema: string | undefined, index: AdminIndexDef, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   const sql = buildCreateIndex(
     provider.capabilities.dialect,
@@ -169,7 +196,7 @@ export async function createIndex(connectionId: string, database: string, schema
     index.unique
   )
   void database
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
 export async function dropIndex(
@@ -177,7 +204,8 @@ export async function dropIndex(
   database: string,
   schema: string,
   table: string,
-  index: string
+  index: string,
+  confirmed?: boolean
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildDrop(provider.capabilities.dialect, 'INDEX', index, {
@@ -185,7 +213,7 @@ export async function dropIndex(
     table
   })
   void database
-  return runDdl(connectionId, sql, 'admin.ddl')
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +247,7 @@ export async function listUsers(connectionId: string): Promise<AdminUserInfo[]> 
   return []
 }
 
-export async function createUser(connectionId: string, name: string, password?: string) {
+export async function createUser(connectionId: string, name: string, password?: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsUsersAndRoles) {
     throw new Error('Deze provider ondersteunt geen users/roles.')
@@ -228,12 +256,12 @@ export async function createUser(connectionId: string, name: string, password?: 
   if (dialect === 'postgres') {
     const pwd = password ? ` PASSWORD ${quoteLiteralPg(password)}` : ''
     const sql = `CREATE USER ${quoteIdentifier('postgres', name)}${pwd};`
-    return runDdl(connectionId, sql, 'admin.ddl')
+    return runDdl(connectionId, sql, 'admin.ddl', confirmed)
   }
   throw new Error(`Users aanmaken is niet geïmplementeerd voor dialect ${dialect}.`)
 }
 
-export async function dropUser(connectionId: string, name: string) {
+export async function dropUser(connectionId: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsUsersAndRoles) {
     throw new Error('Deze provider ondersteunt geen users/roles.')
@@ -241,7 +269,7 @@ export async function dropUser(connectionId: string, name: string) {
   const dialect = provider.capabilities.dialect
   if (dialect === 'postgres') {
     const sql = `DROP USER ${quoteIdentifier('postgres', name)};`
-    return runDdl(connectionId, sql, 'admin.ddl')
+    return runDdl(connectionId, sql, 'admin.ddl', confirmed)
   }
   throw new Error(`Users verwijderen is niet geïmplementeerd voor dialect ${dialect}.`)
 }
