@@ -12,6 +12,9 @@
 import sql from 'mssql'
 import type { config as MssqlConfig } from 'mssql'
 import type {
+  BackupOptions,
+  BackupRestoreApi,
+  BackupResult,
   ColumnInfo,
   ConnectionConfig,
   ConstraintInfo,
@@ -31,6 +34,8 @@ import type {
   QueryOptions,
   QueryRow,
   QueryStats,
+  RestoreOptions,
+  RestoreResult,
   SchemaInfo,
   SeqInfo,
   ServerInfo,
@@ -40,7 +45,7 @@ import type {
   TriggerInfo,
   ViewInfo
 } from '@nvag/contracts'
-import { quoteIdentifier, quoteLiteral, splitStatements, containsKeyword, wrapErrorPosition } from '@nvag/sql-dialect'
+import { quoteIdentifier, quoteLiteral, splitStatements, containsKeyword, wrapErrorPosition, buildBackupDatabase, buildRestoreDatabase } from '@nvag/sql-dialect'
 
 export interface SqlServerSessionHandle {
   pool: sql.ConnectionPool
@@ -722,7 +727,57 @@ export function createSqlServerProvider(): DatabaseProvider {
       _executionId: string
     ): Promise<QueryStats> {
       return { rowCount: 0, durationMs: 0 }
-    }
+    },
+
+    // ------------------------------------------------------------------ F4
+    // Backup & Restore (DBA) — gated via `supportsBackupRestore` (true)
+    backupRestore: {
+      async backupDatabase(
+        session: DbSession,
+        database: string,
+        targetPath: string,
+        _options?: BackupOptions
+      ): Promise<BackupResult> {
+        const { pool } = session.handle as SqlServerSessionHandle
+        const sqlText = buildBackupDatabase('tsql', database, targetPath)
+        const start = performance.now()
+        try {
+          await pool.request().query(sqlText)
+          return { ok: true, sql: sqlText, targetPath, durationMs: Math.round(performance.now() - start) }
+        } catch (err) {
+          return {
+            ok: false,
+            sql: sqlText,
+            targetPath,
+            durationMs: Math.round(performance.now() - start),
+            message: err instanceof Error ? err.message : String(err)
+          }
+        }
+      },
+
+      async restoreDatabase(
+        session: DbSession,
+        database: string,
+        sourcePath: string,
+        _options?: RestoreOptions
+      ): Promise<RestoreResult> {
+        const { pool } = session.handle as SqlServerSessionHandle
+        const sqlText = buildRestoreDatabase('tsql', database, sourcePath)
+        const start = performance.now()
+        try {
+          await pool.request().query(sqlText)
+          return { ok: true, sql: sqlText, sourcePath, durationMs: Math.round(performance.now() - start) }
+        } catch (err) {
+          return {
+            ok: false,
+            sql: sqlText,
+            sourcePath,
+            durationMs: Math.round(performance.now() - start),
+            message: err instanceof Error ? err.message : String(err)
+          }
+        }
+      }
+    } satisfies BackupRestoreApi
   }
 }
 
