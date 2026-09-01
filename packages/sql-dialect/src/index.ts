@@ -1206,6 +1206,48 @@ export function buildCreateDatabase(dialect: SqlDialectId, name: string): string
   return `CREATE DATABASE ${d.quoteIdentifier(name)};`
 }
 
+/** BACKUP DATABASE (F4-1, DBA) — dialect-idiomen.
+ * SQL Server: `BACKUP DATABASE [db] TO DISK = N'path'`
+ * Db2: `BACKUP DB db TO 'path'`
+ * SQLite: geen SQL (bestandskopie via de provider) → lege string.
+ */
+export function buildBackupDatabase(
+  dialect: SqlDialectId,
+  database: string,
+  targetPath: string
+): string {
+  const d = DIALECTS[dialect]
+  switch (dialect) {
+    case 'tsql':
+      return `BACKUP DATABASE ${d.quoteIdentifier(database)} TO DISK = ${d.quoteLiteral(targetPath)};`
+    case 'db2':
+      return `BACKUP DB ${d.quoteIdentifier(database)} TO ${d.quoteLiteral(targetPath)};`
+    default:
+      return ''
+  }
+}
+
+/** RESTORE DATABASE (F4-1, DBA) — dialect-idiomen.
+ * SQL Server: `RESTORE DATABASE [db] FROM DISK = N'path' WITH REPLACE`
+ * Db2: `RESTORE DB db FROM 'path' REPLACE EXISTING`
+ * SQLite: geen SQL (bestandskopie via de provider) → lege string.
+ */
+export function buildRestoreDatabase(
+  dialect: SqlDialectId,
+  database: string,
+  sourcePath: string
+): string {
+  const d = DIALECTS[dialect]
+  switch (dialect) {
+    case 'tsql':
+      return `RESTORE DATABASE ${d.quoteIdentifier(database)} FROM DISK = ${d.quoteLiteral(sourcePath)} WITH REPLACE;`
+    case 'db2':
+      return `RESTORE DB ${d.quoteIdentifier(database)} FROM ${d.quoteLiteral(sourcePath)} REPLACE EXISTING;`
+    default:
+      return ''
+  }
+}
+
 /**
  * Script Object-dispatch (F1-5): genereer dialect-correcte SQL voor een tabel.
  * INSERT laat identity-kolommen buiten de kolomlijst; UPDATE/DELETE gebruiken

@@ -330,6 +330,59 @@ export interface ExecutionPlanApi {
 }
 
 // ---------------------------------------------------------------------------
+// Fase 4: Backup & Restore (DBA) — gated via `supportsBackupRestore`
+// ---------------------------------------------------------------------------
+
+export interface BackupOptions {
+  /** Overschrijf een bestaand backupbestand. */
+  overwrite?: boolean
+}
+
+export interface RestoreOptions {
+  /** Vervang een bestaande database (SQL Server: WITH REPLACE). */
+  replace?: boolean
+}
+
+export interface BackupResult {
+  ok: boolean
+  /** Gegenereerde/uitgevoerde SQL (indien van toepassing). */
+  sql?: string
+  targetPath: string
+  durationMs: number
+  message?: string
+  /** Guard-blokkade (confirm-niveau). */
+  blocked?: string[]
+  guardSeverity?: GuardSeverity
+}
+
+export interface RestoreResult {
+  ok: boolean
+  sql?: string
+  sourcePath: string
+  durationMs: number
+  message?: string
+  blocked?: string[]
+  guardSeverity?: GuardSeverity
+}
+
+/** Optionele backup/restore-API (F4); alleen aanwezig wanneer de provider
+ * `supportsBackupRestore` adverteert. */
+export interface BackupRestoreApi {
+  backupDatabase?(
+    session: DbSession,
+    database: string,
+    targetPath: string,
+    options?: BackupOptions
+  ): Promise<BackupResult>
+  restoreDatabase?(
+    session: DbSession,
+    database: string,
+    sourcePath: string,
+    options?: RestoreOptions
+  ): Promise<RestoreResult>
+}
+
+// ---------------------------------------------------------------------------
 // DatabaseProvider — de kern-interface (ADR-002)
 // ---------------------------------------------------------------------------
 
@@ -374,10 +427,11 @@ export interface DatabaseProvider {
   cancel(session: DbSession, executionId: string): Promise<void>
   getExecutionStats(session: DbSession, executionId: string): Promise<QueryStats>
 
-  // Optioneel: admin / monitoring / plans (gated via capabilities)
+  // Optioneel: admin / monitoring / plans / backup-restore (gated via capabilities)
   admin?: AdminApi
   monitoring?: MonitoringApi
   executionPlan?: ExecutionPlanApi
+  backupRestore?: BackupRestoreApi
 }
 
 export interface ProviderRegistry {
@@ -543,6 +597,9 @@ export interface NvagIpcApi {
     dropUser(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
     /** Capabilities van de provider (voor UI-gating). */
     capabilities(connectionId: string): Promise<ProviderCapabilities>
+    // Fase 4: Backup & Restore (DBA), gated via `supportsBackupRestore`
+    backupDatabase(connectionId: string, database: string, targetPath: string, confirmed?: boolean): Promise<BackupResult>
+    restoreDatabase(connectionId: string, database: string, sourcePath: string, confirmed?: boolean): Promise<RestoreResult>
   }
 
   // F2-4: Query Performance (eis 11)
