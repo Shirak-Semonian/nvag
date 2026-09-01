@@ -248,7 +248,7 @@ export function createMySqlProvider(): DatabaseProvider {
       const { conn } = session.handle as MySqlSessionHandle
       const rows = await queryRows<{ name: string; table: string }>(
         conn,
-        `SELECT TRIGGER_NAME AS name, EVENT_OBJECT_TABLE AS table FROM information_schema.TRIGGERS
+        `SELECT TRIGGER_NAME AS name, EVENT_OBJECT_TABLE AS \`table\` FROM information_schema.TRIGGERS
          WHERE TRIGGER_SCHEMA = ? ORDER BY TRIGGER_NAME`,
         [db]
       )
@@ -308,7 +308,7 @@ export function createMySqlProvider(): DatabaseProvider {
         ref_column: string
       }>(
         conn,
-        `SELECT k.CONSTRAINT_NAME AS name, k.COLUMN_NAME AS column,
+        `SELECT k.CONSTRAINT_NAME AS name, k.COLUMN_NAME AS \`column\`,
                 k.REFERENCED_TABLE_SCHEMA AS ref_schema, k.REFERENCED_TABLE_NAME AS ref_table,
                 k.REFERENCED_COLUMN_NAME AS ref_column
          FROM information_schema.KEY_COLUMN_USAGE k
@@ -336,7 +336,7 @@ export function createMySqlProvider(): DatabaseProvider {
       // Indexen
       const idxRows = await queryRows<{ name: string; column: string; unique: number; seq: number }>(
         conn,
-        `SELECT INDEX_NAME AS name, COLUMN_NAME AS column, NON_UNIQUE AS unique, SEQ_IN_INDEX AS seq
+        `SELECT INDEX_NAME AS name, COLUMN_NAME AS \`column\`, NON_UNIQUE AS \`unique\`, SEQ_IN_INDEX AS seq
          FROM information_schema.STATISTICS
          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME != 'PRIMARY'
          ORDER BY INDEX_NAME, SEQ_IN_INDEX`,

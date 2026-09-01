@@ -5,6 +5,7 @@
  * zonder server worden de contracttests overgeslagen.
  */
 
+import { createConnection } from 'mysql2/promise'
 import type { ConnectionConfig } from '@nvag/contracts'
 import type { ProviderContractHarness } from '@nvag/contract-tests'
 import { createMySqlProvider } from '../src/index'
@@ -43,6 +44,34 @@ export function getMySqlTestConfig(): MySqlTestConfig | null {
   }
 }
 
+/**
+ * Maakt de testdatabase aan wanneer die nog niet bestaat en geeft terug of de
+ * server bereikbaar was. Wordt vóór de suite aangeroepen; zonder bereikbare
+ * server retourneert het false (suite wordt geskipt). Spiegelt de aanpak van
+ * de SQL Server-harness (SAL-35: live-runs tegen docker-compose.dev.yml).
+ */
+export async function ensureMySqlTestDb(cfg: MySqlTestConfig): Promise<boolean> {
+  const conn = await createConnection({
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    password: cfg.password,
+    connectTimeout: 5000
+  })
+  try {
+    await conn.query(`CREATE DATABASE IF NOT EXISTS \`${cfg.database.replace(/`/g, '``')}\``)
+    await conn.end()
+    return true
+  } catch {
+    try {
+      await conn.end()
+    } catch {
+      // negeren
+    }
+    return false
+  }
+}
+
 export function createMySqlHarness(cfg: MySqlTestConfig): ProviderContractHarness {
   return {
     name: 'mysql',
@@ -62,7 +91,11 @@ export function createMySqlHarness(cfg: MySqlTestConfig): ProviderContractHarnes
       connectionTimeoutMs: 5000,
       group: 'Contract'
     }),
+    createSecret: () => ({ password: cfg.password }),
     fixtureSql: `
+      DROP VIEW IF EXISTS vw_contract_active;
+      DROP TABLE IF EXISTS contract_meta;
+      DROP TABLE IF EXISTS contract_dml;
       CREATE TABLE contract_dml (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(200) NOT NULL

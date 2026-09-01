@@ -6,6 +6,7 @@
  * Zonder server worden de contracttests overgeslagen.
  */
 
+import { Client } from 'pg'
 import type { ConnectionConfig } from '@nvag/contracts'
 import type { ProviderContractHarness } from '@nvag/contract-tests'
 import { createPostgresProvider } from '../src/index'
@@ -44,6 +45,39 @@ export function getPgTestConfig(): PgTestConfig | null {
   }
 }
 
+/**
+ * Maakt de testdatabase aan wanneer die nog niet bestaat en geeft terug of de
+ * server bereikbaar was. Wordt vóór de suite aangeroepen; zonder bereikbare
+ * server retourneert het false (suite wordt geskipt). Spiegelt de aanpak van
+ * de SQL Server-harness (SAL-35: live-runs tegen docker-compose.dev.yml).
+ */
+export async function ensurePgTestDb(cfg: PgTestConfig): Promise<boolean> {
+  const client = new Client({
+    host: cfg.host,
+    port: cfg.port,
+    database: 'postgres',
+    user: cfg.user,
+    password: cfg.password,
+    connectionTimeoutMillis: 5000
+  })
+  try {
+    await client.connect()
+    const r = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [cfg.database])
+    if ((r.rowCount ?? 0) === 0) {
+      await client.query(`CREATE DATABASE "${cfg.database.replace(/"/g, '""')}"`)
+    }
+    await client.end()
+    return true
+  } catch {
+    try {
+      await client.end()
+    } catch {
+      // negeren
+    }
+    return false
+  }
+}
+
 export function createPgHarness(cfg: PgTestConfig): ProviderContractHarness {
   return {
     name: 'postgresql',
@@ -63,7 +97,11 @@ export function createPgHarness(cfg: PgTestConfig): ProviderContractHarness {
       connectionTimeoutMs: 5000,
       group: 'Contract'
     }),
+    createSecret: () => ({ password: cfg.password }),
     fixtureSql: `
+      DROP VIEW IF EXISTS vw_contract_active;
+      DROP TABLE IF EXISTS contract_meta;
+      DROP TABLE IF EXISTS contract_dml;
       CREATE TABLE contract_dml (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL
@@ -85,6 +123,7 @@ export function createPgHarness(cfg: PgTestConfig): ProviderContractHarness {
     metadataTable: 'contract_meta',
     metadataTableColumns: ['id', 'name', 'email', 'active'],
     makeLimitQuery: (table, n) => `SELECT * FROM "${table}" LIMIT ${n}`,
+    schema: 'public',
     multipleStatements: 'reject',
     skips: { errorPosition: false }
   }

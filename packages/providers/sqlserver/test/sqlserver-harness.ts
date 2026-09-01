@@ -98,7 +98,11 @@ export function createSqlServerHarness(cfg: SqlServerTestConfig): ProviderContra
       connectionTimeoutMs: 5000,
       group: 'Contract'
     }),
+    createSecret: () => ({ password: cfg.password }),
     fixtureSql: `
+      IF OBJECT_ID(N'dbo.vw_contract_active', N'V') IS NOT NULL DROP VIEW dbo.vw_contract_active;
+      IF OBJECT_ID(N'dbo.contract_meta', N'U') IS NOT NULL DROP TABLE dbo.contract_meta;
+      IF OBJECT_ID(N'dbo.contract_dml', N'U') IS NOT NULL DROP TABLE dbo.contract_dml;
       CREATE TABLE contract_dml (
         id INT IDENTITY(1,1) NOT NULL,
         name NVARCHAR(100) NOT NULL,

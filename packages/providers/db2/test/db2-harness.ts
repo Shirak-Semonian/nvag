@@ -69,6 +69,7 @@ export function createDb2Harness(cfg: Db2TestConfig, name = 'db2'): ProviderCont
       connectionTimeoutMs: 5000,
       group: 'Contract'
     }),
+    createSecret: () => ({ password: cfg.password }),
     fixtureSql: `
       CREATE TABLE "contract_dml" (
         id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,

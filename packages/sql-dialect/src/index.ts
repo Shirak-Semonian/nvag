@@ -332,8 +332,9 @@ function parseTsqlErrorPosition(
   const trimmed = message.trim()
 
   // Token tussen enkele quotes: near / invalid column / invalid object / variable / etc.
+  // SQL Server zegt bij gereserveerde woorden: "Incorrect syntax near the keyword 'FROM'".
   const quotedToken =
-    /(?:Incorrect syntax near|Invalid column name|Invalid object name|Invalid schema name|Ambiguous column name|Unclosed quotation mark after the character string)\s+'([^']+)'/i.exec(
+    /(?:Incorrect syntax near the keyword|Incorrect syntax near|Invalid column name|Invalid object name|Invalid schema name|Ambiguous column name|Unclosed quotation mark after the character string)\s+'([^']+)'/i.exec(
       trimmed
     ) ??
     /'([^']+)' is not a recognized built-in function name/i.exec(trimmed)

@@ -47,6 +47,13 @@ describe('databricks provider', () => {
         dialect: 'databricks',
         createProvider: () => createDatabricksProvider(),
         createConfig: () => cfg,
+        createSecret: () => {
+          // Formaat: databricks://token@host:443/default — de token staat op
+          // de gebruikerspositie in de URL (zie provider-docstring).
+          const url = process.env.NVAG_TEST_DATABRICKS_URL
+          const u = url ? new URL(url) : null
+          return { token: u ? decodeURIComponent(u.username || '') : undefined }
+        },
         fixtureSql: `
           CREATE TABLE IF NOT EXISTS contract_dml (id BIGINT, name STRING NOT NULL);
           INSERT INTO contract_dml VALUES (1, 'a'), (2, 'b'), (3, 'c');

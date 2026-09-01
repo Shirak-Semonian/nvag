@@ -12,6 +12,7 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest'
 import type {
   ConnectionConfig,
+  ConnectionSecret,
   DatabaseProvider,
   DbSession,
   ProviderCapabilities,
@@ -29,6 +30,13 @@ export interface ProviderContractHarness {
   createProvider(): DatabaseProvider
   /** Config die naar een lege testdatabase wijst. */
   createConfig(): ConnectionConfig
+  /**
+   * Optioneel secret (wachtwoord/token) dat de suite aan `connect()` en
+   * `testConnection()` meegeeft (SAL-35). Alleen nodig voor wachtwoord- of
+   * token-beveiligde testservers; bestaande harnesses (bv. sqlite) laten dit
+   * achterwege en blijven ongewijzigd werken.
+   */
+  createSecret?(): ConnectionSecret
   /**
    * Dialect-specifiek fixturescript (CREATE TABLE + rijen). Meerdere
    * statements zijn toegestaan; de suite splitst en voert ze één voor één uit.
@@ -123,7 +131,7 @@ export function runProviderContractTests(
     beforeAll(async () => {
       provider = harness.createProvider()
       config = harness.createConfig()
-      session = await provider.connect(config)
+      session = await provider.connect(config, harness.createSecret?.())
       await runFixture(provider, session, harness.fixtureSql)
     })
 
@@ -133,14 +141,14 @@ export function runProviderContractTests(
 
     describe('connectie', () => {
       it('connecteert en levert een sessie met providerId', async () => {
-        const s = await provider.connect(config)
+        const s = await provider.connect(config, harness.createSecret?.())
         expect(s.providerId).toBe(provider.id)
         expect(s.database).toBeTruthy()
         await provider.close(s)
       })
 
       it('testConnection slaagt op geldige config', async () => {
-        const r = await provider.testConnection(config)
+        const r = await provider.testConnection(config, harness.createSecret?.())
         expect(r.ok).toBe(true)
         expect(r.serverInfo?.providerName).toBeTruthy()
       })

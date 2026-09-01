@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { runProviderContractTests } from '@nvag/contract-tests'
 import { createPostgresProvider } from '../src/index'
-import { createPgHarness, getPgTestConfig } from './postgres-harness'
+import { createPgHarness, ensurePgTestDb, getPgTestConfig } from './postgres-harness'
 
 /**
  * Contracttests PostgreSQL (SAL-15).
- * Draaien alleen wanneer NVAG_TEST_PG_URL (of NVAG_TEST_PG_*) is gezet;
- * anders worden ze overgeslagen.
+ * Draaien alleen wanneer NVAG_TEST_PG_URL (of NVAG_TEST_PG_*) is gezet én de
+ * server bereikbaar is (testdatabase wordt zelf aangemaakt); anders worden ze
+ * overgeslagen. Zie docker-compose.dev.yml → service `postgres`.
  */
 const cfg = getPgTestConfig()
+const enabled = cfg !== null ? await ensurePgTestDb(cfg) : false
 
-runProviderContractTests(createPgHarness(cfg!), { enabled: cfg !== null })
+runProviderContractTests(createPgHarness(cfg!), { enabled })
 
 describe('postgresql provider — specifiek', () => {
   it('testConnection faalt zonder server (config zonder verbinding)', async () => {

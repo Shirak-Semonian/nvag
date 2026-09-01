@@ -129,6 +129,11 @@ describe('wrapErrorPosition — T-SQL (tsql)', () => {
     expect(pos).toEqual({ line: 1, column: 8 })
   })
 
+  it('Incorrect syntax near the keyword (gereserveerd woord, SAL-35 live-bevinding)', () => {
+    const pos = wrapErrorPosition('tsql', "Incorrect syntax near the keyword 'FROM'.", 'SELEC x FROM t')
+    expect(pos).toEqual({ line: 1, column: 9 })
+  })
+
   it('Incorrect syntax near in meerregelige SQL (regel 2)', () => {
     const pos = wrapErrorPosition(
       'tsql',

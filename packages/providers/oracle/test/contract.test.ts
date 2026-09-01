@@ -15,8 +15,8 @@ describe('oracle provider', () => {
     expect(p.defaultPort).toBe(1521)
   })
 
-  const cfg = getOracleTestConfig()
-  if (cfg) {
-    runProviderContractTests(createOracleHarness(cfg), { enabled: true })
+  const setup = getOracleTestConfig()
+  if (setup) {
+    runProviderContractTests(createOracleHarness(setup), { enabled: true })
   }
 })

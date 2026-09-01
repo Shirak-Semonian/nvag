@@ -46,6 +46,11 @@ describe('snowflake provider', () => {
         dialect: 'snowflake',
         createProvider: () => createSnowflakeProvider(),
         createConfig: () => cfg,
+        createSecret: () => {
+          const url = process.env.NVAG_TEST_SNOWFLAKE_URL
+          const u = url ? new URL(url) : null
+          return { password: u ? decodeURIComponent(u.password || '') : undefined }
+        },
         fixtureSql: `
           CREATE OR REPLACE TABLE contract_dml (id NUMBER AUTOINCREMENT, name VARCHAR(100) NOT NULL);
           INSERT INTO contract_dml (name) VALUES ('a'), ('b'), ('c');

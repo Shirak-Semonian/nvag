@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { runProviderContractTests } from '@nvag/contract-tests'
 import { createMySqlProvider } from '../src/index'
-import { createMySqlHarness, getMySqlTestConfig } from './mysql-harness'
+import { createMySqlHarness, ensureMySqlTestDb, getMySqlTestConfig } from './mysql-harness'
 
 /**
  * Contracttests MySQL/MariaDB (SAL-15).
- * Draaien alleen wanneer NVAG_TEST_MYSQL_URL (of NVAG_TEST_MYSQL_*) is gezet;
- * anders worden ze overgeslagen.
+ * Draaien alleen wanneer NVAG_TEST_MYSQL_URL (of NVAG_TEST_MYSQL_*) is gezet
+ * én de server bereikbaar is (testdatabase wordt zelf aangemaakt); anders
+ * worden ze overgeslagen. Zie docker-compose.dev.yml → service `mysql`.
  */
 const cfg = getMySqlTestConfig()
+const enabled = cfg !== null ? await ensureMySqlTestDb(cfg) : false
 
-runProviderContractTests(createMySqlHarness(cfg!), { enabled: cfg !== null })
+runProviderContractTests(createMySqlHarness(cfg!), { enabled })
 
 describe('mysql provider — specifiek', () => {
   it('testConnection faalt zonder server (config zonder verbinding)', async () => {
