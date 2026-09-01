@@ -31,8 +31,12 @@ const DANGEROUS_PATTERNS: GuardPattern[] = [
   { pattern: /\bDROP\s+(TABLE|VIEW|DATABASE|SCHEMA|INDEX|TRIGGER|PROCEDURE|FUNCTION|SEQUENCE)\b/i, reason: 'DROP-statement', severity: 'confirm' },
   { pattern: /\bTRUNCATE\b/i, reason: 'TRUNCATE-statement', severity: 'confirm' },
   { pattern: /\bALTER\s+(TABLE|DATABASE|SCHEMA|VIEW)\b/i, reason: 'ALTER-statement', severity: 'confirm' },
+  // F4: RESTORE overschrijft een database → destructief, altijd bevestigen.
+  { pattern: /\bRESTORE\s+(DATABASE|DB)\b/i, reason: 'RESTORE-statement', severity: 'confirm' },
   // CREATE is niet destructief: buiten PROD een waarschuwing, op PROD bevestigen.
-  { pattern: /\bCREATE\s+(DATABASE|TABLE|VIEW|INDEX|TRIGGER)\b/i, reason: 'CREATE-statement', severity: 'warn' }
+  { pattern: /\bCREATE\s+(DATABASE|TABLE|VIEW|INDEX|TRIGGER)\b/i, reason: 'CREATE-statement', severity: 'warn' },
+  // F4: BACKUP schrijft een bestand maar wijzigt de database niet → warn.
+  { pattern: /\bBACKUP\s+(DATABASE|DB)\b/i, reason: 'BACKUP-statement', severity: 'warn' }
 ]
 
 /** Schrijvende statement-typen voor de grote-operatie-detectie. */

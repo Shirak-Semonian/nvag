@@ -52,6 +52,26 @@ describe('query-guard (ADR-009, F1-8)', () => {
     expect(prod.severity).toBe('confirm')
   })
 
+  it('F4: RESTORE is destructief → confirm op elke omgeving', () => {
+    for (const env of ['DEV', 'TEST', 'ACC', 'PROD'] as const) {
+      const r = checkQuery('RESTORE DATABASE prod FROM DISK = N\'/tmp/x.bak\' WITH REPLACE;', env)
+      expect(r.allowed).toBe(false)
+      expect(r.severity).toBe('confirm')
+      expect(r.reasons).toContain('RESTORE-statement')
+    }
+  })
+
+  it('F4: BACKUP is buiten PROD een warn en op PROD confirm', () => {
+    const dev = checkQuery('BACKUP DATABASE [Sales] TO DISK = N\'/tmp/s.bak\';', 'DEV')
+    expect(dev.allowed).toBe(false)
+    expect(dev.severity).toBe('warn')
+    expect(dev.reasons).toContain('BACKUP-statement')
+
+    const prod = checkQuery('BACKUP DATABASE [Sales] TO DISK = N\'/tmp/s.bak\';', 'PROD')
+    expect(prod.allowed).toBe(false)
+    expect(prod.severity).toBe('confirm')
+  })
+
   it('detecteert een batch met meerdere schrijvende statements als grote operatie', () => {
     // Beide statements zijn begrensd (WHERE) — de batch zelf is de grote operatie.
     const sql = 'UPDATE a SET x = 1 WHERE id = 1; UPDATE b SET y = 2 WHERE id = 2;'

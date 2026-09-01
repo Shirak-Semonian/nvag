@@ -350,6 +350,18 @@ export function registerIpcHandlers(): void {
     return r
   })
 
+  // ------------------------------------------------------------------ F4: backup & restore (DBA)
+  ipcMain.handle('admin:backupDatabase', async (_e, connectionId: string, database: string, targetPath: string, confirmed?: boolean) => {
+    const r = await admin.backupDatabase(connectionId, database, targetPath, confirmed)
+    if (r.ok) audit('admin.ddl', `BACKUP DATABASE ${database} → ${targetPath}`, { server: connectionStore.get(connectionId)?.name, database })
+    return r
+  })
+  ipcMain.handle('admin:restoreDatabase', async (_e, connectionId: string, database: string, sourcePath: string, confirmed?: boolean) => {
+    const r = await admin.restoreDatabase(connectionId, database, sourcePath, confirmed)
+    if (r.ok) audit('admin.ddl', `RESTORE DATABASE ${database} ← ${sourcePath}`, { server: connectionStore.get(connectionId)?.name, database })
+    return r
+  })
+
   // ------------------------------------------------------------------ F2-4: query performance (eis 11)
   ipcMain.handle('performance:getStats', (_e, connectionId: string, sql?: string) =>
     performance.getStats(connectionId, sql)

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSqliteProvider } from '@nvag/provider-sqlite'
 import type { ConnectionConfig, Environment } from '@nvag/contracts'
-import { createTable, dropTable } from './database-admin'
+import { createTable, dropTable, backupDatabase, restoreDatabase } from './database-admin'
 import { sessionManager } from './session-manager'
 import { registry } from './registry'
 
@@ -123,5 +123,58 @@ describe('F2-3 admin guard-flow', () => {
     ], true)
     expect(confirmed.ok).toBe(true)
     expect(confirmed.sql).toContain('CREATE TABLE')
+  })
+})
+
+describe('F4 backup/restore guard-flow', () => {
+  let backupFile: string
+
+  beforeEach(() => {
+    setEnvironment('DEV')
+    backupFile = join(dir, 'f4-backup.db')
+    rmSync(backupFile, { force: true })
+  })
+
+  it('backup voert uit op DEV (warn-niveau) met waarschuwing', async () => {
+    const r = await backupDatabase('adm-1', 'main', backupFile)
+    expect(r.ok).toBe(true)
+    expect(r.message).toMatch(/BACKUP-statement/)
+  })
+
+  it('backup op PROD vraagt bevestiging (confirm)', async () => {
+    setEnvironment('PROD')
+    const r = await backupDatabase('adm-1', 'main', backupFile)
+    expect(r.ok).toBe(false)
+    expect(r.blocked?.some((b) => /BACKUP/i.test(b))).toBe(true)
+    expect(r.guardSeverity).toBe('confirm')
+
+    // Bevestigd → uitvoeren.
+    const confirmed = await backupDatabase('adm-1', 'main', backupFile, true)
+    expect(confirmed.ok).toBe(true)
+  })
+
+  it('restore blokkeert op elke omgeving tot bevestiging (destructief)', async () => {
+    // Eerst een backup maken zodat restore iets terugzet.
+    const backup = await backupDatabase('adm-1', 'main', backupFile, true)
+    expect(backup.ok).toBe(true)
+
+    for (const env of ['DEV', 'PROD'] as const) {
+      setEnvironment(env)
+      const r = await restoreDatabase('adm-1', 'main', backupFile)
+      expect(r.ok).toBe(false)
+      expect(r.blocked?.some((b) => /RESTORE/i.test(b))).toBe(true)
+      expect(r.guardSeverity).toBe('confirm')
+    }
+
+    // Bevestigd → uitvoeren.
+    const confirmed = await restoreDatabase('adm-1', 'main', backupFile, true)
+    expect(confirmed.ok).toBe(true)
+    expect(confirmed.sourcePath).toBe(backupFile)
+  })
+
+  it('meldt een ontbrekend backupbestand bij restore', async () => {
+    const r = await restoreDatabase('adm-1', 'main', join(dir, 'bestaand-niet.db'), true)
+    expect(r.ok).toBe(false)
+    expect(r.message).toMatch(/niet gevonden/)
   })
 })

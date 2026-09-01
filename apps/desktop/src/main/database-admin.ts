@@ -17,7 +17,9 @@ import type {
   AdminColumnDef,
   AdminIndexDef,
   AdminUserInfo,
-  ProviderCapabilities
+  BackupResult,
+  ProviderCapabilities,
+  RestoreResult
 } from '@nvag/contracts'
 import {
   buildCreateDatabase,
@@ -276,4 +278,74 @@ export async function dropUser(connectionId: string, name: string, confirmed?: b
 
 function quoteLiteralPg(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
+}
+
+// ---------------------------------------------------------------------------
+// Fase 4: Backup & Restore (DBA) — gated via `supportsBackupRestore`.
+//
+// Semantiek (zelfde guard-aanpak als runDdl, F2-3):
+// - BACKUP is niet destructief voor de database → `warn` buiten PROD
+//   (uitvoeren mét waarschuwing), op PROD `confirm`.
+// - RESTORE overschrijft een database → altijd `confirm` tot bevestiging.
+// ---------------------------------------------------------------------------
+
+export async function backupDatabase(
+  connectionId: string,
+  database: string,
+  targetPath: string,
+  confirmed?: boolean
+): Promise<BackupResult> {
+  const { session, provider } = requireSession(connectionId)
+  if (!provider.capabilities.supportsBackupRestore || !provider.backupRestore?.backupDatabase) {
+    throw new Error('Deze provider ondersteunt geen backup/restore.')
+  }
+  const conn = connectionStore.get(connectionId)
+  if (conn && !confirmed) {
+    const guard = checkQuery(`BACKUP DATABASE ${database}`, conn.environment)
+    if (!guard.allowed) {
+      if (guard.severity === 'confirm') {
+        return {
+          ok: false,
+          targetPath,
+          durationMs: 0,
+          blocked: guard.reasons,
+          guardSeverity: 'confirm'
+        }
+      }
+      // warn-niveau buiten PROD: uitvoeren, waarschuwing meegeven.
+      const result = await provider.backupRestore.backupDatabase(session, database, targetPath)
+      return { ...result, blocked: undefined, guardSeverity: undefined, message: result.message ?? guard.reasons.join(', ') }
+    }
+  }
+  return provider.backupRestore.backupDatabase(session, database, targetPath)
+}
+
+export async function restoreDatabase(
+  connectionId: string,
+  database: string,
+  sourcePath: string,
+  confirmed?: boolean
+): Promise<RestoreResult> {
+  const { session, provider } = requireSession(connectionId)
+  if (!provider.capabilities.supportsBackupRestore || !provider.backupRestore?.restoreDatabase) {
+    throw new Error('Deze provider ondersteunt geen backup/restore.')
+  }
+  const conn = connectionStore.get(connectionId)
+  if (conn && !confirmed) {
+    const guard = checkQuery(`RESTORE DATABASE ${database}`, conn.environment)
+    if (!guard.allowed) {
+      if (guard.severity === 'confirm') {
+        return {
+          ok: false,
+          sourcePath,
+          durationMs: 0,
+          blocked: guard.reasons,
+          guardSeverity: 'confirm'
+        }
+      }
+      const result = await provider.backupRestore.restoreDatabase(session, database, sourcePath)
+      return { ...result, blocked: undefined, guardSeverity: undefined, message: result.message ?? guard.reasons.join(', ') }
+    }
+  }
+  return provider.backupRestore.restoreDatabase(session, database, sourcePath)
 }
