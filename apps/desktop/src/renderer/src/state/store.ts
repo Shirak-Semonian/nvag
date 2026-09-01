@@ -89,6 +89,9 @@ export interface ConnectionWithSession {
   serverInfo: ServerInfo
 }
 
+/** Tabs van de AdminDialog (SAL-34: Object Explorer kan een specifieke tab openen). */
+export type AdminDialogTab = 'database' | 'schema' | 'table' | 'view' | 'index' | 'users' | 'backup'
+
 /** Environment-safety (F1-8): query die op bevestiging wacht (ADR-009). */
 export interface GuardPending {
   tabId: string
@@ -133,6 +136,11 @@ interface AppState {
   dashboard: DashboardData | null
   /** F2-3: admin-dialoog (eis 9). */
   showAdminDialog: boolean
+  /** SAL-34: verbinding waarvoor de admin-dialoog is geopend (Object Explorer);
+   *  null = actieve tab-verbinding gebruiken. */
+  adminDialogConnectionId: string | null
+  /** SAL-34: tab waarin de admin-dialoog opent (Object Explorer; null = default). */
+  adminDialogTab: AdminDialogTab | null
   adminCapabilities: ProviderCapabilities | null
   adminUsers: AdminUserInfo[]
   /** SAL-31: signaal na CREATE/DROP DATABASE via AdminDialog; ObjectExplorer herlaadt de databaselijst. */
@@ -247,7 +255,7 @@ interface AppState {
   loadDashboard: (connectionId: string) => Promise<void>
 
   // F2-3: Admin (eis 9)
-  openAdminDialog: () => void
+  openAdminDialog: (connectionId?: string, tab?: AdminDialogTab) => void
   closeAdminDialog: () => void
   loadAdminState: (connectionId: string) => Promise<void>
   /** SAL-31: verhoogt dbListRevision zodat ObjectExplorer de databaselijst herlaadt. */
@@ -377,6 +385,8 @@ export const useAppStore = create<AppState>((set, get) => {
     auditEntries: [],
     dashboard: null,
     showAdminDialog: false,
+    adminDialogConnectionId: null,
+    adminDialogTab: null,
     adminCapabilities: null,
     adminUsers: [],
     dbListRevision: 0,
@@ -1249,12 +1259,16 @@ export const useAppStore = create<AppState>((set, get) => {
   },
 
   // ------------------------------------------------------------------ F2-3
-  openAdminDialog() {
-    set({ showAdminDialog: true })
+  openAdminDialog(connectionId?: string, tab?: AdminDialogTab) {
+    set({
+      showAdminDialog: true,
+      adminDialogConnectionId: connectionId ?? null,
+      adminDialogTab: tab ?? null
+    })
   },
 
   closeAdminDialog() {
-    set({ showAdminDialog: false })
+    set({ showAdminDialog: false, adminDialogConnectionId: null, adminDialogTab: null })
   },
 
   async loadAdminState(connectionId) {

@@ -46,6 +46,8 @@ function resetStore(): void {
     activeTabId: null,
     showConnectionDialog: false,
     showAdminDialog: false,
+    adminDialogConnectionId: null,
+    adminDialogTab: null,
     connectionDialogMode: 'create',
     editingConnectionId: null,
     dbListRevision: 0
@@ -505,7 +507,7 @@ describe('App (renderer-integratie)', () => {
     roles: string[]
   }
 
-  function openSqlServerExplorerFull(): SqlServerExplorerState {
+  function openSqlServerExplorerFull(adminDropBlocked = false): SqlServerExplorerState {
     const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
     const state: SqlServerExplorerState = {
       databases: [{ name: 'Klanten' }],
@@ -527,6 +529,8 @@ describe('App (renderer-integratie)', () => {
       synonyms: state.synonyms,
       users: state.users,
       roles: state.roles,
+      // SAL-34: guard-blokkade van admin-DROP simuleren (PROD-achtig).
+      adminDropBlocked,
       capabilities: {
         supportsSchemas: true,
         supportsSequences: true,
@@ -703,6 +707,281 @@ describe('App (renderer-integratie)', () => {
       const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
       expect(editor.value).toContain('CREATE TABLE "main"."klanten" (')
     })
+  })
+
+  // ------------------------------------------------------------------ SAL-34
+
+  it('toont een database-contextmenu met SSMS-opties en genereert CREATE DATABASE (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Nieuwe query')).toBeTruthy())
+    expect(screen.getByText('Vernieuwen')).toBeTruthy()
+    expect(screen.getByText('Eigenschappen')).toBeTruthy()
+    expect(screen.getByText('Scripts genereren')).toBeTruthy()
+    expect(screen.getByText('Nieuwe objecten aanmaken…')).toBeTruthy()
+    expect(screen.getByText('Taken…')).toBeTruthy()
+    expect(screen.getByText('Verbinding verbreken')).toBeTruthy()
+    expect(screen.getByText('Database verwijderen…')).toBeTruthy()
+
+    // Scripts genereren → dialect-correcte CREATE DATABASE in een nieuwe querytab.
+    fireEvent.click(screen.getByText('Scripts genereren'))
+    await waitFor(() => {
+      const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
+      expect(editor.value).toContain('CREATE DATABASE [Klanten]')
+    })
+  })
+
+  it('opent de AdminDialog vanuit het database-contextmenu (nieuwe objecten + taken) (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    // "Nieuwe objecten aanmaken…" → AdminDialog op de Databases-tab.
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Nieuwe objecten aanmaken…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Nieuwe objecten aanmaken…'))
+    await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Sluiten' }))
+    await waitFor(() => expect(screen.queryByText(/Database Administration/)).toBeNull())
+
+    // "Taken…" → AdminDialog op de Backup-tab (capability-gated via supportsBackupRestore).
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Taken…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Taken…'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Backup maken' })).toBeTruthy())
+  })
+
+  it('verwijdert een database alleen na expliciete bevestiging; annuleren doet niets (SAL-34)', async () => {
+    const state = openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Database verwijderen…'))
+
+    // Bevestigingsdialoog toont de destructieve SQL.
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    expect(screen.getByText(/kan niet ongedaan worden gemaakt/)).toBeTruthy()
+    expect(screen.getByText(/DROP DATABASE \[Klanten\]/)).toBeTruthy()
+
+    // Annuleren: niets destructiefs, database blijft bestaan.
+    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(within(tree()).getByText('Klanten')).toBeTruthy()
+
+    // Opnieuw openen en wél bevestigen → database verdwijnt na refresh.
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Database verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+
+    await waitFor(() => expect(within(tree()).queryByText('Klanten')).toBeNull())
+    expect(state.databases.some((d) => d.name === 'Klanten')).toBe(false)
+    expect(screen.getByText(/Database 'Klanten' verwijderd/)).toBeTruthy()
+  })
+
+  it('toont guard-redenen bij een geblokkeerde database-drop en voert pas na tweede bevestiging uit (SAL-34)', async () => {
+    const state = openSqlServerExplorerFull(true)
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Database verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+
+    // Guard-blokkade: redenen + tweede bevestiging.
+    await waitFor(() => expect(screen.getByText(/PROD-omgeving vereist bevestiging/)).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Toch verwijderen' })).toBeTruthy()
+    expect(within(tree()).getByText('Klanten')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toch verwijderen' }))
+    await waitFor(() => expect(within(tree()).queryByText('Klanten')).toBeNull())
+    const drops = (window.nvag as ReturnType<typeof createMockNvag>).adminRequests.filter((r) => r.action === 'dropDatabase')
+    expect(drops.length).toBe(2)
+    expect(drops[0]?.confirmed).toBeFalsy()
+    expect(drops[1]?.confirmed).toBe(true)
+    expect(state.databases.some((d) => d.name === 'Klanten')).toBe(false)
+  })
+
+  it('verwijdert een tabel via het contextmenu met bevestiging en ververst de folder (SAL-34)', async () => {
+    const state = openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Tables'))
+    await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('klanten'))
+    await waitFor(() => expect(screen.getByText('Tabel verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Tabel verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    expect(screen.getByText(/DROP TABLE \[main\].\[klanten\]/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    await waitFor(() => expect(within(tree()).queryByText('klanten')).toBeNull())
+    expect(state.tables.includes('klanten')).toBe(false)
+    expect(screen.getByText(/'klanten' verwijderd/)).toBeTruthy()
+  })
+
+  it('biedt folder-contextmenu\'s met "Nieuwe X aanmaken…" die de AdminDialog op de juiste tab openen (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    // Tables-folder → Nieuwe tabel… → AdminDialog op de Tabellen-tab.
+    fireEvent.contextMenu(within(tree()).getByText('Tables'))
+    await waitFor(() => expect(screen.getByText('Nieuwe tabel…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Nieuwe tabel…'))
+    await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
+    expect(screen.getByRole('tab', { name: 'Tabellen' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByPlaceholderText('naam')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Sluiten' }))
+    await waitFor(() => expect(screen.queryByText(/Database Administration/)).toBeNull())
+
+    // Views-folder → Nieuwe view… → AdminDialog op de Views-tab.
+    fireEvent.contextMenu(within(tree()).getByText('Views'))
+    await waitFor(() => expect(screen.getByText('Nieuwe view…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Nieuwe view…'))
+    await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
+    expect(screen.getByRole('tab', { name: 'Views' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('gated contextmenu-opties per capability (geen DDL/backup → verborgen) (SAL-34)', async () => {
+    const conn = sampleConnection({ id: 'conn-min', name: 'Minimaal', providerId: 'sqlserver', database: 'master' })
+    window.nvag = createMockNvag({
+      connections: [conn],
+      databases: [{ name: 'Klanten' }],
+      capabilities: {
+        supportsSchemas: true,
+        supportsSequences: false,
+        supportsSynonyms: true,
+        supportsTriggers: true,
+        supportsExecutionPlans: false,
+        supportsMonitoring: false,
+        supportsTransactions: true,
+        supportsIdentityColumns: true,
+        supportsGeneratedColumns: true,
+        supportsDdlAdmin: false,
+        supportsUsersAndRoles: true,
+        supportsBackupRestore: false,
+        maxResultRowsDefault: 1000,
+        dialect: 'tsql'
+      }
+    })
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-min': {
+          config: conn,
+          sessionId: 's-min',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+    render(<App />)
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    fireEvent.click(within(tree()).getByText('Minimaal'))
+    await waitFor(() => expect(within(tree()).getByText('Databases')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Databases'))
+    await waitFor(() => expect(within(tree()).getByText('Klanten')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Nieuwe query')).toBeTruthy())
+    // Zonder supportsDdlAdmin geen destructieve opties; zonder backup geen Taken.
+    expect(screen.queryByText('Database verwijderen…')).toBeNull()
+    expect(screen.queryByText('Nieuwe objecten aanmaken…')).toBeNull()
+    expect(screen.queryByText('Taken…')).toBeNull()
+    // Verbinding verbreken blijft beschikbaar.
+    expect(screen.getByText('Verbinding verbreken')).toBeTruthy()
+  })
+
+  it('biedt procedure-contextmenu met Uitvoeren en Eigenschappen (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Stored Procedures'))
+    await waitFor(() => expect(within(tree()).getByText('sp_rapport')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
+    await waitFor(() => expect(screen.getByText('Script Object als CREATE')).toBeTruthy())
+    expect(screen.getByText('Uitvoeren…')).toBeTruthy()
+    expect(screen.getByText('Eigenschappen')).toBeTruthy()
+
+    // Uitvoeren → dialect-correcte EXEC in een nieuwe querytab.
+    fireEvent.click(screen.getByText('Uitvoeren…'))
+    await waitFor(() => {
+      const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
+      expect(editor.value).toBe('EXEC [main].[sp_rapport];')
+    })
+  })
+
+  it('toont eigenschappen van een procedure via getObjectDefinition (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Stored Procedures'))
+    await waitFor(() => expect(within(tree()).getByText('sp_rapport')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
+    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
+    fireEvent.click(screen.getByText('Eigenschappen'))
+    await waitFor(() => expect(screen.getByText('Stored procedure: sp_rapport')).toBeTruthy())
+    expect(screen.getByText(/CREATE TABLE/)).toBeTruthy()
+  })
+
+  it('toont database-eigenschappen in een dialoog (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
+    fireEvent.click(screen.getByText('Eigenschappen'))
+    await waitFor(() => expect(screen.getByText('Database-eigenschappen')).toBeTruthy())
+    expect(screen.getAllByText('Klanten').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('SQL Server').length).toBeGreaterThan(0)
+  })
+
+  it('verbreken verbinding via server-contextmenu sluit de sessie en klapt de boom in (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
+    fireEvent.click(screen.getByText('Verbinding verbreken'))
+
+    await waitFor(() => expect((window.nvag as ReturnType<typeof createMockNvag>).closedSessions).toContain('s1'))
+    expect(within(tree()).queryByText('Databases')).toBeNull()
+  })
+
+  it('sluit het contextmenu bij buiten-klik en met Escape (SAL-34)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
+    fireEvent.click(document.body)
+    await waitFor(() => expect(screen.queryByText('Database verwijderen…')).toBeNull())
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByText('Database verwijderen…')).toBeNull())
   })
 
   it('toont de statusflow Uitvoeren → Bezig… → Annuleren → Geannuleerd en laat daarna direct opnieuw uitvoeren (SAL-33)', async () => {

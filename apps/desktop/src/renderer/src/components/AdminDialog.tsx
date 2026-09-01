@@ -8,9 +8,9 @@
 
 import { useEffect, useState } from 'react'
 import type { AdminActionResult, AdminColumnDef } from '@nvag/contracts'
-import { useAppStore } from '../state/store'
+import { useAppStore, type AdminDialogTab } from '../state/store'
 
-type AdminTab = 'database' | 'schema' | 'table' | 'view' | 'index' | 'users' | 'backup'
+type AdminTab = AdminDialogTab
 
 type AdminActionFn = (confirmed?: boolean) => Promise<AdminActionResult>
 
@@ -48,8 +48,11 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
   const users = useAppStore((s) => s.adminUsers)
   const close = useAppStore((s) => s.closeAdminDialog)
   const loadAdminState = useAppStore((s) => s.loadAdminState)
+  // SAL-34: Object Explorer kan een specifieke tab openen (bijv. 'table' bij
+  // "Nieuwe tabel…"); zonder opgave default naar 'database'.
+  const requestedTab = useAppStore((s) => s.adminDialogTab)
 
-  const [tab, setTab] = useState<AdminTab>('database')
+  const [tab, setTab] = useState<AdminTab>(requestedTab ?? 'database')
   const [message, setMessage] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingConfirm | null>(null)
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+  AdminActionResult,
   ConstraintInfo,
   DatabaseInfo,
   DbObjectRef,
@@ -7,12 +8,21 @@ import type {
   ProviderCapabilities,
   SchemaInfo,
   ScriptKind,
+  SqlDialectId,
   TableInfo,
   ViewInfo
 } from '@nvag/contracts'
-import { useAppStore } from '../state/store'
+import { buildCreateDatabase, buildDrop, quoteQualifiedName } from '@nvag/sql-dialect'
+import { useAppStore, type AdminDialogTab } from '../state/store'
 import { ObjectViewer, type ObjectViewerSelection } from './ObjectViewer'
 import { EnvBadge } from './StatusBar'
+import { ConfirmDialog } from './ConfirmDialog'
+import {
+  DatabasePropertiesDialog,
+  ObjectDefinitionDialog,
+  type DatabasePropertiesState,
+  type ObjectDefinitionState
+} from './ObjectPropertiesDialogs'
 import {
   ChevronIcon,
   DataIcon,
@@ -103,6 +113,9 @@ interface MenuItem {
   action?: () => void
   danger?: boolean
   separator?: boolean
+  /** Niet-ondersteund/vergrendeld item (SAL-34). */
+  disabled?: boolean
+  title?: string
 }
 
 interface ContextMenuState {
@@ -110,6 +123,27 @@ interface ContextMenuState {
   y: number
   node: TreeNode
   items: MenuItem[]
+}
+
+/** Destructieve DROP-actie die op expliciete bevestiging wacht (SAL-34). */
+type DropTarget =
+  | { kind: 'database'; connId: string; db: string; sql: string }
+  | { kind: 'table'; connId: string; db: string; schema: string; table: string; sql: string }
+  | { kind: 'view'; connId: string; db: string; schema: string; view: string; sql: string }
+  | { kind: 'schema'; connId: string; db: string; schema: string; sql: string }
+
+interface DropConfirmState {
+  target: DropTarget
+  /** Titel van de bevestigingsdialoog. */
+  label: string
+  /** Guard-redenen (environment-safety) na een eerste geblokkeerde poging. */
+  reasons?: string[]
+  /** Fout van de backend. */
+  error?: string | null
+  /** Bezig met uitvoeren (knop disabled). */
+  busy: boolean
+  /** Bevestiging al gegeven (heruitvoering met confirmed: true). */
+  confirmed: boolean
 }
 
 /** Standaard-schema per dialect (voor de schema-suffix in de boom). */
@@ -123,6 +157,21 @@ function schemaSuffix(schema: string | undefined, providerId: string | undefined
   if (!schema) return undefined
   if (providerId && DEFAULT_SCHEMA[providerId] === schema) return undefined
   return schema
+}
+
+/** SAL-34: dialect-correcte CALL/EXEC/SELECT voor het uitvoeren van een routine. */
+function buildRoutineCall(
+  dialect: SqlDialectId,
+  kind: 'procedure' | 'function',
+  schema: string | undefined,
+  name: string
+): string {
+  const qualified = quoteQualifiedName(dialect, schema || null, name)
+  if (kind === 'function' && (dialect === 'tsql' || dialect === 'postgres')) {
+    return `SELECT ${qualified}();`
+  }
+  if (dialect === 'tsql') return `EXEC ${qualified};`
+  return `CALL ${qualified}();`
 }
 
 export function ObjectExplorer(): React.JSX.Element {
@@ -146,6 +195,14 @@ export function ObjectExplorer(): React.JSX.Element {
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(new Set())
   /** Contextmenu (SAL-32). */
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
+  /** SAL-34: destructieve actie die op bevestiging wacht. */
+  const [confirm, setConfirm] = useState<DropConfirmState | null>(null)
+  /** SAL-34: eigenschappen-dialoog van een database. */
+  const [dbProps, setDbProps] = useState<DatabasePropertiesState | null>(null)
+  /** SAL-34: eigenschappen-dialoog (definitie) van procedure/function/trigger. */
+  const [objProps, setObjProps] = useState<ObjectDefinitionState | null>(null)
+  /** SAL-34: korte melding (drop-succes/fout, script gegenereerd). */
+  const [notice, setNotice] = useState<{ text: string; kind: 'success' | 'error' } | null>(null)
   /** Capabilities per verbinding (SAL-32: folder-gating). */
   const [capsByConn, setCapsByConn] = useState<Record<string, ProviderCapabilities>>({})
 
@@ -260,6 +317,76 @@ export function ObjectExplorer(): React.JSX.Element {
       return undefined
     }
   }, [])
+
+  /** SAL-34: korte melding onderaan de Object Explorer (auto-dismiss). */
+  const noticeTimer = useRef<number | null>(null)
+  const showNotice = useCallback((text: string, kind: 'success' | 'error'): void => {
+    setNotice({ text, kind })
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 4000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+    }
+  }, [])
+
+  /** SAL-34: start een destructieve DROP met bevestigingsdialoog. */
+  const startDrop = useCallback((target: DropTarget, label: string): void => {
+    setMenu(null)
+    setConfirm({ target, label, busy: false, confirmed: false })
+  }, [])
+
+  /**
+   * Voert de bevestigde DROP uit. De eerste poging gaat zonder `confirmed`
+   * door de environment-safety-guard (F2-3): bij een confirm-blokkade toont de
+   * dialoog de redenen en wordt de actie pas na een tweede, expliciete
+   * bevestiging opnieuw uitgevoerd met `confirmed: true`. Annuleren doet nooit
+   * iets destructiefs.
+   */
+  const runDrop = useCallback(
+    async (state: DropConfirmState): Promise<void> => {
+      const t = state.target
+      setConfirm({ ...state, busy: true, error: null })
+      try {
+        let result: AdminActionResult
+        switch (t.kind) {
+          case 'database':
+            result = await window.nvag.admin.dropDatabase(t.connId, t.db, state.confirmed)
+            break
+          case 'table':
+            result = await window.nvag.admin.dropTable(t.connId, t.db, t.schema, t.table, state.confirmed)
+            break
+          case 'view':
+            result = await window.nvag.admin.dropView(t.connId, t.db, t.schema, t.view, state.confirmed)
+            break
+          case 'schema':
+            result = await window.nvag.admin.dropSchema(t.connId, t.db, t.schema, state.confirmed)
+            break
+        }
+        if (!result.ok && result.blocked && result.blocked.length > 0) {
+          // guard-blokkade: redenen tonen; volgende poging is expliciet bevestigd.
+          setConfirm({ ...state, busy: false, reasons: result.blocked, confirmed: true })
+          return
+        }
+        setConfirm(null)
+        if (t.kind === 'database') {
+          // SAL-31-signaal: Object Explorer + database-dropdown herladen.
+          useAppStore.getState().bumpDbListRevision()
+          showNotice(`Database '${t.db}' verwijderd.`, 'success')
+        } else {
+          // SAL-32-signaal: geopende objectfolders herladen.
+          useAppStore.getState().bumpDbObjectsRevision()
+          const name = t.kind === 'table' ? t.table : t.kind === 'view' ? t.view : t.schema
+          showNotice(`'${name}' verwijderd.`, 'success')
+        }
+      } catch (err) {
+        setConfirm({ ...state, busy: false, error: err instanceof Error ? err.message : String(err) })
+      }
+    },
+    [showNotice]
+  )
 
   const buildDatabaseFolders = useCallback(
     async (connId: string, db: string): Promise<TreeNode[]> => {
@@ -519,7 +646,12 @@ export function ObjectExplorer(): React.JSX.Element {
     [commitExpanded, loadChildren, removeDescendants, runLoader]
   )
 
-  /** Refresh op één niveau: children van de node opnieuw ophalen. */
+  /**
+   * Refresh op één niveau: children van de node opnieuw ophalen.
+   * SAL-34: op database-niveau worden ook de geopende objectfolders eronder
+   * opnieuw geladen, zodat nieuwe/gewijzigde/verwijderde objecten direct
+   * zichtbaar worden (niet alleen de folderstructuur).
+   */
   const refreshNode = useCallback(
     async (node: TreeNode): Promise<void> => {
       if (node.kind === 'server') {
@@ -527,7 +659,24 @@ export function ObjectExplorer(): React.JSX.Element {
         await refreshDatabases()
         return
       }
-      await runLoader(node, () => loadChildren(node), node.kind === 'database' ? "schema's" : 'gegevens')
+      if (node.kind === 'database') {
+        // Eerst de geopende objectfolders onder deze database verzamelen
+        // (vóór de herlading, want die vervangt de children-referenties).
+        const descendants: TreeNode[] = []
+        const visit = (nodes: TreeNode[]): void => {
+          for (const n of nodes) {
+            const isObjectFolder =
+              n.kind === 'folder' && n.ctx?.folderId !== undefined && !['programmability', 'security'].includes(n.ctx.folderId)
+            if (isObjectFolder && n.loaded && expandedRef.current.has(n.key)) descendants.push(n)
+            if (n.children.length > 0) visit(n.children)
+          }
+        }
+        visit(node.children)
+        await runLoader(node, () => loadChildren(node), "schema's")
+        await Promise.all(descendants.map((n) => runLoader(n, () => loadChildren(n), 'gegevens')))
+        return
+      }
+      await runLoader(node, () => loadChildren(node), 'gegevens')
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [loadChildren, runLoader]
@@ -586,9 +735,17 @@ export function ObjectExplorer(): React.JSX.Element {
   }, [])
 
   /** Script Object (F1-5): genereer SQL en open een nieuwe querytab. */
-  const handleScript = useCallback((connId: string, obj: DbObjectRef, kind: ScriptKind): void => {
-    void useAppStore.getState().openScriptTab(connId, obj, kind)
-  }, [])
+  const handleScript = useCallback(
+    (connId: string, obj: DbObjectRef, kind: ScriptKind): void => {
+      void useAppStore
+        .getState()
+        .openScriptTab(connId, obj, kind)
+        .catch((err) => {
+          showNotice(`Script genereren mislukt: ${err instanceof Error ? err.message : String(err)}`, 'error')
+        })
+    },
+    [showNotice]
+  )
 
   const handleNodeClick = (node: TreeNode): void => {
     if (node.kind === 'table' || node.kind === 'view') {
@@ -607,8 +764,8 @@ export function ObjectExplorer(): React.JSX.Element {
     void toggle(node)
   }
 
-  /** Contextmenu-items per objecttype. */
-  const buildMenu = (node: TreeNode): MenuItem[] => {
+  /** SAL-34: contextmenu-items per objecttype, gated per engine-capability. */
+  const buildMenu = (node: TreeNode, caps: ProviderCapabilities | undefined): MenuItem[] => {
     const connId = node.ctx?.connId
     const db = node.ctx?.db
     const items: MenuItem[] = []
@@ -617,29 +774,118 @@ export function ObjectExplorer(): React.JSX.Element {
       icon: <RefreshIcon size={14} />,
       action: () => void refreshNode(node)
     }
+    const newQueryItem = (database?: string): MenuItem => ({
+      label: 'Nieuwe query',
+      icon: <NewQueryIcon size={14} />,
+      action: () => useAppStore.getState().addTab({ connectionId: connId, database })
+    })
+    const propertiesItem = (action: () => void): MenuItem => ({
+      label: 'Eigenschappen',
+      icon: <PropertiesIcon size={14} />,
+      action
+    })
+    const disconnectItem: MenuItem = {
+      label: 'Verbinding verbreken',
+      action: () => {
+        if (connId) void useAppStore.getState().closeSession(connId)
+      }
+    }
+    const dropItem = (label: string, action: () => void): MenuItem => ({
+      label,
+      danger: true,
+      action
+    })
 
     switch (node.kind) {
       case 'server':
         items.push(refreshItem)
-        items.push({
-          separator: true,
-          label: 'Nieuwe query',
-          icon: <NewQueryIcon size={14} />,
-          action: () => useAppStore.getState().addTab({ connectionId: connId })
-        })
+        items.push({ separator: true, label: '' })
+        items.push(newQueryItem())
+        items.push({ separator: true, label: '' })
+        items.push(disconnectItem)
         break
-      case 'database':
+      case 'database': {
+        if (!connId || !db) break
+        const dialect = caps?.dialect
+        items.push(newQueryItem(db))
         items.push(refreshItem)
+        items.push({ separator: true, label: '' })
+        items.push(
+          propertiesItem(() => {
+            setDbProps({ connId, db })
+            setMenu(null)
+          })
+        )
+        // Scripts genereren: dialect-correct CREATE DATABASE in een nieuwe tab.
         items.push({
-          separator: true,
-          label: 'Nieuwe query',
-          icon: <NewQueryIcon size={14} />,
-          action: () => useAppStore.getState().addTab({ connectionId: connId, database: db })
+          label: 'Scripts genereren',
+          action: () => {
+            setMenu(null)
+            if (!dialect) return
+            const sql = buildCreateDatabase(dialect, db)
+            useAppStore.getState().addTab({ sql, connectionId: connId, database: db, title: `${db} — CREATE` })
+            showNotice(`CREATE DATABASE-script voor '${db}' gegenereerd.`, 'success')
+          }
         })
+        items.push({ separator: true, label: '' })
+        if (caps?.supportsDdlAdmin) {
+          items.push({
+            label: 'Nieuwe objecten aanmaken…',
+            action: () => {
+              setMenu(null)
+              useAppStore.getState().openAdminDialog(connId, 'database')
+            }
+          })
+        }
+        if (caps?.supportsBackupRestore) {
+          items.push({
+            label: 'Taken…',
+            action: () => {
+              setMenu(null)
+              useAppStore.getState().openAdminDialog(connId, 'backup')
+            }
+          })
+        }
+        items.push(disconnectItem)
+        if (caps?.supportsDdlAdmin) {
+          items.push({ separator: true, label: '' })
+          items.push(
+            dropItem('Database verwijderen…', () =>
+              startDrop({ kind: 'database', connId, db, sql: dialect ? buildDrop(dialect, 'DATABASE', db) : `DROP DATABASE ${db};` }, `Database '${db}' verwijderen`)
+            )
+          )
+        }
         break
-      case 'folder':
+      }
+      case 'folder': {
+        const folderId = node.ctx?.folderId
         items.push(refreshItem)
+        // Waar logisch "Nieuwe X aanmaken…" → AdminDialog op de juiste tab.
+        const createActions: { folderId: string; label: string; tab: AdminDialogTab }[] = [
+          { folderId: 'tables', label: 'Nieuwe tabel…', tab: 'table' },
+          { folderId: 'views', label: 'Nieuwe view…', tab: 'view' },
+          { folderId: 'schemas', label: 'Nieuw schema…', tab: 'schema' },
+          { folderId: 'users', label: 'Nieuwe gebruiker…', tab: 'users' }
+        ]
+        const createAction = createActions.find((a) => a.folderId === folderId)
+        const gated =
+          folderId === 'schemas'
+            ? (caps?.supportsSchemas ?? false) && (caps?.supportsDdlAdmin ?? false)
+            : folderId === 'users'
+              ? (caps?.supportsUsersAndRoles ?? false) && (caps?.supportsDdlAdmin ?? false)
+              : caps?.supportsDdlAdmin ?? false
+        if (createAction && connId && gated) {
+          items.push({ separator: true, label: '' })
+          items.push({
+            label: createAction.label,
+            action: () => {
+              setMenu(null)
+              useAppStore.getState().openAdminDialog(connId, createAction.tab)
+            }
+          })
+        }
         break
+      }
       case 'table': {
         const ref = node.ref
         if (!ref) break
@@ -667,6 +913,24 @@ export function ObjectExplorer(): React.JSX.Element {
           icon: <NewQueryIcon size={14} />,
           action: () => openTableQuery(ref.connId, ref.name, ref.schema)
         })
+        if (caps?.supportsDdlAdmin) {
+          items.push({ separator: true, label: '' })
+          items.push(
+            dropItem('Tabel verwijderen…', () =>
+              startDrop(
+                {
+                  kind: 'table',
+                  connId: ref.connId,
+                  db: ref.db,
+                  schema: ref.schema ?? 'main',
+                  table: ref.name,
+                  sql: caps.dialect ? buildDrop(caps.dialect, 'TABLE', ref.name, { schema: ref.schema ?? null }) : `DROP TABLE ${ref.name};`
+                },
+                `Tabel '${ref.name}' verwijderen`
+              )
+            )
+          )
+        }
         break
       }
       case 'view': {
@@ -682,23 +946,86 @@ export function ObjectExplorer(): React.JSX.Element {
         items.push({ separator: true, label: '' })
         items.push({ label: 'Script Object als CREATE', action: () => handleScript(ref.connId, obj, 'CREATE') })
         items.push({ label: 'Script Object als SELECT', action: () => handleScript(ref.connId, obj, 'SELECT') })
+        items.push({ separator: true, label: '' })
+        items.push(newQueryItem(ref.db))
+        if (caps?.supportsDdlAdmin) {
+          items.push({ separator: true, label: '' })
+          items.push(
+            dropItem('View verwijderen…', () =>
+              startDrop(
+                {
+                  kind: 'view',
+                  connId: ref.connId,
+                  db: ref.db,
+                  schema: ref.schema ?? 'main',
+                  view: ref.name,
+                  sql: caps.dialect ? buildDrop(caps.dialect, 'VIEW', ref.name, { schema: ref.schema ?? null }) : `DROP VIEW ${ref.name};`
+                },
+                `View '${ref.name}' verwijderen`
+              )
+            )
+          )
+        }
         break
       }
       case 'procedure':
       case 'function':
       case 'trigger': {
         const type = node.kind === 'procedure' ? 'procedure' : node.kind === 'function' ? 'function' : 'trigger'
-        const connId = node.ctx?.connId
         const objName = node.ctx?.name
-        const db = node.ctx?.db
-        if (connId && objName && db) {
-          const obj: DbObjectRef = {
-            type,
-            database: db,
-            schema: node.ctx?.schema ?? 'dbo',
-            name: objName
-          }
+        const schema = node.ctx?.schema ?? 'dbo'
+        const database = node.ctx?.db
+        if (connId && objName && database) {
+          const obj: DbObjectRef = { type, database, schema, name: objName }
           items.push({ label: 'Script Object als CREATE', action: () => handleScript(connId, obj, 'CREATE') })
+          // Uitvoeren: dialect-correcte CALL/EXEC/SELECT in een nieuwe querytab.
+          if (node.kind === 'procedure' || node.kind === 'function') {
+            const routineKind: 'procedure' | 'function' = node.kind
+            items.push({
+              label: 'Uitvoeren…',
+              icon: <NewQueryIcon size={14} />,
+              action: () => {
+                setMenu(null)
+                const dialect = caps?.dialect ?? 'tsql'
+                const sql = buildRoutineCall(dialect, routineKind, schema, objName)
+                useAppStore.getState().addTab({ sql, connectionId: connId, database, title: `${objName} — uitvoeren` })
+              }
+            })
+          }
+          items.push(
+            propertiesItem(() => {
+              setMenu(null)
+              setObjProps({ connId, db: database, schema, name: objName, kind: type })
+            })
+          )
+        }
+        break
+      }
+      case 'sequence':
+      case 'synonym':
+      case 'schema':
+      case 'user':
+      case 'role': {
+        const objName = node.ctx?.name
+        if (connId && objName && db) {
+          items.push(newQueryItem(db))
+          if (node.kind === 'schema' && caps?.supportsSchemas && caps?.supportsDdlAdmin) {
+            items.push({ separator: true, label: '' })
+            items.push(
+              dropItem('Schema verwijderen…', () =>
+                startDrop(
+                  {
+                    kind: 'schema',
+                    connId,
+                    db,
+                    schema: objName,
+                    sql: caps.dialect ? buildDrop(caps.dialect, 'SCHEMA', objName) : `DROP SCHEMA ${objName};`
+                  },
+                  `Schema '${objName}' verwijderen`
+                )
+              )
+            )
+          }
         }
         break
       }
@@ -708,10 +1035,12 @@ export function ObjectExplorer(): React.JSX.Element {
     return items
   }
 
-  const onContextMenu = (e: React.MouseEvent, node: TreeNode): void => {
+  const onContextMenu = async (e: React.MouseEvent, node: TreeNode): Promise<void> => {
     e.preventDefault()
     e.stopPropagation()
-    const items = buildMenu(node)
+    // Capability-gating up-to-date houden (SAL-34: opties per engine).
+    const caps = node.ctx?.connId ? await ensureCaps(node.ctx.connId) : undefined
+    const items = buildMenu(node, caps)
     if (items.length === 0) {
       setMenu(null)
       return
@@ -905,6 +1234,8 @@ export function ObjectExplorer(): React.JSX.Element {
                 key={i}
                 className={`context-menu-item${item.danger ? ' danger' : ''}`}
                 role="menuitem"
+                disabled={item.disabled}
+                title={item.title}
                 onClick={() => {
                   setMenu(null)
                   item.action?.()
@@ -917,12 +1248,36 @@ export function ObjectExplorer(): React.JSX.Element {
           )}
         </div>
       )}
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.label}
+          message={
+            confirm.reasons && confirm.reasons.length > 0
+              ? 'De environment-safety-guard blokkeert deze actie. Alleen met expliciete bevestiging wordt de onderstaande SQL uitgevoerd:'
+              : 'Deze actie kan niet ongedaan worden gemaakt. Weet je zeker dat je door wilt gaan?'
+          }
+          sql={confirm.target.sql}
+          reasons={confirm.reasons}
+          confirmLabel={confirm.confirmed ? 'Toch verwijderen' : 'Verwijderen'}
+          busy={confirm.busy}
+          error={confirm.error}
+          onConfirm={() => void runDrop(confirm)}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+      {dbProps && <DatabasePropertiesDialog state={dbProps} onClose={() => setDbProps(null)} />}
+      {objProps && <ObjectDefinitionDialog state={objProps} onClose={() => setObjProps(null)} />}
       {selection && (
         <ObjectViewer
           selection={selection}
           onClose={() => setSelection(null)}
           onScript={(obj, kind) => handleScript(selection.connId, obj, kind)}
         />
+      )}
+      {notice && (
+        <div className={`oe-notice ${notice.kind}`} role="status">
+          {notice.text}
+        </div>
       )}
     </div>
   )

@@ -58,6 +58,8 @@ export interface MockNvagOptions {
   /** Wordt aangeroepen wanneer `query.cancel` wordt aangeroepen (SAL-33: mag
    *  via `emit` het done(cancelled)-chunk sturen, zoals de echte runner doet). */
   onCancel?: (executionId: string, emit: (chunk: QueryChunk) => void) => void
+  /** SAL-34: admin-DROP-acties blokkeren (guard) tot `confirmed: true`. */
+  adminDropBlocked?: boolean
 }
 
 const SERVER_INFO: ServerInfo = {
@@ -96,6 +98,8 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
   openSavedCalls: string[]
   /** Alle sessions:useDatabase-aanvragen (F1-10). */
   useDatabaseCalls: { connectionId: string; database: string }[]
+  /** SAL-34: alle admin-acties (naam + args + confirmed) voor asserties. */
+  adminRequests: { action: string; args: unknown[]; confirmed?: boolean }[]
 } {
   const savedConfigs: ConnectionConfig[] = [...(options.connections ?? [])]
   const openedSessions: string[] = []
@@ -105,6 +109,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
   const runRequests: { sql: string; confirmed?: boolean }[] = []
   const openSavedCalls: string[] = []
   const useDatabaseCalls: { connectionId: string; database: string }[] = []
+  const adminRequests: { action: string; args: unknown[]; confirmed?: boolean }[] = []
   const chunkListeners = new Set<(evt: QueryChunkEvent) => void>()
   const pendingRuns = new Map<string, QueryRunResponse>()
   const pendingSql = new Map<string, string>()
@@ -126,6 +131,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     runRequests: { sql: string; confirmed?: boolean }[]
     openSavedCalls: string[]
     useDatabaseCalls: { connectionId: string; database: string }[]
+    adminRequests: { action: string; args: unknown[]; confirmed?: boolean }[]
   } = {
     savedConfigs,
     openedSessions,
@@ -135,6 +141,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     runRequests,
     openSavedCalls,
     useDatabaseCalls,
+    adminRequests,
 
     providers: {
       list: async () => [{ id: 'sqlite', displayName: 'SQLite', dialect: 'sqlite', defaultPort: 0 }]
@@ -371,7 +378,11 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         }
         return { ok: true, sql: '' }
       },
-      dropDatabase: async (_connId: string, name: string) => {
+      dropDatabase: async (connId: string, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropDatabase', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP DATABASE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
         if (options.databases) {
           const i = options.databases.findIndex((d) => d.name === name)
           if (i >= 0) options.databases.splice(i, 1)
@@ -379,7 +390,13 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         return { ok: true, sql: '' }
       },
       createSchema: async () => ({ ok: true, sql: '' }),
-      dropSchema: async () => ({ ok: true, sql: '' }),
+      dropSchema: async (connId: string, _db: string, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropSchema', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP SCHEMA ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        return { ok: true, sql: '' }
+      },
       createTable: async (req: AdminTableCreateRequest) => {
         // SAL-32: net als de echte provider beïnvloedt CREATE TABLE de
         // tabel-lijst; de Object Explorer auto-refresh-test hangt hierop.
@@ -388,7 +405,11 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         }
         return { ok: true, sql: '' }
       },
-      dropTable: async (_connId: string, _db: string, _schema: string, table: string) => {
+      dropTable: async (connId: string, _db: string, _schema: string, table: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropTable', args: [connId, table], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP TABLE ${table};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
         if (options.tables) {
           const i = options.tables.indexOf(table)
           if (i >= 0) options.tables.splice(i, 1)
@@ -401,7 +422,11 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         }
         return { ok: true, sql: '' }
       },
-      dropView: async (_connId: string, _db: string, _schema: string, name: string) => {
+      dropView: async (connId: string, _db: string, _schema: string, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropView', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP VIEW ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
         if (options.views) {
           const i = options.views.indexOf(name)
           if (i >= 0) options.views.splice(i, 1)

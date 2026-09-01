@@ -58,6 +58,9 @@ function App(): React.JSX.Element {
   const refreshTransactionState = useAppStore((s) => s.refreshTransactionState)
   const openAdminDialog = useAppStore((s) => s.openAdminDialog)
   const showAdminDialog = useAppStore((s) => s.showAdminDialog)
+  // SAL-34: Object Explorer kan de admin-dialoog voor een specifieke verbinding
+  // openen (contextmenu); anders de verbinding van de actieve tab gebruiken.
+  const adminDialogConnectionId = useAppStore((s) => s.adminDialogConnectionId)
   // SAL-31: na CREATE/DROP DATABASE via AdminDialog ook de database-dropdown
   // van de actieve tab opnieuw laden.
   const dbListRevision = useAppStore((s) => s.dbListRevision)
@@ -581,7 +584,9 @@ function App(): React.JSX.Element {
       <ConnectionDialog />
       <QueryGuardDialog />
       <TableEditConfirmDialog />
-      {showAdminDialog && activeTab?.connectionId && <AdminDialog connectionId={activeTab.connectionId} />}
+      {showAdminDialog && (adminDialogConnectionId ?? activeTab?.connectionId) && (
+        <AdminDialog connectionId={adminDialogConnectionId ?? activeTab!.connectionId!} />
+      )}
     </div>
   )
 }
