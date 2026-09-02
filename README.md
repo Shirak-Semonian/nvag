@@ -31,6 +31,16 @@
   bevestigen), auditlogging en een capability-gated Backup-tab; daarnaast
   packaging (AppImage/tar.gz/deb/rpm) met CI-workflow.
 
+**Release 1.0.2 (2026-09-02, SAL-46)**: verse Linux-distributie in
+`apps/desktop/release/` (`Nvag-1.0.2.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
+met de Tester-gevalideerde SAL-45-feature: "Verwijderen…" in het
+contextmenu voor **alle** objecttypes (stored procedures, functies,
+triggers, sequences, synonyms, users, roles + tabel-subobjecten index/
+constraint) met bevestiging/SQL-preview/environment-guard, en op de
+server-node verwijdert "Verwijderen…" de opgeslagen verbinding. Rooktest
+van de gebouwde AppImage geslaagd: app start, SQLite-connectie, Object
+Explorer + object-drop via contextmenu en connectie-verwijderen werken.
+
 **Release 1.0.1 (2026-09-02, SAL-44)**: verse Linux-distributie in
 `apps/desktop/release/` (`Nvag-1.0.1.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
 met de SAL-42/SAL-43-fixes: Tabelgegevens-paneel toont fout/timeout i.p.v.
