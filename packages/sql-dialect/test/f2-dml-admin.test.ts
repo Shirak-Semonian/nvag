@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  buildAlterDatabaseStatements,
   buildCreateDatabase,
   buildCreateIndex,
   buildCreateSchema,
@@ -160,5 +161,54 @@ describe('Admin-DDL (F2-3)', () => {
     expect(buildCreateSchema('postgres', 'audit')).toContain('CREATE SCHEMA "audit"')
     expect(buildCreateSchema('mysql', 'audit')).toContain('CREATE DATABASE `audit`')
     expect(buildCreateDatabase('tsql', 'app')).toContain('CREATE DATABASE [app]')
+  })
+})
+
+describe('buildAlterDatabaseStatements (SAL-50)', () => {
+  it('bouwt per eigenschap een ALTER DATABASE-statement voor tsql', () => {
+    expect(
+      buildAlterDatabaseStatements('tsql', 'Klanten', {
+        recovery: 'SIMPLE',
+        compatibility_level: '150',
+        read_only: 'READ_ONLY'
+      })
+    ).toEqual([
+      'ALTER DATABASE [Klanten] SET RECOVERY SIMPLE;',
+      'ALTER DATABASE [Klanten] SET COMPATIBILITY_LEVEL = 150;',
+      'ALTER DATABASE [Klanten] SET READ_ONLY;'
+    ])
+  })
+
+  it('bouwt een MODIFY NAME met gebrackete identifier-quoting', () => {
+    expect(buildAlterDatabaseStatements('tsql', 'Klanten', { name: 'Klanten2' })).toEqual([
+      'ALTER DATABASE [Klanten] MODIFY NAME = [Klanten2];'
+    ])
+    // Rechte haakjes in de nieuwe naam worden geëscaped.
+    expect(buildAlterDatabaseStatements('tsql', 'Klanten', { name: 'Klanten]2' })).toEqual([
+      'ALTER DATABASE [Klanten] MODIFY NAME = [Klanten]]2];'
+    ])
+  })
+
+  it('bouwt containment alleen met geldige waarden', () => {
+    expect(buildAlterDatabaseStatements('tsql', 'Klanten', { containment: 'NONE' })).toEqual([
+      'ALTER DATABASE [Klanten] SET CONTAINMENT = NONE;'
+    ])
+    expect(() => buildAlterDatabaseStatements('tsql', 'Klanten', { containment: 'PARTIAL_X' })).toThrow(
+      /containment/i
+    )
+  })
+
+  it('weigert ongeldige waarden en onbekende eigenschappen', () => {
+    expect(() => buildAlterDatabaseStatements('tsql', 'Klanten', { recovery: 'WEIRD' })).toThrow(/recovery/i)
+    expect(() =>
+      buildAlterDatabaseStatements('tsql', 'Klanten', { compatibility_level: '999' })
+    ).toThrow(/compatibility/i)
+    expect(() => buildAlterDatabaseStatements('tsql', 'Klanten', { owner: 'sa' })).toThrow(/kan voor dit dialect/)
+  })
+
+  it('weigert niet-tsql-dialecten (ALTER DATABASE niet ondersteund)', () => {
+    expect(() => buildAlterDatabaseStatements('postgres', 'Klanten', { recovery: 'SIMPLE' })).toThrow(
+      /niet ondersteund/
+    )
   })
 })

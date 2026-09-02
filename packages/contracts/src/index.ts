@@ -643,6 +643,10 @@ export interface NvagIpcApi {
     dropSynonym(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
     dropRole(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
     dropConstraint(connectionId: string, database: string, schema: string | undefined, table: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    // SAL-50: eigenschappen van een bestaande database lezen/wijzigen
+    // (bewerkbare eigenschappen-dialoog + ALTER DATABASE).
+    getDatabaseProperties(connectionId: string, database: string): Promise<DatabasePropertiesResult>
+    alterDatabase(connectionId: string, database: string, changes: Record<string, string>, confirmed?: boolean): Promise<AlterDatabaseResult>
     /** Capabilities van de provider (voor UI-gating). */
     capabilities(connectionId: string): Promise<ProviderCapabilities>
     // Fase 4: Backup & Restore (DBA), gated via `supportsBackupRestore`
@@ -1084,6 +1088,51 @@ export interface AdminActionResult {
   guardSeverity?: GuardSeverity
   /** Waarschuwing bij een uitgevoerde actie op `warn`-niveau. */
   warning?: string[]
+}
+
+// F2-3 / SAL-50: database-eigenschappen opvragen en wijzigen (ALTER DATABASE)
+// ---------------------------------------------------------------------------
+
+/** Hoe een eigenschap in de dialoog getoond/bewerkt wordt. */
+export type DatabasePropertyKind = 'info' | 'text' | 'select'
+
+export interface DatabasePropertyOption {
+  value: string
+  label: string
+}
+
+export interface DatabaseProperty {
+  /** Machine-key, bijv. 'recovery_model' of 'name'. */
+  key: string
+  /** Nederlands label in de dialoog. */
+  label: string
+  kind: DatabasePropertyKind
+  /** Huidige waarde (weergave; bij kind='select' één van options[].value). */
+  value: string
+  /** false → read-only-info (geen ALTER-clausule voor deze property). */
+  editable: boolean
+  /** Keuzes voor kind='select'. */
+  options?: DatabasePropertyOption[]
+  /** Reden waarom de property niet bewerkbaar is (toont de UI). */
+  note?: string
+  /** true → wijzigen hernoemt de database; UI moet boom/tab-context bijwerken. */
+  renamesDatabase?: boolean
+}
+
+export interface DatabasePropertiesResult {
+  database: string
+  dialect: SqlDialectId
+  /** Of ALTER DATABASE voor deze provider/database ondersteund is. */
+  supportsAlter: boolean
+  /** Toelichting wanneer `supportsAlter` false is (netjes tonen). */
+  message?: string
+  properties: DatabaseProperty[]
+}
+
+/** Resultaat van alterDatabase: AdminActionResult + hernoeminfo voor de UI. */
+export interface AlterDatabaseResult extends AdminActionResult {
+  /** Nieuwe databasenaam na een geslaagde naamswijziging (MODIFY NAME). */
+  renamedTo?: string
 }
 
 // F2-4: Query Performance (eis 11)

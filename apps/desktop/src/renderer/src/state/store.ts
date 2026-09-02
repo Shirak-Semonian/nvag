@@ -225,6 +225,8 @@ interface AppState {
 
   openConnectionDialog: (mode: 'create' | 'edit', connectionId?: string) => void
   closeConnectionDialog: () => void
+  /** SAL-50: hernoemt de database-context van geopende tabs na MODIFY NAME. */
+  renameDatabaseInTabs: (oldName: string, newName: string) => void
 
   // F2-1: Table Data Viewer/Editor (eis 8)
   openTableDataTab: (connectionId: string, database: string, schema: string, table: string) => void
@@ -1065,6 +1067,19 @@ export const useAppStore = create<AppState>((set, get) => {
 
   closeConnectionDialog() {
     set({ showConnectionDialog: false })
+  },
+
+  renameDatabaseInTabs(oldName, newName) {
+    set((s) => ({
+      tabs: s.tabs.map((tab) => {
+        const next = { ...tab }
+        if (next.database === oldName) next.database = newName
+        if (next.tableData && next.tableData.database === oldName) {
+          next.tableData = { ...next.tableData, database: newName }
+        }
+        return next
+      })
+    }))
   },
 
   // ------------------------------------------------------------------ F2-1

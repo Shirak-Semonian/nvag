@@ -3,12 +3,14 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type {
   AdminActionResult,
   AdminUserInfo,
+  AlterDatabaseResult,
   AuditEntry,
   BackupResult,
   ConnectionConfig,
   DashboardData,
   DataDiff,
   DatabaseInfo,
+  DatabasePropertiesResult,
   DbRoleInfo,
   DbUserInfo,
   ExportResult,
@@ -137,6 +139,8 @@ const api: NvagIpcApi = {
     dropSynonym: handle<AdminActionResult>('admin:dropSynonym'),
     dropRole: handle<AdminActionResult>('admin:dropRole'),
     dropConstraint: handle<AdminActionResult>('admin:dropConstraint'),
+    getDatabaseProperties: handle<DatabasePropertiesResult>('admin:getDatabaseProperties'),
+    alterDatabase: handle<AlterDatabaseResult>('admin:alterDatabase'),
     capabilities: handle<ProviderCapabilities>('admin:capabilities'),
     backupDatabase: handle<BackupResult>('admin:backupDatabase'),
     restoreDatabase: handle<RestoreResult>('admin:restoreDatabase')

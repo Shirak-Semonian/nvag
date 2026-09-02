@@ -3,6 +3,7 @@ import type {
   ConnectionConfig,
   ConnectionSecret,
   DatabaseInfo,
+  DatabasePropertiesResult,
   DbObjectRef,
   ExportRequest,
   ExportResult,
@@ -63,6 +64,8 @@ export interface MockNvagOptions {
   onCancel?: (executionId: string, emit: (chunk: QueryChunk) => void) => void
   /** SAL-34: admin-DROP-acties blokkeren (guard) tot `confirmed: true`. */
   adminDropBlocked?: boolean
+  /** SAL-50: database-eigenschappen die admin.getDatabaseProperties retourneert. */
+  databaseProperties?: DatabasePropertiesResult | ((database: string) => DatabasePropertiesResult)
 }
 
 const SERVER_INFO: ServerInfo = {
@@ -81,6 +84,41 @@ function defaultResult(): QueryRunResponse {
     truncated: false,
     rowCount: 0,
     durationMs: 0
+  }
+}
+
+/** SAL-50: mock-ALTER-SQL (spiegel van buildAlterDatabaseStatements voor tsql). */
+function alterSqlPreview(database: string, changes: Record<string, string>): string {
+  const esc = (s: string): string => `[${s.replace(/\]/g, ']]')}]`
+  return Object.entries(changes)
+    .map(([key, value]) => {
+      const dbQ = esc(database)
+      switch (key) {
+        case 'name':
+          return `ALTER DATABASE ${dbQ} MODIFY NAME = ${esc(value)};`
+        case 'recovery':
+          return `ALTER DATABASE ${dbQ} SET RECOVERY ${value};`
+        case 'containment':
+          return `ALTER DATABASE ${dbQ} SET CONTAINMENT = ${value};`
+        case 'compatibility_level':
+          return `ALTER DATABASE ${dbQ} SET COMPATIBILITY_LEVEL = ${value};`
+        case 'read_only':
+          return `ALTER DATABASE ${dbQ} SET ${value};`
+        default:
+          return `ALTER DATABASE ${dbQ} SET ${key} = ${value};`
+      }
+    })
+    .join('\n')
+}
+
+/** SAL-50: standaard-eigenschappen (niet-ondersteunde provider → read-only). */
+function defaultDatabaseProperties(database: string): DatabasePropertiesResult {
+  return {
+    database,
+    dialect: 'sqlite',
+    supportsAlter: false,
+    message: 'SQLite-databases zijn bestanden; ALTER DATABASE wordt niet ondersteund.',
+    properties: []
   }
 }
 
@@ -561,6 +599,30 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
           maxResultRowsDefault: 1000,
           dialect: 'sqlite' as const
         },
+      getDatabaseProperties: async (_connId: string, database: string) => {
+        const props =
+          typeof options.databaseProperties === 'function'
+            ? options.databaseProperties(database)
+            : options.databaseProperties
+        if (props) return { ...props, database }
+        return defaultDatabaseProperties(database)
+      },
+      alterDatabase: async (connId: string, database: string, changes: Record<string, string>, confirmed?: boolean) => {
+        adminRequests.push({ action: 'alterDatabase', args: [connId, database, changes], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return {
+            ok: false,
+            sql: alterSqlPreview(database, changes),
+            blocked: ['ALTER op PROD-omgeving vereist bevestiging'],
+            guardSeverity: 'confirm' as const
+          }
+        }
+        return {
+          ok: true,
+          sql: alterSqlPreview(database, changes),
+          ...(changes.name ? { renamedTo: changes.name } : {})
+        }
+      },
       backupDatabase: async () => ({ ok: true, targetPath: '/tmp/backup.db', durationMs: 1 }),
       restoreDatabase: async () => ({ ok: true, sourcePath: '/tmp/backup.db', durationMs: 1 })
     },

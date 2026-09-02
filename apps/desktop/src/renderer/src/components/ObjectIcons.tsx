@@ -272,6 +272,16 @@ export function DataIcon(props: IconProps): React.JSX.Element {
   )
 }
 
+/** Bewerken (SAL-50): potlood. */
+export function EditIcon(props: IconProps): React.JSX.Element {
+  return (
+    <Svg {...props}>
+      <path d="M11.4 2.1a1.2 1.2 0 0 1 1.7 1.7L5.6 11.3 2.8 12l.7-2.8z" />
+      <path d="M10.3 3.2l2.5 2.5" />
+    </Svg>
+  )
+}
+
 /** Schema-objecten (programmability): koffer met code. */
 export function ProgrammabilityIcon(props: IconProps): React.JSX.Element {
   return (

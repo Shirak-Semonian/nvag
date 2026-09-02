@@ -26,6 +26,7 @@ import {
 import {
   ChevronIcon,
   DataIcon,
+  EditIcon,
   NewQueryIcon,
   OBJECT_ICONS,
   PropertiesIcon,
@@ -990,6 +991,18 @@ export function ObjectExplorer(): React.JSX.Element {
         items.push(refreshItem)
         items.push({ separator: true, label: '' })
         items.push(newQueryItem())
+        // SAL-50: opgeslagen verbinding bewerken (naam/host/poort/omgeving/
+        // credentials) via de bestaande ConnectionDialog in edit-modus.
+        if (connId) {
+          items.push({
+            label: 'Bewerken…',
+            icon: <EditIcon size={14} />,
+            action: () => {
+              setMenu(null)
+              openConnectionDialog('edit', connId)
+            }
+          })
+        }
         items.push({ separator: true, label: '' })
         // SAL-43: SSMS-achtig — gesloten server toont "Verbinding maken",
         // open server toont "Verbinding verbreken" (geen stille no-op op een

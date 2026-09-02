@@ -1517,6 +1517,81 @@ export function buildRestoreDatabase(
 }
 
 /**
+ * ALTER DATABASE (SAL-50) — dialect-correcte statements per gewijzigde
+ * eigenschap. Eerst ondersteund voor SQL Server (tsql):
+ * - `name`                → MODIFY NAME = [nieuw]
+ * - `recovery`            → SET RECOVERY {FULL|SIMPLE|BULK_LOGGED}
+ * - `containment`         → SET CONTAINMENT = {NONE|PARTIAL}
+ * - `compatibility_level` → SET COMPATIBILITY_LEVEL = <n>
+ * - `read_only`           → SET READ_ONLY | READ_WRITE
+ *
+ * Retourneert één statement per wijziging (de providers accepteren één
+ * statement per executeQuery). Andere dialecten worden niet ondersteund —
+ * de UI-gating (getDatabaseProperties.supportsAlter) voorkomt dat die hier
+ * aankomen.
+ */
+export function buildAlterDatabaseStatements(
+  dialect: SqlDialectId,
+  database: string,
+  changes: Record<string, string>
+): string[] {
+  if (dialect !== 'tsql') {
+    throw new Error(`ALTER DATABASE wordt voor dialect ${dialect} niet ondersteund.`)
+  }
+  const d = DIALECTS[dialect]
+  const dbQ = d.quoteIdentifier(database)
+  const statements: string[] = []
+  for (const [key, rawValue] of Object.entries(changes)) {
+    const value = rawValue.trim()
+    switch (key) {
+      case 'name': {
+        if (!value) throw new Error('De nieuwe databasenaam mag niet leeg zijn.')
+        statements.push(`ALTER DATABASE ${dbQ} MODIFY NAME = ${d.quoteIdentifier(value)};`)
+        break
+      }
+      case 'recovery': {
+        const recovery = value.toUpperCase()
+        if (!['FULL', 'SIMPLE', 'BULK_LOGGED'].includes(recovery)) {
+          throw new Error(`Ongeldig recovery model: ${rawValue}`)
+        }
+        statements.push(`ALTER DATABASE ${dbQ} SET RECOVERY ${recovery};`)
+        break
+      }
+      case 'containment': {
+        const containment = value.toUpperCase()
+        if (!['NONE', 'PARTIAL'].includes(containment)) {
+          throw new Error(`Ongeldige containment-instelling: ${rawValue}`)
+        }
+        statements.push(`ALTER DATABASE ${dbQ} SET CONTAINMENT = ${containment};`)
+        break
+      }
+      case 'compatibility_level': {
+        const level = Number(value)
+        if (!Number.isInteger(level) || level < 100 || level > 160) {
+          throw new Error(`Ongeldig compatibility level: ${rawValue}`)
+        }
+        statements.push(`ALTER DATABASE ${dbQ} SET COMPATIBILITY_LEVEL = ${level};`)
+        break
+      }
+      case 'read_only': {
+        const mode = value.toUpperCase()
+        if (mode === 'READ_ONLY' || mode === 'TRUE') {
+          statements.push(`ALTER DATABASE ${dbQ} SET READ_ONLY;`)
+        } else if (mode === 'READ_WRITE' || mode === 'FALSE') {
+          statements.push(`ALTER DATABASE ${dbQ} SET READ_WRITE;`)
+        } else {
+          throw new Error(`Ongeldige toegangsmodus: ${rawValue}`)
+        }
+        break
+      }
+      default:
+        throw new Error(`Eigenschap '${key}' kan voor dit dialect niet worden gewijzigd.`)
+    }
+  }
+  return statements
+}
+
+/**
  * Script Object-dispatch (F1-5): genereer dialect-correcte SQL voor een tabel.
  * INSERT laat identity-kolommen buiten de kolomlijst; UPDATE/DELETE gebruiken
  * de primary key als WHERE-basis.

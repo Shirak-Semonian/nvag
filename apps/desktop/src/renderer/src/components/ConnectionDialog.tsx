@@ -64,6 +64,31 @@ export function ConnectionDialog(): React.JSX.Element | null {
     if (!form.name.trim() || !form.host.trim()) return
     setBusy(true)
     try {
+      if (mode === 'edit') {
+        // SAL-50: bewerken van een opgeslagen verbinding. Config opslaan en
+        // een open sessie netjes herbouwen met de nieuwe instellingen; was de
+        // verbinding niet open, dan géén sessie forceren (anders dan bij een
+        // nieuwe verbinding is er geen directe werkstroom die opent).
+        const wasOpen = Boolean(useAppStore.getState().openSessions[form.id])
+        await saveConnection(form, password ? { password } : undefined)
+        if (wasOpen) {
+          await useAppStore.getState().closeSession(form.id)
+          try {
+            // openSaved gebruikt config + vault-secret (ook wanneer de
+            // gebruiker geen nieuw wachtwoord intypte).
+            await useAppStore.getState().openSavedConnection(form.id)
+          } catch (err) {
+            setTestMsg(
+              `✗ Verbinding opgeslagen, maar opnieuw verbinden mislukt: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            )
+            return
+          }
+        }
+        close()
+        return
+      }
       const saved = await saveConnection(form, password ? { password } : undefined)
       // Meteen verbinding openen (F0: openen bij opslaan is praktisch)
       await openSession(saved, password ? { password } : undefined)

@@ -1531,6 +1531,57 @@ button.danger:hover:not(:disabled) {
   font-size: 12.5px;
 }
 
+/* SAL-50: bewerkbare database-eigenschappen (ALTER DATABASE). */
+.modal.dbprops-modal {
+  width: 640px;
+}
+
+.dbprops-note {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(59, 106, 148, 0.12);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.dbprop-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.dbprop-fields .dbprop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dbprop-fields input[type='text'],
+.dbprop-fields select {
+  background: var(--bg-input, #1e1e1e);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+
+.dbprop-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.dbprops-modal .details-table + .details-table {
+  margin-top: 4px;
+}
+
 .oe-notice {
   position: fixed;
   bottom: 28px;

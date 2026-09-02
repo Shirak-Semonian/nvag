@@ -958,17 +958,217 @@ describe('App (renderer-integratie)', () => {
     expect(screen.getByText(/CREATE TABLE/)).toBeTruthy()
   })
 
-  it('toont database-eigenschappen in een dialoog (SAL-34)', async () => {
+  it('toont database-eigenschappen in een dialoog (SAL-34/SAL-50)', async () => {
     openSqlServerExplorerFull()
+    // SAL-50: de eigenschappen komen live via admin.getDatabaseProperties.
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    mock.admin.getDatabaseProperties = async (_connId: string, database: string) => ({
+      database,
+      dialect: 'tsql',
+      supportsAlter: true,
+      properties: [
+        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true },
+        {
+          key: 'recovery',
+          label: 'Recovery model',
+          kind: 'select',
+          value: 'FULL',
+          editable: true,
+          options: [
+            { value: 'FULL', label: 'Volledig (FULL)' },
+            { value: 'SIMPLE', label: 'Eenvoudig (SIMPLE)' }
+          ]
+        },
+        { key: 'collation', label: 'Collation', kind: 'info', value: 'SQL_Latin1_General_CP1_CI_AS', editable: false }
+      ]
+    })
     render(<App />)
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
     await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
     fireEvent.click(screen.getByText('Eigenschappen'))
-    await waitFor(() => expect(screen.getByText('Database-eigenschappen')).toBeTruthy())
-    expect(screen.getAllByText('Klanten').length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
     expect(screen.getAllByText('SQL Server').length).toBeGreaterThan(0)
+    // Read-only-info (collation) + bewerkbare velden (recovery).
+    expect(screen.getByText('SQL_Latin1_General_CP1_CI_AS')).toBeTruthy()
+    expect((screen.getByLabelText('Recovery model') as HTMLSelectElement).value).toBe('FULL')
+  })
+
+  // ------------------------------------------------------------------ SAL-50
+
+  it('biedt Bewerken… aan op een server-node en opent de dialoog met huidige waarden (SAL-50)', async () => {
+    openSqlServerExplorerFull()
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Bewerken…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Bewerken…'))
+
+    // De bestaande ConnectionDialog in edit-modus met de huidige config.
+    await waitFor(() => expect(screen.getByText('Verbinding bewerken')).toBeTruthy())
+    const nameInput = screen.getByLabelText('Naam') as HTMLInputElement
+    expect(nameInput.value).toBe('SQL Server')
+    expect(screen.getByLabelText('Host')).toBeTruthy()
+    expect(screen.getByLabelText('Omgeving')).toBeTruthy()
+
+    // Naam wijzigen + opslaan → opgeslagen config wordt bijgewerkt en de
+    // open sessie wordt herbouwd met de nieuwe instellingen.
+    fireEvent.change(nameInput, { target: { value: 'SQL Server (nieuw)' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Opslaan' }))
+
+    await waitFor(() => expect(mock.savedConfigs.find((c) => c.id === 'conn-sql')?.name).toBe('SQL Server (nieuw)'))
+    await waitFor(() => expect(mock.closedSessions).toContain('s1'))
+    await waitFor(() => expect(mock.openSavedCalls).toEqual(['conn-sql']))
+    await waitFor(() => expect(useAppStore.getState().openSessions['conn-sql']).toBeTruthy())
+    // De boom toont de nieuwe servernaam.
+    await waitFor(() => expect(within(tree()).getByText('SQL Server (nieuw)')).toBeTruthy())
+  })
+
+  it('bewerkt een gesloten verbinding zonder sessie te openen (SAL-50)', async () => {
+    const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    const mock = createMockNvag({
+      connections: [conn],
+      databases: [{ name: 'Klanten' }]
+    })
+    window.nvag = mock
+    // Bewust géén open sessie: een opgeslagen maar gesloten verbinding.
+    useAppStore.setState({ connections: [conn] })
+    render(<App />)
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    await waitFor(() => expect(within(tree()).getByText('SQL Server')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Bewerken…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Bewerken…'))
+    await waitFor(() => expect(screen.getByText('Verbinding bewerken')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Naam'), { target: { value: 'SQL Server hernoemd' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Opslaan' }))
+
+    await waitFor(() => expect(mock.savedConfigs.find((c) => c.id === 'conn-sql')?.name).toBe('SQL Server hernoemd'))
+    // Geen sessie geopend (was niet verbonden); geen close/openSaved-calls.
+    expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined()
+    expect(mock.closedSessions).toEqual([])
+    expect(mock.openSavedCalls).toEqual([])
+    expect(within(tree()).getByText('SQL Server hernoemd')).toBeTruthy()
+  })
+
+  it('wijzigt database-eigenschappen via ALTER DATABASE met SQL-preview + guard-bevestiging (SAL-50)', async () => {
+    openSqlServerExplorerFull(true)
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    mock.admin.getDatabaseProperties = async (_connId: string, database: string) => ({
+      database,
+      dialect: 'tsql',
+      supportsAlter: true,
+      properties: [
+        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true },
+        {
+          key: 'recovery',
+          label: 'Recovery model',
+          kind: 'select',
+          value: 'FULL',
+          editable: true,
+          options: [
+            { value: 'FULL', label: 'Volledig (FULL)' },
+            { value: 'SIMPLE', label: 'Eenvoudig (SIMPLE)' },
+            { value: 'BULK_LOGGED', label: 'Bulk-logboek (BULK_LOGGED)' }
+          ]
+        },
+        { key: 'collation', label: 'Collation', kind: 'info', value: 'Dutch_CI_AS', editable: false }
+      ]
+    })
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
+    fireEvent.click(screen.getByText('Eigenschappen'))
+    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
+
+    // Recovery-model wijzigen naar SIMPLE.
+    const recovery = (await screen.findByLabelText('Recovery model')) as HTMLSelectElement
+    fireEvent.change(recovery, { target: { value: 'SIMPLE' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Wijzigingen opslaan' }))
+
+    // Guard-blokkade: SQL-preview + redenen tonen (geen uitvoering zonder bevestiging).
+    await waitFor(() => expect(screen.getByText(/ALTER DATABASE \[Klanten\] SET RECOVERY SIMPLE/)).toBeTruthy())
+    expect(screen.getByText(/PROD-omgeving vereist bevestiging/)).toBeTruthy()
+
+    const altersBefore = mock.adminRequests.filter((r) => r.action === 'alterDatabase')
+    expect(altersBefore.length).toBe(1)
+    expect(altersBefore[0]?.confirmed).toBeFalsy()
+
+    // Tweede, expliciete bevestiging → ALTER wordt uitgevoerd.
+    fireEvent.click(screen.getByRole('button', { name: 'Toch uitvoeren' }))
+    await waitFor(() => expect(screen.getByText(/Eigenschappen gewijzigd/)).toBeTruthy())
+
+    const alters = mock.adminRequests.filter((r) => r.action === 'alterDatabase')
+    expect(alters.length).toBe(2)
+    expect(alters[0]?.confirmed).toBeFalsy()
+    expect(alters[1]?.confirmed).toBe(true)
+    expect(alters[1]?.args[1]).toBe('Klanten')
+  })
+
+  it('toont niet-ondersteunde providers netjes read-only in de eigenschappen-dialoog (SAL-50)', async () => {
+    render(<App />)
+    await connectViaDialog()
+    // SQLite → database-node 'main' zonder ALTER-support.
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    fireEvent.click(within(tree()).getByText('Databases'))
+    await waitFor(() => expect(within(tree()).getAllByText('main').length).toBeGreaterThan(0))
+
+    fireEvent.contextMenu(within(tree()).getAllByText('main')[0]!)
+    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
+    fireEvent.click(screen.getByText('Eigenschappen'))
+    await waitFor(() => expect(screen.getByText(/SQLite-databases zijn bestanden/)).toBeTruthy())
+    // Geen bewerkbare velden / geen opslaan-knop voor niet-ondersteunde provider.
+    expect(screen.queryByRole('button', { name: 'Wijzigingen opslaan' })).toBeNull()
+  })
+
+  it('werkt een MODIFY NAME door in de dialoog, boom en tab-context (SAL-50)', async () => {
+    const state = openSqlServerExplorerFull()
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    mock.admin.getDatabaseProperties = async (_connId: string, database: string) => ({
+      database,
+      dialect: 'tsql',
+      supportsAlter: true,
+      properties: [
+        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true }
+      ]
+    })
+    // ALTER met naamswijziging werkt ook de databaselijst van de mock bij,
+    // zodat de boom na de dbListRevision-refresh de nieuwe naam toont.
+    mock.admin.alterDatabase = async (_connId: string, database: string, changes: Record<string, string>) => {
+      if (changes.name) {
+        const i = state.databases.findIndex((d) => d.name === database)
+        if (i >= 0) state.databases[i] = { name: changes.name }
+      }
+      return {
+        ok: true,
+        sql: `ALTER DATABASE [${database}] MODIFY NAME = [${changes.name}];`,
+        ...(changes.name ? { renamedTo: changes.name } : {})
+      }
+    }
+    useAppStore.getState().addTab({ connectionId: 'conn-sql', database: 'Klanten' })
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
+    fireEvent.click(screen.getByText('Eigenschappen'))
+    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
+
+    const nameInput = (await screen.findByLabelText('Naam')) as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: 'Klanten2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Wijzigingen opslaan' }))
+
+    // Dialoog toont de nieuwe naam na de refresh; boom + tab-context volgen.
+    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten2')).toBeTruthy())
+    await waitFor(() => expect(within(tree()).getByText('Klanten2')).toBeTruthy())
+    const tab = useAppStore.getState().tabs.find((t) => t.database === 'Klanten2')
+    expect(tab).toBeTruthy()
   })
 
   it('verbreken verbinding via server-contextmenu sluit de sessie en klapt de boom in (SAL-34)', async () => {

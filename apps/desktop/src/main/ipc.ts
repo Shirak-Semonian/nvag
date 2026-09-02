@@ -401,6 +401,24 @@ export function registerIpcHandlers(): void {
     return r
   })
 
+  // SAL-50: database-eigenschappen lezen/wijzigen (bewerkbare dialoog + ALTER DATABASE).
+  ipcMain.handle('admin:getDatabaseProperties', (_e, connectionId: string, database: string) =>
+    admin.getDatabaseProperties(connectionId, database)
+  )
+  ipcMain.handle('admin:alterDatabase', async (_e, connectionId: string, database: string, changes: Record<string, string>, confirmed?: boolean) => {
+    const r = await admin.alterDatabase(connectionId, database, changes, confirmed)
+    if (r.ok) {
+      const detail = Object.keys(changes)
+        .map((key) => (key === 'name' ? `MODIFY NAME → ${changes.name}` : `${key} = ${changes[key]}`))
+        .join(', ')
+      audit('admin.ddl', `ALTER DATABASE ${database} — ${detail}`, {
+        server: connectionStore.get(connectionId)?.name,
+        database: r.renamedTo ?? database
+      })
+    }
+    return r
+  })
+
   // ------------------------------------------------------------------ F4: backup & restore (DBA)
   ipcMain.handle('admin:backupDatabase', async (_e, connectionId: string, database: string, targetPath: string, confirmed?: boolean) => {
     const r = await admin.backupDatabase(connectionId, database, targetPath, confirmed)

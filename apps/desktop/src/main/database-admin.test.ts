@@ -17,20 +17,23 @@ import type {
   ProviderCapabilities,
   QueryChunk,
   QueryOptions,
+  QueryRow,
   ServerInfo
 } from '@nvag/contracts'
 import {
+  alterDatabase,
+  backupDatabase,
   createTable,
-  dropTable,
-  dropProcedure,
+  dropConstraint,
   dropFunction,
-  dropTrigger,
+  dropProcedure,
+  dropRole,
   dropSequence,
   dropSynonym,
-  dropRole,
-  dropConstraint,
+  dropTable,
+  dropTrigger,
   dropUser,
-  backupDatabase,
+  getDatabaseProperties,
   restoreDatabase
 } from './database-admin'
 import { sessionManager } from './session-manager'
@@ -225,7 +228,11 @@ const TSQL_BASE_CAPS: Omit<ProviderCapabilities, 'dialect'> = {
   maxResultRowsDefault: 1000
 }
 
-function makeFakeTsqlProvider(id: string, executed: string[]): DatabaseProvider {
+function makeFakeTsqlProvider(
+  id: string,
+  executed: string[],
+  selectRows?: Array<{ startsWith: string; rows: QueryRow[] }>
+): DatabaseProvider {
   const sessions = new Set<DbSession>()
   const caps: ProviderCapabilities = { ...TSQL_BASE_CAPS, dialect: 'tsql' }
   return {
@@ -297,6 +304,10 @@ function makeFakeTsqlProvider(id: string, executed: string[]): DatabaseProvider 
       _opts: QueryOptions
     ): AsyncIterable<QueryChunk> {
       executed.push(sql)
+      const match = selectRows?.find((s) => sql.trim().startsWith(s.startsWith))
+      if (match) {
+        yield { kind: 'rows', rows: match.rows }
+      }
       yield { kind: 'done', rowCount: 0, durationMs: 1 }
     },
     async cancel() {},
@@ -385,5 +396,175 @@ describe('SAL-45 DROP-methods (tsql dialect, fake provider)', () => {
   it('weigert dropRole op providers zonder supportsUsersAndRoles', async () => {
     // de sqlite-provider uit de eerste suite ondersteunt geen users/roles.
     await expect(dropRole('adm-1', 'x', true)).rejects.toThrow(/geen users\/roles/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SAL-50: database-eigenschappen lezen/wijzigen (getDatabaseProperties +
+// alterDatabase) op een tsql-fake met SELECT-rows.
+// ---------------------------------------------------------------------------
+
+describe('SAL-50 database-eigenschappen (tsql dialect, fake provider)', () => {
+  const executed: string[] = []
+  const cfg: ConnectionConfig = {
+    id: 'adm-s50',
+    name: 'Admin SAL-50',
+    providerId: 'fake-sqlserver50',
+    environment: 'DEV',
+    host: 'localhost',
+    auth: 'username-password',
+    ssl: { mode: 'disable' },
+    connectionTimeoutMs: 5000,
+    group: 'Test'
+  }
+
+  // Rijvolgorde van getTsqlDatabaseProperties (sys.databases-query):
+  // [name, collation_name, recovery_model_desc, containment_desc,
+  //  compatibility_level, owner_name, create_date, state, size_bytes,
+  //  user_access, is_auto_close, is_auto_shrink, is_read_only]
+  const selectRows = [
+    {
+      startsWith: 'SELECT d.name AS name',
+      rows: [
+        {
+          values: [
+            'Klanten',
+            'Dutch_CI_AS',
+            'FULL',
+            'NONE',
+            150,
+            'sa',
+            '2024-01-15T08:30:00.000Z',
+            'ONLINE',
+            5242880n,
+            'MULTI_USER',
+            false,
+            false,
+            false
+          ]
+        }
+      ]
+    },
+    {
+      startsWith: "SELECT CAST(SERVERPROPERTY('ProductMajorVersion')",
+      rows: [{ values: [16, 0] }]
+    }
+  ]
+
+  beforeAll(async () => {
+    registry.register(makeFakeTsqlProvider('fake-sqlserver50', executed, selectRows))
+    await sessionManager.open(cfg)
+  })
+
+  afterAll(async () => {
+    await sessionManager.closeAll()
+  })
+
+  beforeEach(() => {
+    executed.length = 0
+    setEnvironment('DEV')
+  })
+
+  it('leest actuele database-eigenschappen uit sys.databases + serverconfiguratie', async () => {
+    const props = await getDatabaseProperties('adm-s50', 'Klanten')
+    expect(props.supportsAlter).toBe(true)
+    expect(props.database).toBe('Klanten')
+    expect(props.dialect).toBe('tsql')
+
+    const nameProp = props.properties.find((p) => p.key === 'name')
+    expect(nameProp?.editable).toBe(true)
+    expect(nameProp?.renamesDatabase).toBe(true)
+
+    const recovery = props.properties.find((p) => p.key === 'recovery')
+    expect(recovery?.value).toBe('FULL')
+    expect(recovery?.options?.map((o) => o.value)).toEqual(['FULL', 'SIMPLE', 'BULK_LOGGED'])
+
+    const compat = props.properties.find((p) => p.key === 'compatibility_level')
+    expect(compat?.value).toBe('150')
+    // Server-major 16 (SQL Server 2022) → optie 160 aanwezig.
+    expect(compat?.options?.some((o) => o.value === '160')).toBe(true)
+
+    const readOnly = props.properties.find((p) => p.key === 'read_only')
+    expect(readOnly?.value).toBe('READ_WRITE')
+
+    // Read-only-info is gemarkeerd als niet bewerkbaar.
+    const collation = props.properties.find((p) => p.key === 'collation')
+    expect(collation?.value).toBe('Dutch_CI_AS')
+    expect(collation?.editable).toBe(false)
+  })
+
+  it('blokkeert ALTER zonder bevestiging (guard confirm) en voert daarna elk statement uit', async () => {
+    const blocked = await alterDatabase('adm-s50', 'Klanten', { recovery: 'SIMPLE' })
+    expect(blocked.ok).toBe(false)
+    expect(blocked.guardSeverity).toBe('confirm')
+    expect(blocked.sql).toContain('ALTER DATABASE [Klanten] SET RECOVERY SIMPLE;')
+    expect(executed).toEqual([])
+
+    const r = await alterDatabase(
+      'adm-s50',
+      'Klanten',
+      { recovery: 'SIMPLE', compatibility_level: '160' },
+      true
+    )
+    expect(r.ok).toBe(true)
+    expect(executed).toEqual([
+      'ALTER DATABASE [Klanten] SET RECOVERY SIMPLE;',
+      'ALTER DATABASE [Klanten] SET COMPATIBILITY_LEVEL = 160;'
+    ])
+  })
+
+  it('rapporteert renamedTo na een bevestigde MODIFY NAME', async () => {
+    const r = await alterDatabase('adm-s50', 'Klanten', { name: 'Klanten2' }, true)
+    expect(r.ok).toBe(true)
+    expect(r.renamedTo).toBe('Klanten2')
+    expect(executed).toEqual(['ALTER DATABASE [Klanten] MODIFY NAME = [Klanten2];'])
+  })
+
+  it('weigert een onbekende eigenschap en een niet-tsql-dialect', async () => {
+    await expect(alterDatabase('adm-s50', 'Klanten', { owner: 'sa' }, true)).rejects.toThrow(
+      /kan voor dit dialect/
+    )
+  })
+})
+
+describe('SAL-50 database-eigenschappen op niet-tsql-providers (sqlite)', () => {
+  let dir2: string
+  const sqliteCfg: ConnectionConfig = {
+    id: 'adm-s50-sqlite',
+    name: 'Admin SAL-50 SQLite',
+    providerId: 'sqlite',
+    environment: 'DEV',
+    host: '',
+    auth: 'username-password',
+    ssl: { mode: 'disable' },
+    connectionTimeoutMs: 5000,
+    createIfMissing: true,
+    group: 'Test'
+  }
+
+  beforeAll(async () => {
+    dir2 = mkdtempSync(join(tmpdir(), 'nvag-admin-s50-'))
+    sqliteCfg.host = join(dir2, 'admin-s50.db')
+    registry.register(createSqliteProvider())
+    await sessionManager.open(sqliteCfg)
+  })
+
+  afterAll(async () => {
+    await sessionManager.closeAll()
+    rmSync(dir2, { recursive: true, force: true })
+  })
+
+  it('markeert ALTER als niet-ondersteund en geeft een duidelijke boodschap', async () => {
+    const props = await getDatabaseProperties('adm-s50-sqlite', 'main')
+    expect(props.supportsAlter).toBe(false)
+    expect(props.dialect).toBe('sqlite')
+    expect(props.message).toMatch(/SQLite-databases zijn bestanden/)
+    expect(props.properties).toEqual([])
+
+    // De UI-gating voorkomt alterDatabase-aanroepen; mocht het toch gebeuren
+    // dan gooit de builder een duidelijke fout.
+    await expect(alterDatabase('adm-s50-sqlite', 'main', { name: 'x' }, true)).rejects.toThrow(
+      /niet ondersteund/
+    )
   })
 })
