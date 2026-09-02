@@ -421,7 +421,8 @@ describe('SAL-50 database-eigenschappen (tsql dialect, fake provider)', () => {
   // Rijvolgorde van getTsqlDatabaseProperties (sys.databases-query):
   // [name, collation_name, recovery_model_desc, containment_desc,
   //  compatibility_level, owner_name, create_date, state, size_bytes,
-  //  user_access, is_auto_close, is_auto_shrink, is_read_only]
+  //  user_access, is_auto_close, is_auto_shrink, is_read_only,
+  //  page_verify, is_encrypted, is_trustworthy]
   const selectRows = [
     {
       startsWith: 'SELECT d.name AS name',
@@ -440,7 +441,10 @@ describe('SAL-50 database-eigenschappen (tsql dialect, fake provider)', () => {
             'MULTI_USER',
             false,
             false,
-            false
+            false,
+            'CHECKSUM',
+            false,
+            true
           ]
         }
       ]
@@ -448,6 +452,19 @@ describe('SAL-50 database-eigenschappen (tsql dialect, fake provider)', () => {
     {
       startsWith: "SELECT CAST(SERVERPROPERTY('ProductMajorVersion')",
       rows: [{ values: [16, 0] }]
+    },
+    {
+      // sys.master_files: [name, type, path, size_bytes, max_size_bytes,
+      // is_percent_growth, growth_bytes]
+      startsWith: 'SELECT f.name AS name',
+      rows: [
+        {
+          values: ['Klanten', 'ROWS', '/var/opt/mssql/data/Klanten.mdf', 5242880n, -1, false, 1048576n]
+        },
+        {
+          values: ['Klanten_log', 'LOG', '/var/opt/mssql/data/Klanten_log.ldf', 2097152n, 10485760n, false, 524288n]
+        }
+      ]
     }
   ]
 
@@ -491,6 +508,33 @@ describe('SAL-50 database-eigenschappen (tsql dialect, fake provider)', () => {
     const collation = props.properties.find((p) => p.key === 'collation')
     expect(collation?.value).toBe('Dutch_CI_AS')
     expect(collation?.editable).toBe(false)
+
+    // Opties-sectie (SSMS-achtig overzicht: auto close/shrink, paginaverificatie).
+    const autoClose = props.properties.find((p) => p.key === 'auto_close')
+    expect(autoClose?.section).toBe('opties')
+    expect(autoClose?.value).toBe('Nee')
+    const autoShrink = props.properties.find((p) => p.key === 'auto_shrink')
+    expect(autoShrink?.value).toBe('Nee')
+    const pageVerify = props.properties.find((p) => p.key === 'page_verify')
+    expect(pageVerify?.value).toBe('CHECKSUM')
+    const encrypted = props.properties.find((p) => p.key === 'encrypted')
+    expect(encrypted?.value).toBe('Nee')
+    const trustworthy = props.properties.find((p) => p.key === 'trustworthy')
+    expect(trustworthy?.value).toBe('Ja')
+
+    // Bestanden uit sys.master_files (paden, grootte, groei).
+    expect(props.files).toHaveLength(2)
+    const dataFile = props.files?.[0]
+    expect(dataFile?.name).toBe('Klanten')
+    expect(dataFile?.type).toBe('ROWS')
+    expect(dataFile?.physicalName).toBe('/var/opt/mssql/data/Klanten.mdf')
+    expect(dataFile?.sizeMb).toBe(5)
+    expect(dataFile?.maxSizeMb).toBeNull() // max_size = -1 → onbeperkt
+    expect(dataFile?.growthMb).toBe(1)
+    const logFile = props.files?.[1]
+    expect(logFile?.type).toBe('LOG')
+    expect(logFile?.sizeMb).toBe(2)
+    expect(logFile?.maxSizeMb).toBe(10)
   })
 
   it('blokkeert ALTER zonder bevestiging (guard confirm) en voert daarna elk statement uit', async () => {

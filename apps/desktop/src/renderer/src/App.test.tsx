@@ -1111,6 +1111,79 @@ describe('App (renderer-integratie)', () => {
     expect(alters[1]?.args[1]).toBe('Klanten')
   })
 
+  it('toont een SSMS-achtig overzicht: Algemeen/Opties-secties en bestandspaden náást bewerkbare velden (SAL-50)', async () => {
+    openSqlServerExplorerFull()
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    mock.admin.getDatabaseProperties = async (_connId: string, database: string) => ({
+      database,
+      dialect: 'tsql',
+      supportsAlter: true,
+      properties: [
+        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true },
+        { key: 'state', label: 'Status', kind: 'info', value: 'ONLINE', editable: false, section: 'algemeen' },
+        { key: 'collation', label: 'Collation', kind: 'info', value: 'Dutch_CI_AS', editable: false, section: 'algemeen' },
+        { key: 'create_date', label: 'Aangemaakt op', kind: 'info', value: '2024-01-15T08:30:00.000Z', editable: false, section: 'algemeen' },
+        {
+          key: 'recovery',
+          label: 'Recovery model',
+          kind: 'select',
+          value: 'FULL',
+          editable: true,
+          options: [
+            { value: 'FULL', label: 'Volledig (FULL)' },
+            { value: 'SIMPLE', label: 'Eenvoudig (SIMPLE)' }
+          ]
+        },
+        { key: 'auto_close', label: 'Auto close', kind: 'info', value: 'Nee', editable: false, section: 'opties' },
+        { key: 'auto_shrink', label: 'Auto shrink', kind: 'info', value: 'Nee', editable: false, section: 'opties' },
+        { key: 'page_verify', label: 'Paginaverificatie', kind: 'info', value: 'CHECKSUM', editable: false, section: 'opties' }
+      ],
+      files: [
+        {
+          name: 'Klanten',
+          type: 'ROWS',
+          physicalName: '/var/opt/mssql/data/Klanten.mdf',
+          sizeMb: 5,
+          maxSizeMb: null,
+          growthMb: 1
+        },
+        {
+          name: 'Klanten_log',
+          type: 'LOG',
+          physicalName: '/var/opt/mssql/data/Klanten_log.ldf',
+          sizeMb: 2,
+          maxSizeMb: 10,
+          growthMb: null
+        }
+      ]
+    })
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
+    fireEvent.click(screen.getByText('Eigenschappen'))
+    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
+
+    // Secties + read-only-waarden uit de server.
+    expect(screen.getByText('Algemeen')).toBeTruthy()
+    expect(screen.getByText('Dutch_CI_AS')).toBeTruthy()
+    expect(screen.getByText('Opties')).toBeTruthy()
+    expect(screen.getAllByText('Nee').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('CHECKSUM')).toBeTruthy()
+
+    // Bestanden-tabel met paden/groottes.
+    expect(screen.getByText('Bestanden')).toBeTruthy()
+    expect(screen.getByText('/var/opt/mssql/data/Klanten.mdf')).toBeTruthy()
+    expect(screen.getByText('/var/opt/mssql/data/Klanten_log.ldf')).toBeTruthy()
+    expect(screen.getByText('ROWS')).toBeTruthy()
+    expect(screen.getByText('Onbeperkt')).toBeTruthy()
+
+    // Bewerkbare velden blijven beschikbaar (ALTER).
+    expect((screen.getByLabelText('Recovery model') as HTMLSelectElement).value).toBe('FULL')
+    expect(screen.getByRole('button', { name: 'Wijzigingen opslaan' })).toBeTruthy()
+  })
+
   it('toont niet-ondersteunde providers netjes read-only in de eigenschappen-dialoog (SAL-50)', async () => {
     render(<App />)
     await connectViaDialog()

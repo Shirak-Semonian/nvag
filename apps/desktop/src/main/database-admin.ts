@@ -538,6 +538,19 @@ function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`
 }
 
+/** Bool-waarde → Nederlands 'Ja'/'Nee' (— voor null/onbekend). */
+function boolJa(value: unknown): string {
+  if (value === true) return 'Ja'
+  if (value === false) return 'Nee'
+  return '—'
+}
+
+/** Bytes → MB (1 decimaal); null/onbekend → 0. */
+function toMb(bytes: unknown): number {
+  if (bytes === null || bytes === undefined) return 0
+  return Math.round((Number(bytes) / (1024 * 1024)) * 10) / 10
+}
+
 /** SQL Server: eigenschappen uit sys.databases (live) + serverconfiguratie. */
 async function getTsqlDatabaseProperties(
   provider: DatabaseProvider,
@@ -545,6 +558,10 @@ async function getTsqlDatabaseProperties(
   database: string
 ): Promise<DatabasePropertiesResult> {
   const dbLit = quoteLiteral('tsql', database)
+  // Rijvolgorde: name, collation_name, recovery_model, containment,
+  // compatibility_level, owner, create_date, state, size_bytes, user_access,
+  // is_auto_close, is_auto_shrink, is_read_only, page_verify, is_encrypted,
+  // is_trustworthy.
   const dbRows = await collectRows(
     provider,
     session,
@@ -556,18 +573,21 @@ async function getTsqlDatabaseProperties(
             SUSER_SNAME(d.owner_sid) AS owner_name,
             d.create_date AS create_date,
             d.state_desc AS state,
-            CAST(ISNULL(SUM(mf.size), 0) * 8 * 1024 AS bigint) AS size_bytes,
+            CAST(ISNULL(SUM(CAST(mf.size AS bigint)), 0) * 8 * 1024 AS bigint) AS size_bytes,
             d.user_access_desc AS user_access,
             d.is_auto_close_on AS is_auto_close,
             d.is_auto_shrink_on AS is_auto_shrink,
-            d.is_read_only AS is_read_only
+            d.is_read_only AS is_read_only,
+            d.page_verify_option_desc AS page_verify,
+            d.is_encrypted AS is_encrypted,
+            d.is_trustworthy_on AS is_trustworthy
      FROM sys.databases d
      LEFT JOIN sys.master_files mf ON mf.database_id = d.database_id
      WHERE d.name = ${dbLit}
      GROUP BY d.name, d.collation_name, d.recovery_model_desc, d.containment_desc,
               d.compatibility_level, SUSER_SNAME(d.owner_sid), d.create_date,
               d.state_desc, d.user_access_desc, d.is_auto_close_on, d.is_auto_shrink_on,
-              d.is_read_only`
+              d.is_read_only, d.page_verify_option_desc, d.is_encrypted, d.is_trustworthy_on`
   )
   const row = dbRows[0]?.values
   if (!row) {
@@ -600,9 +620,9 @@ async function getTsqlDatabaseProperties(
       renamesDatabase: true,
       note: 'Naamswijziging wordt doorgevoerd met ALTER DATABASE … MODIFY NAME.'
     },
-    { key: 'state', label: 'Status', kind: 'info', value: cellStr(row[7]), editable: false },
-    { key: 'owner', label: 'Eigenaar', kind: 'info', value: cellStr(row[5]), editable: false },
-    { key: 'collation', label: 'Collation', kind: 'info', value: cellStr(row[1]), editable: false },
+    { key: 'state', label: 'Status', kind: 'info', value: cellStr(row[7]), editable: false, section: 'algemeen' },
+    { key: 'owner', label: 'Eigenaar', kind: 'info', value: cellStr(row[5]), editable: false, section: 'algemeen' },
+    { key: 'collation', label: 'Collation', kind: 'info', value: cellStr(row[1]), editable: false, section: 'algemeen' },
     {
       key: 'compatibility_level',
       label: 'Compatibility level',
@@ -648,18 +668,62 @@ async function getTsqlDatabaseProperties(
         { value: 'READ_ONLY', label: 'Alleen-lezen (READ_ONLY)' }
       ]
     },
-    { key: 'user_access', label: 'Gebruikerstoegang', kind: 'info', value: cellStr(row[9]), editable: false },
-    { key: 'create_date', label: 'Aangemaakt op', kind: 'info', value: cellStr(row[6]), editable: false },
+    { key: 'create_date', label: 'Aangemaakt op', kind: 'info', value: cellStr(row[6]), editable: false, section: 'algemeen' },
     {
       key: 'size',
       label: 'Grootte',
       kind: 'info',
       value: row[8] == null ? '—' : formatBytes(Number(row[8])),
-      editable: false
-    }
+      editable: false,
+      section: 'algemeen'
+    },
+    // Opties (read-only; SSMS-achtig overzicht van database-opties).
+    { key: 'user_access', label: 'Gebruikerstoegang', kind: 'info', value: cellStr(row[9]), editable: false, section: 'opties' },
+    { key: 'auto_close', label: 'Auto close', kind: 'info', value: boolJa(row[10]), editable: false, section: 'opties' },
+    { key: 'auto_shrink', label: 'Auto shrink', kind: 'info', value: boolJa(row[11]), editable: false, section: 'opties' },
+    { key: 'page_verify', label: 'Paginaverificatie', kind: 'info', value: cellStr(row[13]), editable: false, section: 'opties' },
+    { key: 'encrypted', label: 'Versleuteld', kind: 'info', value: boolJa(row[14]), editable: false, section: 'opties' },
+    { key: 'trustworthy', label: 'Trustworthy', kind: 'info', value: boolJa(row[15]), editable: false, section: 'opties' }
   ]
 
-  return { database, dialect: 'tsql', supportsAlter: true, properties }
+  // Bestanden (sys.master_files). Bij een fout (bv. offline database) blijft
+  // het overzicht bruikbaar: de bestandslijst is optioneel.
+  let files: DatabasePropertiesResult['files'] = []
+  try {
+    const fileRows = await collectRows(
+      provider,
+      session,
+      `SELECT f.name AS name,
+              f.type_desc AS [type],
+              f.physical_name AS [path],
+              CAST(CAST(f.size AS bigint) * 8 * 1024 AS bigint) AS size_bytes,
+              CAST(CASE WHEN f.max_size = -1 THEN -1 ELSE CAST(f.max_size AS bigint) * 8 * 1024 END AS bigint) AS max_size_bytes,
+              f.is_percent_growth AS is_percent_growth,
+              CAST(CAST(f.growth AS bigint) * 8 * 1024 AS bigint) AS growth_bytes
+       FROM sys.master_files f
+       JOIN sys.databases d ON d.database_id = f.database_id
+       WHERE d.name = ${dbLit}
+       ORDER BY f.type, f.file_id`
+    )
+    files = fileRows.map((r) => {
+      const v = r.values
+      const isPercent = v[5] === true
+      const maxBytes = Number(v[4] ?? 0)
+      const growthBytes = v[6] == null ? 0 : Number(v[6])
+      return {
+        name: cellStr(v[0]),
+        type: cellStr(v[1]),
+        physicalName: cellStr(v[2]),
+        sizeMb: toMb(v[3]),
+        maxSizeMb: maxBytes < 0 ? null : toMb(v[4]),
+        growthMb: isPercent || growthBytes <= 0 ? null : toMb(v[6])
+      }
+    })
+  } catch {
+    files = []
+  }
+
+  return { database, dialect: 'tsql', supportsAlter: true, properties, files }
 }
 
 /**

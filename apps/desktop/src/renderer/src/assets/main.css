@@ -1582,6 +1582,24 @@ button.danger:hover:not(:disabled) {
   margin-top: 4px;
 }
 
+.dbprop-section {
+  margin-top: 4px;
+}
+
+.dbprop-section > .confirm-sql-label {
+  margin: 2px 0;
+}
+
+.dbprop-files-table th,
+.dbprop-files-table td {
+  white-space: normal;
+}
+
+.dbprop-files-table td.dbprop-file-path {
+  max-width: 280px;
+  word-break: break-all;
+}
+
 .oe-notice {
   position: fixed;
   bottom: 28px;

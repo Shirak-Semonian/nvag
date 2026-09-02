@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AlterDatabaseResult, DatabasePropertiesResult, DbObjectRef } from '@nvag/contracts'
+import type {
+  AlterDatabaseResult,
+  DatabasePropertiesResult,
+  DatabaseProperty,
+  DbObjectRef
+} from '@nvag/contracts'
 import { useAppStore } from '../state/store'
 
 /**
  * Eigenschappendialogen voor Object Explorer (SAL-34 / SAL-50).
  *
- * - DatabasePropertiesDialog: SAL-50 — toont database-eigenschappen (live via
- *   admin.getDatabaseProperties) en laat ondersteunde eigenschappen wijzigen
- *   via dialect-correct ALTER DATABASE (SQL-preview + guard-bevestiging).
- *   Providers zonder ALTER-ondersteuning tonen read-only-info + reden.
+ * - DatabasePropertiesDialog: SAL-50 — SSMS-achtig eigenschappen-overzicht
+ *   (live via admin.getDatabaseProperties: algemeen, opties, bestanden) en
+ *   bewerkbare velden via dialect-correct ALTER DATABASE (SQL-preview +
+ *   guard-bevestiging). Providers zonder ALTER-ondersteuning tonen
+ *   read-only-info + reden.
  * - ObjectDefinitionDialog: toont de definitie (CREATE-script) van een
  *   procedure/function/trigger via getObjectDefinition.
  */
@@ -22,6 +28,24 @@ function useEscape(onClose: () => void): void {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+}
+
+/** Sectie-titel voor het SSMS-achtige overzicht (default 'Overige'). */
+function sectionLabel(section: string | undefined): string {
+  switch (section) {
+    case 'algemeen':
+      return 'Algemeen'
+    case 'opties':
+      return 'Opties'
+    case 'bestanden':
+      return 'Bestanden'
+    default:
+      return 'Overige'
+  }
+}
+
+function fmtMb(mb: number): string {
+  return `${mb} MB`
 }
 
 export interface DatabasePropertiesState {
@@ -128,6 +152,17 @@ export function DatabasePropertiesDialog({
   const editableProps = result.properties.filter((p) => p.editable)
   const infoProps = result.properties.filter((p) => !p.editable)
   const hasChanges = editableProps.some((p) => (draft[p.key] ?? p.value) !== p.value)
+  // Read-only-info groeperen per sectie (SSMS-achtig: Algemeen / Opties / …).
+  const infoGroups: { label: string; props: DatabaseProperty[] }[] = []
+  for (const p of infoProps) {
+    const label = sectionLabel(p.section)
+    let group = infoGroups.find((g) => g.label === label)
+    if (!group) {
+      group = { label, props: [] }
+      infoGroups.push(group)
+    }
+    group.props.push(p)
+  }
 
   /** Na een geslaagde ALTER: melding, refresh, boom/tab-context bijwerken. */
   const applyAlterSuccess = async (alterResult: AlterDatabaseResult): Promise<void> => {
@@ -263,20 +298,57 @@ export function DatabasePropertiesDialog({
             </div>
           )}
 
-          {infoProps.length > 0 && (
-            <table className="details-table">
-              <tbody>
-                {infoProps.map((p) => (
-                  <tr key={p.key}>
-                    <th>{p.label}</th>
-                    <td>
-                      {p.value}
-                      {p.note && <div className="dbprop-hint">{p.note}</div>}
-                    </td>
+          {infoGroups.length > 0 && (
+            <div className="dbprop-sections">
+              {infoGroups.map((group) => (
+                <div key={group.label} className="dbprop-section">
+                  <p className="confirm-sql-label">{group.label}</p>
+                  <table className="details-table">
+                    <tbody>
+                      {group.props.map((p) => (
+                        <tr key={p.key}>
+                          <th>{p.label}</th>
+                          <td>
+                            {p.value}
+                            {p.note && <div className="dbprop-hint">{p.note}</div>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {result.files && result.files.length > 0 && (
+            <div className="dbprop-section">
+              <p className="confirm-sql-label">Bestanden</p>
+              <table className="details-table dbprop-files-table">
+                <thead>
+                  <tr>
+                    <th>Naam</th>
+                    <th>Type</th>
+                    <th>Pad</th>
+                    <th>Grootte</th>
+                    <th>Max. grootte</th>
+                    <th>Groei</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {result.files.map((f) => (
+                    <tr key={`${f.name}-${f.type}`}>
+                      <td>{f.name}</td>
+                      <td>{f.type}</td>
+                      <td className="dbprop-file-path">{f.physicalName}</td>
+                      <td>{fmtMb(f.sizeMb)}</td>
+                      <td>{f.maxSizeMb == null ? 'Onbeperkt' : fmtMb(f.maxSizeMb)}</td>
+                      <td>{f.growthMb == null ? '—' : fmtMb(f.growthMb)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {message && (

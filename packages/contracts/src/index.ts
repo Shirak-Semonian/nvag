@@ -1117,6 +1117,26 @@ export interface DatabaseProperty {
   note?: string
   /** true → wijzigen hernoemt de database; UI moet boom/tab-context bijwerken. */
   renamesDatabase?: boolean
+  /**
+   * Sectie in het SSMS-achtige overzicht ('algemeen' | 'opties' | overig).
+   * Alleen read-only-info-groepen; bewerkbare velden toont de UI apart.
+   */
+  section?: string
+}
+
+/** Eén databasebestand (SQL Server: sys.master_files). */
+export interface DatabaseFileInfo {
+  /** Logische bestandsnaam, bijv. 'Klanten' of 'Klanten_log'. */
+  name: string
+  /** Type: ROWS / LOG / FILESTREAM / FULLTEXT. */
+  type: string
+  /** Fysiek pad op de server. */
+  physicalName: string
+  sizeMb: number
+  /** null = onbeperkt (max_size = -1). */
+  maxSizeMb: number | null
+  /** null = procentuele groei (is_percent_growth). */
+  growthMb: number | null
 }
 
 export interface DatabasePropertiesResult {
@@ -1127,6 +1147,8 @@ export interface DatabasePropertiesResult {
   /** Toelichting wanneer `supportsAlter` false is (netjes tonen). */
   message?: string
   properties: DatabaseProperty[]
+  /** Bestanden van de database (SQL Server: sys.master_files). */
+  files?: DatabaseFileInfo[]
 }
 
 /** Resultaat van alterDatabase: AdminActionResult + hernoeminfo voor de UI. */
