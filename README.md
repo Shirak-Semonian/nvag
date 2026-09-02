@@ -31,6 +31,23 @@
   bevestigen), auditlogging en een capability-gated Backup-tab; daarnaast
   packaging (AppImage/tar.gz/deb/rpm) met CI-workflow.
 
+**Release 1.0.3 (2026-09-03, SAL-49)**: verse Linux-distributie in
+`apps/desktop/release/` (`Nvag-1.0.3.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
+met de Tester-gevalideerde SAL-47/SAL-48-QA-fixes: query-resultaten
+finaliseren nu altijd in de UI (de runQuery-race — late `done`/`error`-
+chunks na de `start`-response gingen verloren doordat de listener bij de
+eerste response al afgemeld werd, waardoor de tab op 'Bezig…' bleef
+staan — is opgelost door pas op de `done`/`error`-chunk te finaliseren)
+en streaming resultsets worden niet meer in-place gemuteerd (de grid bleef
+op een columns-only frame met 0 rijen hangen omdat de oude array werd
+vervangen terwijl de grid nog naar de vorige referentie keek; elke
+chunk-fase maakt nu een nieuwe array). Daarnaast is het User/Role-
+contextmenu vertaald ('Gebruiker/Rol verwijderen…'). Rooktest van de
+gebouwde AppImage geslaagd: app start, SQLite-connectie, Object Explorer,
+query met rijen finaliseert in de grid **zonder tab-wissel**,
+tabelgegevens tonen rijen, verbinding verbreken en het verwijder-menu
+werken.
+
 **Release 1.0.2 (2026-09-02, SAL-46)**: verse Linux-distributie in
 `apps/desktop/release/` (`Nvag-1.0.2.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
 met de Tester-gevalideerde SAL-45-feature: "Verwijderen…" in het
