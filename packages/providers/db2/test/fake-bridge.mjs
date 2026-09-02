@@ -30,28 +30,37 @@ const tables = {
     ]
   },
   contract_meta: {
-    columns: ['ID', 'NAME', 'EMAIL', 'ACTIVE'],
+    columns: ['ID', 'NAME', 'EMAIL', 'AMOUNT', 'ACTIVE'],
     rows: [
-      [1, 'Alice', 'alice@x.nl', 1],
-      [2, 'Bob', 'bob@x.nl', 0]
+      [1, 'Alice', 'alice@x.nl', 10.5, 1],
+      [2, 'Bob', 'bob@x.nl', 20.25, 0]
     ]
   }
 }
 const views = new Set(['vw_contract_active'])
-let nextId = 100
-
-const columnMeta = {
-  contract_dml: [
-    { NAME: 'ID', DATA_TYPE: 'INTEGER', LENGTH: 4, PRECISION: null, SCALE: null, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 1, IS_COMPUTED: 0, ORDINAL: 1 },
-    { NAME: 'NAME', DATA_TYPE: 'VARCHAR', LENGTH: 100, PRECISION: null, SCALE: null, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 2 }
-  ],
-  contract_meta: [
-    { NAME: 'ID', DATA_TYPE: 'INTEGER', LENGTH: 4, PRECISION: null, SCALE: null, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 1, IS_COMPUTED: 0, ORDINAL: 1 },
-    { NAME: 'NAME', DATA_TYPE: 'VARCHAR', LENGTH: 100, PRECISION: null, SCALE: null, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 2 },
-    { NAME: 'EMAIL', DATA_TYPE: 'VARCHAR', LENGTH: 255, PRECISION: null, SCALE: null, NULLABLE: 1, DEFAULT_VALUE: null, IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 3 },
-    { NAME: 'ACTIVE', DATA_TYPE: 'INTEGER', LENGTH: 4, PRECISION: null, SCALE: null, NULLABLE: 1, DEFAULT_VALUE: '1', IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 4 }
-  ]
+// Identity-per-tabel (zoals Db2: elke tabel heeft een eigen sequence die bij
+// DROP+CREATE opnieuw bij 1 begint — nodig voor de idempotente fixture).
+const nextIds = {
+  contract_dml: 4,
+  contract_meta: 3
 }
+
+function initialColumnMeta() {
+  return {
+    contract_dml: [
+      { NAME: 'ID', DATA_TYPE: 'INTEGER', LENGTH: 4, SCALE: 0, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 1, IS_COMPUTED: 0, ORDINAL: 1 },
+      { NAME: 'NAME', DATA_TYPE: 'VARCHAR', LENGTH: 100, SCALE: 0, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 2 }
+    ],
+    contract_meta: [
+      { NAME: 'ID', DATA_TYPE: 'INTEGER', LENGTH: 4, SCALE: 0, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 1, IS_COMPUTED: 0, ORDINAL: 1 },
+      { NAME: 'NAME', DATA_TYPE: 'VARCHAR', LENGTH: 100, SCALE: 0, NULLABLE: 0, DEFAULT_VALUE: null, IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 2 },
+      { NAME: 'EMAIL', DATA_TYPE: 'VARCHAR', LENGTH: 255, SCALE: 0, NULLABLE: 1, DEFAULT_VALUE: null, IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 3 },
+      { NAME: 'AMOUNT', DATA_TYPE: 'DECIMAL', LENGTH: 10, SCALE: 2, NULLABLE: 1, DEFAULT_VALUE: null, IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 4 },
+      { NAME: 'ACTIVE', DATA_TYPE: 'INTEGER', LENGTH: 4, SCALE: 0, NULLABLE: 1, DEFAULT_VALUE: '1', IS_IDENTITY: 0, IS_COMPUTED: 0, ORDINAL: 5 }
+    ]
+  }
+}
+const columnMeta = initialColumnMeta()
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n')
@@ -108,7 +117,9 @@ function runQuery(id, sql, maxRows) {
   if (/FROM SYSCAT\.COLUMNS/i.test(sql)) {
     const t = tableNameFromWhere(sql)
     const cols = columnMeta[t] ?? []
-    const names = ['NAME', 'DATA_TYPE', 'LENGTH', 'PRECISION', 'SCALE', 'NULLABLE', 'DEFAULT_VALUE', 'IS_IDENTITY', 'IS_COMPUTED', 'ORDINAL']
+    // Zelfde kolommen als de echte SYSCAT.COLUMNS-relevante selectie (géén
+    // PRECISION — die kolom bestaat niet in Db2, SAL-37).
+    const names = ['NAME', 'DATA_TYPE', 'LENGTH', 'SCALE', 'NULLABLE', 'DEFAULT_VALUE', 'IS_IDENTITY', 'IS_COMPUTED', 'ORDINAL']
     event(id, 'columns', names.map((n) => ({ name: n })))
     event(id, 'rows', cols.map((c) => names.map((n) => c[n])))
     return done(id, cols.length)
@@ -166,15 +177,33 @@ function runQuery(id, sql, maxRows) {
   }
 
   // --- DDL / DML (fixture + contract-DML) ---
+  const dropTable = /DROP TABLE IF EXISTS "([^"]+)"/i.exec(sql)
+  if (dropTable) {
+    const t = dropTable[1]
+    delete tables[t]
+    delete columnMeta[t]
+    delete nextIds[t]
+    return done(id, 0)
+  }
   const createTable = /CREATE TABLE "([^"]+)"/i.exec(sql)
   if (createTable) {
     const t = createTable[1]
     if (!tables[t]) {
       tables[t] = { columns: ['ID', 'NAME', 'EMAIL', 'ACTIVE'], rows: [] }
     }
+    // Fixture is idempotent: na DROP+CREATE begint de identity weer bij 1 en
+    // is de catalogus-metadata weer aanwezig (zoals op een echte Db2).
+    nextIds[t] = 1
+    if (!columnMeta[t] && initialColumnMeta()[t]) {
+      columnMeta[t] = initialColumnMeta()[t]
+    }
     return done(id, 0)
   }
-  const createView = /CREATE VIEW "([^"]+)"/i.exec(sql)
+  // Db2 LUW 11.5 kent geen DROP VIEW IF EXISTS (SQLCODE=-104) en geen
+  // DROP TABLE ... CASCADE; een DROP TABLE laat een afhankelijke view als
+  // inoperative achter. De fixture maakt de view daarom met CREATE OR
+  // REPLACE VIEW (vervangt ook een inoperative view met dezelfde naam).
+  const createView = /CREATE OR REPLACE VIEW "([^"]+)"/i.exec(sql)
   if (createView) {
     views.add(createView[1])
     return done(id, 0)
@@ -190,7 +219,8 @@ function runQuery(id, sql, maxRows) {
       m[1].split(',').map((v) => v.trim().replace(/^'(.*)'$/, '$1').replace(/^(\d+)$/, Number))
     )
     for (const tuple of tuples) {
-      t.rows.push([nextId++, ...tuple])
+      t.rows.push([nextIds[t] ?? 1, ...tuple])
+      nextIds[t] = (nextIds[t] ?? 1) + 1
     }
     return done(id, tuples.length)
   }

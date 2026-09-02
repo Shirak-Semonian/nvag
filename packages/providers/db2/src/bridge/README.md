@@ -20,8 +20,10 @@ niets van de bridge.
 
 ## Vereisten
 
-1. **Java 11+** — op Arch/Omarchy: `sudo pacman -S jre-openjdk`
-   (alternatief: `NVAG_DB2_JAVA=/pad/naar/java`).
+1. **JDK 11+** (géén JRE: de bridge gebruikt single-file source launch, die
+   heeft `javac` nodig — een JRE faalt met `Module jdk.compiler not in boot
+   Layer`). Op Arch/Omarchy: `sudo pacman -S jdk-openjdk`
+   (alternatief: `NVAG_DB2_JAVA=/pad/naar/java`, bijv. Temurin 21).
 2. **IBM DB2 JDBC-driver (`jcc.jar`)** — de provider zoekt op:
    - `NVAG_DB2_JCC_JAR` (expliciet pad), of
    - `~/.nvag/db2jcc/jcc.jar` of `~/.nvag/db2jcc/db2jcc4.jar`, of
@@ -29,19 +31,20 @@ niets van de bridge.
 
 ### jcc.jar verkrijgen (zonder Db2-installatie)
 
-De driver zit in de Db2 Docker-image (voor de lokale testomgeving):
+De driver zit in de Db2 Docker-image (voor de lokale testomgeving). Let op:
+in de image heet het bestand **`db2jcc4.jar`** (geen `jcc.jar`):
 
 ```bash
 mkdir -p ~/.nvag/db2jcc
-docker run --rm --entrypoint cat ibmcom/db2:11.5.9.0 \
-  /opt/ibm/db2/V11.5/java/jcc.jar > ~/.nvag/db2jcc/jcc.jar
+docker run --rm --entrypoint cat ibmcom/db2:11.5.8.0 \
+  /opt/ibm/db2/V11.5/java/db2jcc4.jar > ~/.nvag/db2jcc/jcc.jar
 ```
 
 Of via Maven Central (zelfde jar, publiek artefact):
 
 ```bash
 curl -L -o ~/.nvag/db2jcc/jcc.jar \
-  https://repo1.maven.org/maven2/com/ibm/db2/jcc/11.5.9.0/jcc-11.5.9.0.jar
+  https://repo1.maven.org/maven2/com/ibm/db2/jcc/11.5.8.0/jcc-11.5.8.0.jar
 ```
 
 ## De bridge handmatig testen

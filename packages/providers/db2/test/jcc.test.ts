@@ -1,9 +1,20 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { buildJdbcUrl, resolveJccJar } from '../src/jcc'
 import type { ConnectionConfig } from '@nvag/contracts'
+
+// Isolatie (SAL-37): de jcc-zoekpaden mogen niet afhangen van een toevallig
+// aanwezige jcc.jar op de machine (~/.nvag/db2jcc/jcc.jar). homedir() wijst
+// naar een niet-bestaande map zodat "geen jar gevonden" deterministisch is.
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return {
+    ...actual,
+    homedir: () => join(tmpdir(), 'nvag-db2jcc-home-doet-niet-bestaan')
+  }
+})
 
 const tmp = mkdtempSync(join(tmpdir(), 'nvag-db2-jcc-'))
 const fakeJar = join(tmp, 'jcc.jar')

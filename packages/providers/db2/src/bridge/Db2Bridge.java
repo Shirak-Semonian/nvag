@@ -157,8 +157,17 @@ public class Db2Bridge {
         } catch (SQLException ignored) {
           // maxRows is een veiligheidsnet; FETCH FIRST doet het echte werk
         }
+        // jcc weigert een fetch-size groter dan maxRows ([jcc][10137],
+        // SQLSTATE=42815) — bij een kleine cap de fetch-size gelijk aan
+        // maxRows houden (min(200, maxRows)).
+        try {
+          stmt.setFetchSize((int) Math.min(200L, Math.max(1L, maxRows)));
+        } catch (SQLException ignored) {
+          // fetch-size is een optimalisatie; zonder werkt de query ook
+        }
+      } else {
+        stmt.setFetchSize(200);
       }
-      stmt.setFetchSize(200);
       boolean hasResultSet = stmt.execute(sql);
       if (hasResultSet) {
         try (ResultSet rs = stmt.getResultSet()) {

@@ -71,6 +71,8 @@ export function createDb2Harness(cfg: Db2TestConfig, name = 'db2'): ProviderCont
     }),
     createSecret: () => ({ password: cfg.password }),
     fixtureSql: `
+      DROP TABLE IF EXISTS "contract_meta";
+      DROP TABLE IF EXISTS "contract_dml";
       CREATE TABLE "contract_dml" (
         id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,
         name VARCHAR(100) NOT NULL
@@ -80,17 +82,18 @@ export function createDb2Harness(cfg: Db2TestConfig, name = 'db2'): ProviderCont
         id INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,
         name VARCHAR(100) NOT NULL,
         email VARCHAR(255),
+        amount DECIMAL(10,2),
         active INTEGER DEFAULT 1
       );
       CREATE INDEX ix_contract_meta_name ON "contract_meta" (name);
-      CREATE VIEW "vw_contract_active" AS SELECT id, name FROM "contract_meta" WHERE active = 1;
-      INSERT INTO "contract_meta" (name, email, active) VALUES ('Alice', 'alice@x.nl', 1);
-      INSERT INTO "contract_meta" (name, email, active) VALUES ('Bob', 'bob@x.nl', 0);
+      CREATE OR REPLACE VIEW "vw_contract_active" AS SELECT id, name FROM "contract_meta" WHERE active = 1;
+      INSERT INTO "contract_meta" (name, email, amount, active) VALUES ('Alice', 'alice@x.nl', 10.50, 1);
+      INSERT INTO "contract_meta" (name, email, amount, active) VALUES ('Bob', 'bob@x.nl', 20.25, 0);
     `,
     quoteIdentifier: (name) => `"${name.replace(/"/g, '""')}"`,
     dmlTable: 'contract_dml',
     metadataTable: 'contract_meta',
-    metadataTableColumns: ['ID', 'NAME', 'EMAIL', 'ACTIVE'],
+    metadataTableColumns: ['ID', 'NAME', 'EMAIL', 'AMOUNT', 'ACTIVE'],
     makeLimitQuery: (table, n) => `SELECT * FROM "${table}" FETCH FIRST ${n} ROWS ONLY`,
     // DB2-default-schema = verbindingsgebruiker (naar boven gevouwen).
     // cfg is null wanneer de suite overgeslagen wordt (dan wordt dit niet gebruikt).

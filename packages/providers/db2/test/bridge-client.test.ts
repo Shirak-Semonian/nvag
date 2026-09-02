@@ -1,6 +1,20 @@
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BridgeClient } from '../src/bridge-client'
+
+// Isolatie (SAL-37): de jcc-zoekpaden mogen niet afhangen van een toevallig
+// aanwezige jcc.jar op de machine (~/.nvag/db2jcc/jcc.jar). homedir() wijst
+// naar een niet-bestaande map zodat de "geen jcc.jar"-test deterministisch is
+// (de NVAG_DB2_BRIDGE_CMD-tests raken dit niet: die overslaan jcc-discovery).
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return {
+    ...actual,
+    homedir: () => join(tmpdir(), 'nvag-db2jcc-home-doet-niet-bestaan')
+  }
+})
 
 const fakeBridgePath = fileURLToPath(new URL('./fake-bridge.mjs', import.meta.url))
 const fakeCmd = `node ${fakeBridgePath}`

@@ -48,7 +48,7 @@ export function listTablesSql(schema?: string): string {
 export function listViewsSql(schema?: string): string {
   const filter = schema ? ` AND UPPER(TABSCHEMA) = UPPER(${quoteLiteral('db2', schema)})` : ''
   return (
-    `SELECT TABSCHEMA AS "SCHEMA", TABNAME AS "NAME" FROM SYSCAT.VIEWS WHERE 1 = 1${filter} ` +
+    `SELECT TABSCHEMA AS "SCHEMA", TABNAME AS "NAME" FROM SYSCAT.TABLES WHERE TYPE = 'V'${filter} ` +
     'ORDER BY TABSCHEMA, TABNAME'
   )
 }
@@ -89,9 +89,11 @@ const bySchemaTable = (schema: string, table: string): string =>
   `UPPER(TABSCHEMA) = UPPER(${quoteLiteral('db2', schema)}) AND UPPER(TABNAME) = UPPER(${quoteLiteral('db2', table)})`
 
 export function columnsSql(schema: string, table: string): string {
+  // Db2's SYSCAT.COLUMNS kent géén PRECISION-kolom (SQLCODE=-206); precisie
+  // wordt in mapColumns afgeleid uit LENGTH/SCALE voor DECIMAL/NUMERIC.
   return (
     `SELECT c.COLNAME AS "NAME", c.TYPENAME AS "DATA_TYPE", c.LENGTH AS "LENGTH", ` +
-    `c.PRECISION AS "PRECISION", c.SCALE AS "SCALE", ` +
+    `c.SCALE AS "SCALE", ` +
     `CASE WHEN c.NULLS = 'Y' THEN 1 ELSE 0 END AS "NULLABLE", ` +
     `c.DEFAULT AS "DEFAULT_VALUE", ` +
     `CASE WHEN c.IDENTITY = 'Y' THEN 1 ELSE 0 END AS "IS_IDENTITY", ` +
@@ -104,20 +106,24 @@ export function columnsSql(schema: string, table: string): string {
 export function primaryKeySql(schema: string, table: string): string {
   return (
     `SELECT k.COLNAME AS "NAME" FROM SYSCAT.KEYCOLUSE k ` +
-    `JOIN SYSCAT.INDEXES i ON i.INDSCHEMA = k.INDSCHEMA AND i.INDNAME = k.INDNAME ` +
-    `WHERE ${bySchemaTable(schema, table)} AND i.UNIQUERULE = 'P' ORDER BY k.COLSEQ`
+    `JOIN SYSCAT.TABCONST c ON c.CONSTNAME = k.CONSTNAME AND c.TABSCHEMA = k.TABSCHEMA AND c.TABNAME = k.TABNAME ` +
+    `WHERE UPPER(k.TABSCHEMA) = UPPER(${quoteLiteral('db2', schema)}) AND UPPER(k.TABNAME) = UPPER(${quoteLiteral('db2', table)}) ` +
+    `AND c.TYPE = 'P' ORDER BY k.COLSEQ`
   )
 }
 
 export function foreignKeysSql(schema: string, table: string): string {
   return (
-    `SELECT fk.CONSTNAME AS "NAME", fk.COLNAME AS "COL", fk.REFTABSCHEMA AS "REF_SCHEMA", ` +
-    `fk.REFTABNAME AS "REF_TABLE", fk.REFCOLNAME AS "REF_COL", fk.COLSEQ AS "ORD", ` +
-    `c.DELETERULE AS "ON_DELETE", c.UPDATERULE AS "ON_UPDATE" ` +
+    `SELECT fk.CONSTNAME AS "NAME", fk.REFTABSCHEMA AS "REF_SCHEMA", fk.REFTABNAME AS "REF_TABLE", ` +
+    `kc.COLNAME AS "COL", rkc.COLNAME AS "REF_COL", kc.COLSEQ AS "ORD", ` +
+    `fk.DELETERULE AS "ON_DELETE", fk.UPDATERULE AS "ON_UPDATE" ` +
     `FROM SYSCAT.REFERENCES fk ` +
-    `JOIN SYSCAT.TABCONST c ON c.CONSTNAME = fk.CONSTNAME AND c.TABSCHEMA = fk.TABSCHEMA AND c.TABNAME = fk.TABNAME ` +
-    `WHERE ${bySchemaTable(schema, table)} AND c.TYPE = 'F' ` +
-    `ORDER BY fk.CONSTNAME, fk.COLSEQ`
+    // Lokale FK-kolommen én de gerefereerde kolommen komen uit KEYCOLUSE:
+    // REFERENCES heeft geen per-kolom-rijen (alleen REFKEYNAME + lijsten).
+    `JOIN SYSCAT.KEYCOLUSE kc ON kc.CONSTNAME = fk.CONSTNAME AND kc.TABSCHEMA = fk.TABSCHEMA AND kc.TABNAME = fk.TABNAME ` +
+    `JOIN SYSCAT.KEYCOLUSE rkc ON rkc.CONSTNAME = fk.REFKEYNAME AND rkc.TABSCHEMA = fk.REFTABSCHEMA AND rkc.TABNAME = fk.REFTABNAME AND rkc.COLSEQ = kc.COLSEQ ` +
+    `WHERE UPPER(fk.TABSCHEMA) = UPPER(${quoteLiteral('db2', schema)}) AND UPPER(fk.TABNAME) = UPPER(${quoteLiteral('db2', table)}) ` +
+    `ORDER BY fk.CONSTNAME, kc.COLSEQ`
   )
 }
 
@@ -274,23 +280,37 @@ export function mapSequences(q: QueryRows): Array<{ name: string; schema: string
   return rowsToObjects(q).map((r) => ({ name: str(r.NAME) ?? '', schema: str(r['SCHEMA']) ?? '' }))
 }
 
+/** Types die in Db2 een lengte-parameter dragen (CHAR(n), VARCHAR(n), ...). */
+const LENGTH_TYPES =
+  /^(CHARACTER|CHAR|VARCHAR|GRAPHIC|VARGRAPHIC|BINARY|VARBINARY|CLOB|DBCLOB|BLOB)( |$)/i
+/** Types waarvan SYSCAT.COLUMNS.LENGTH de precisie is en SCALE de schaal. */
+const PRECISION_TYPES = /^(DECIMAL|NUMERIC)( |$)/i
+
 export function mapColumns(q: QueryRows): ColumnInfo[] {
-  return rowsToObjects(q).map((r) => ({
-    name: str(r.NAME) ?? '',
-    dataType: str(r.DATA_TYPE) ?? '',
-    length: num(r.LENGTH),
-    precision: num(r.PRECISION),
-    scale: num(r.SCALE),
-    nullable: bool(r.NULLABLE),
-    defaultValue:
-      r.DEFAULT_VALUE === null || r.DEFAULT_VALUE === undefined
-        ? null
-        : (str(r.DEFAULT_VALUE) ?? null),
-    isIdentity: bool(r.IS_IDENTITY),
-    isComputed: bool(r.IS_COMPUTED),
-    isPrimaryKey: false, // apart via primaryKeySql
-    ordinalPosition: num(r.ORDINAL) ?? 0
-  }))
+  return rowsToObjects(q).map((r) => {
+    const dataType = str(r.DATA_TYPE) ?? ''
+    const isPrecisionType = PRECISION_TYPES.test(dataType)
+    // LENGTH is type-afhankelijk: voor DECIMAL/NUMERIC de precisie, voor
+    // string/binary-typen de lengte, voor numerieke typen (INTEGER e.d.)
+    // opslaggrootte → géén length/precision in de interface.
+    const length = LENGTH_TYPES.test(dataType) ? num(r.LENGTH) : undefined
+    return {
+      name: str(r.NAME) ?? '',
+      dataType,
+      length,
+      precision: isPrecisionType ? num(r.LENGTH) : undefined,
+      scale: isPrecisionType ? num(r.SCALE) : undefined,
+      nullable: bool(r.NULLABLE),
+      defaultValue:
+        r.DEFAULT_VALUE === null || r.DEFAULT_VALUE === undefined
+          ? null
+          : (str(r.DEFAULT_VALUE) ?? null),
+      isIdentity: bool(r.IS_IDENTITY),
+      isComputed: bool(r.IS_COMPUTED),
+      isPrimaryKey: false, // apart via primaryKeySql
+      ordinalPosition: num(r.ORDINAL) ?? 0
+    }
+  })
 }
 
 export function mapForeignKeys(q: QueryRows): ForeignKeyInfo[] {
