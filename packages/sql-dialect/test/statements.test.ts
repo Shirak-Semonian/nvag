@@ -95,6 +95,105 @@ describe('splitStatements — MySQL/MariaDB BEGIN...END routine-bodies', () => {
   it('splitst transactie-BEGIN niet als routine-body (regressie)', () => {
     expect(splitStatements('BEGIN; SELECT 1; COMMIT;')).toEqual(['BEGIN', 'SELECT 1', 'COMMIT'])
   })
+
+  it('knipt een CASE-expressie in INSERT ... VALUES niet (regressie SAL-40)', () => {
+    const sql = `CREATE PROCEDURE p(IN n INT)
+BEGIN
+  DECLARE i INT DEFAULT 1;
+  WHILE i <= n DO
+    INSERT INTO t (id, label)
+    VALUES (i, CASE WHEN i = 1 THEN 'een' WHEN i = 2 THEN 'twee' ELSE 'veel' END);
+    SET i = i + 1;
+  END WHILE;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('knipt een CASE-expressie in SET binnen de body niet', () => {
+    const sql = `CREATE PROCEDURE p()
+BEGIN
+  DECLARE x INT DEFAULT 0;
+  SET x = CASE WHEN 1 = 1 THEN 2 ELSE 3 END;
+  SELECT x;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('knipt een CASE-expressie in een IF-branch binnen de body niet', () => {
+    const sql = `CREATE PROCEDURE p(IN x INT)
+BEGIN
+  IF x > 0 THEN
+    SET @y = CASE WHEN x = 1 THEN 'een' ELSE 'veel' END;
+  END IF;
+  SELECT @y;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('herkent een MySQL CASE-statement (END CASE) binnen de body', () => {
+    const sql = `CREATE PROCEDURE p(IN x INT)
+BEGIN
+  CASE x
+    WHEN 1 THEN SET @a = 1;
+    WHEN 2 THEN SET @a = 2;
+    ELSE SET @a = 0;
+  END CASE;
+  SELECT @a;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('knipt meerdere CASE-expressies in één statement niet', () => {
+    const sql = `CREATE PROCEDURE p()
+BEGIN
+  INSERT INTO t (a, b)
+  VALUES (CASE WHEN 1 = 1 THEN 'x' ELSE 'y' END, CASE WHEN 2 = 2 THEN 'p' ELSE 'q' END);
+  SELECT 1;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('knipt geneste CASE-expressies niet', () => {
+    const sql = `CREATE PROCEDURE p(IN x INT)
+BEGIN
+  SET @a = CASE WHEN x = 1 THEN CASE WHEN x > 0 THEN 'pos' ELSE 'neg' END ELSE 'zero' END;
+  SELECT @a;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('knipt CASE-expressies in IF/ELSEIF-branches niet', () => {
+    const sql = `CREATE PROCEDURE p(IN x INT)
+BEGIN
+  IF x = 1 THEN
+    SET @r = CASE WHEN x > 0 THEN 'a' ELSE 'b' END;
+  ELSEIF x = 2 THEN
+    SET @r = CASE WHEN x > 1 THEN 'c' ELSE 'd' END;
+  ELSE
+    SET @r = 'e';
+  END IF;
+  SELECT @r;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('knipt een MySQL CASE-statement met BEGIN-blok in een branch niet', () => {
+    const sql = `CREATE PROCEDURE p(IN x INT)
+BEGIN
+  CASE x
+    WHEN 1 THEN BEGIN SET @a = 1; END;
+    WHEN 2 THEN SET @a = 2;
+  END CASE;
+  SELECT @a;
+END;`
+    expect(splitStatements(sql)).toEqual([sql.slice(0, -1)])
+  })
+
+  it('behandelt een CASE-expressie als volledige body zonder blok', () => {
+    const sql =
+      'CREATE FUNCTION f(x INT) RETURNS INT RETURN CASE WHEN x > 0 THEN 1 ELSE 0 END'
+    expect(splitStatements(`${sql}; SELECT 2`)).toEqual([sql, 'SELECT 2'])
+  })
 })
 
 describe('splitStatements — T-SQL BEGIN...END en GO-batches', () => {
@@ -134,6 +233,68 @@ describe('splitStatements — T-SQL BEGIN...END en GO-batches', () => {
       'COMMIT'
     ])
   })
+
+  it('knipt CASE-expressies binnen T-SQL body niet (DECLARE @x = CASE ... END)', () => {
+    const sql = `CREATE PROCEDURE dbo.p
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @x INT = CASE WHEN 1=1 THEN 2 ELSE 3 END;
+  SELECT @x;
+END;`
+    expect(splitStatements(sql, 'tsql')).toEqual([sql.slice(0, -1)])
+  })
+
+  it('splitst niet na CASE-expressie vóór een GO-batchscheiding', () => {
+    const create = `CREATE PROCEDURE dbo.p
+AS
+BEGIN
+  DECLARE @x INT = CASE WHEN 1=1 THEN 2 ELSE 3 END;
+  SELECT @x;
+END`
+    expect(splitStatements(`${create}\nGO\nSELECT 2`, 'tsql')).toEqual([create, 'SELECT 2'])
+  })
+
+  it('sluit END TRY/END CATCH-frames correct binnen een body (regressie)', () => {
+    const sql = `CREATE PROCEDURE dbo.p
+AS
+BEGIN
+  BEGIN TRY
+    SELECT 1;
+  END TRY
+  BEGIN CATCH
+    SELECT 2;
+  END CATCH
+END;`
+    expect(splitStatements(sql, 'tsql')).toEqual([sql.slice(0, -1)])
+  })
+
+  it('opent een nieuw blok na een blote END zonder ; (regressie)', () => {
+    const sql = `CREATE PROCEDURE dbo.p
+AS
+BEGIN
+  IF @x = 1
+  BEGIN
+    SELECT 1;
+  END
+  BEGIN
+    SELECT 2;
+  END
+  SELECT 3;
+END`
+    expect(splitStatements(sql, 'tsql')).toEqual([sql])
+  })
+
+  it('knipt meerdere CASE-expressies in één T-SQL statement niet', () => {
+    const sql = `CREATE PROCEDURE dbo.p
+AS
+BEGIN
+  DECLARE @a INT = CASE WHEN 1=1 THEN 2 ELSE 3 END;
+  DECLARE @b INT = CASE WHEN 2=2 THEN 4 ELSE 5 END;
+  SELECT @a + @b;
+END;`
+    expect(splitStatements(sql, 'tsql')).toEqual([sql.slice(0, -1)])
+  })
 })
 
 describe('splitStatements — backward-compatibele multi-statement-splitsing', () => {
@@ -144,6 +305,13 @@ describe('splitStatements — backward-compatibele multi-statement-splitsing', (
   it('een routine gevolgd door gewone statements splitst daarna wél', () => {
     const sql = 'CREATE PROCEDURE p() BEGIN SELECT 1; END; SELECT 2;'
     expect(splitStatements(sql)).toEqual(['CREATE PROCEDURE p() BEGIN SELECT 1; END', 'SELECT 2'])
+  })
+
+  it('splitst gewone CASE-expressies op top-niveau normaal', () => {
+    expect(splitStatements('SELECT CASE WHEN 1 = 1 THEN 1 ELSE 2 END; SELECT 2')).toEqual([
+      'SELECT CASE WHEN 1 = 1 THEN 1 ELSE 2 END',
+      'SELECT 2'
+    ])
   })
 })
 

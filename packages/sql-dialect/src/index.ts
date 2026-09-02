@@ -586,8 +586,10 @@ const ROUTINE_BODY_KEYWORDS = new Set(['PROCEDURE', 'FUNCTION', 'TRIGGER', 'EVEN
 /** T-SQL BEGIN-varianten die géén compound-blok openen (`BEGIN TRAN` e.d.). */
 const BEGIN_NO_BLOCK_TAIL = new Set(['TRAN', 'TRANSACTION', 'DISTRIBUTED', 'DIALOG', 'CONVERSATION'])
 
-/** MySQL END-varianten die géén BEGIN-blok sluiten (END IF/LOOP/WHILE/...). */
-const END_NO_BLOCK_TAIL = new Set(['IF', 'LOOP', 'WHILE', 'REPEAT', 'CASE'])
+/** MySQL END-varianten die géén frame sluiten (END IF/LOOP/WHILE/REPEAT
+ * sluiten statement-constructies zonder eigen frame; die worden alleen
+ * beschermd door het omringende blok). */
+const END_NO_FRAME_TAIL = new Set(['IF', 'LOOP', 'WHILE', 'REPEAT'])
 
 function isSqlIdentStart(ch: string | undefined): boolean {
   return ch !== undefined && /[A-Za-z_]/.test(ch)
@@ -656,15 +658,19 @@ export function splitStatements(sql: string, dialect?: SqlDialectId): string[] {
   // Routine-body-herkenning (MySQL/T-SQL stored programs en triggers):
   // zodra het huidige statement een routine-keyword bevat en daarna met
   // BEGIN...END opent, tellen ';' binnen het blok niet als statement-einde.
+  // Frames in plaats van een enkele diepte: een blote END kan óók een
+  // CASE-expressie sluiten (`SET @x = CASE WHEN ... END;`), die geen
+  // BEGIN-blok sluit. Door frames LIFO te stacken sluit een END altijd de
+  // binnenste constructie (CASE-expressie, CASE-statement of BEGIN-blok).
   let routineBody = false
-  let blockDepth = 0
+  const frames: Array<'begin' | 'case'> = []
 
   const flush = (): void => {
     const trimmed = current.trim()
     if (trimmed.length > 0) out.push(trimmed)
     current = ''
     routineBody = false
-    blockDepth = 0
+    frames.length = 0
   }
 
   while (i < sql.length) {
@@ -785,7 +791,7 @@ export function splitStatements(sql: string, dialect?: SqlDialectId): string[] {
       continue
     }
     if (ch === ';') {
-      if (blockDepth > 0) {
+      if (frames.length > 0) {
         // Binnen een routine-body: ';' is een statement-scheiding in de body,
         // géén einde van het CREATE-statement.
         current += ch
@@ -811,7 +817,7 @@ export function splitStatements(sql: string, dialect?: SqlDialectId): string[] {
         dialect === 'tsql' &&
         upper === 'GO' &&
         boundaryAfter &&
-        blockDepth === 0
+        frames.length === 0
       ) {
         const sinceLine = sql.lastIndexOf('\n', i - 1) + 1
         if (/^\s*$/.test(sql.slice(sinceLine, i))) {
@@ -826,16 +832,45 @@ export function splitStatements(sql: string, dialect?: SqlDialectId): string[] {
 
       if (ROUTINE_BODY_KEYWORDS.has(upper) && !routineBody) {
         routineBody = true
+      } else if (upper === 'CASE' && routineBody) {
+        // CASE-expressie (`CASE WHEN ... END`) of MySQL CASE-statement
+        // (`CASE ... END CASE`): eigen frame. Een CASE-expressie komt veel
+        // voor in routine-bodies (`SET @x = CASE ... END;`) en mag een
+        // eventueel open BEGIN-blok niet voortijdig sluiten.
+        frames.push('case')
       } else if (upper === 'BEGIN' && routineBody) {
         // `BEGIN TRAN` e.d. opent geen compound-blok; een routine-body begint
         // met een losse BEGIN.
         const tail = nextSqlWordUpper(sql, i + word.length)
-        if (tail === null || !BEGIN_NO_BLOCK_TAIL.has(tail)) blockDepth++
-      } else if (upper === 'END' && blockDepth > 0) {
-        // MySQL: END IF/LOOP/WHILE/REPEAT/CASE sluit géén BEGIN-blok; een
-        // losse END (of END + label) wél.
-        const tail = nextSqlWordUpper(sql, i + word.length)
-        if (tail === null || !END_NO_BLOCK_TAIL.has(tail)) blockDepth--
+        if (tail === null || !BEGIN_NO_BLOCK_TAIL.has(tail)) frames.push('begin')
+      } else if (upper === 'END' && routineBody && frames.length > 0) {
+        // END-varianten: END IF/LOOP/WHILE/REPEAT sluiten statement-
+        // constructies zonder eigen frame (beschermd door het omringende
+        // blok). Al het andere sluit de binnenste frame:
+        // - blote END → CASE-expressie (`SET @x = CASE ... END;`) of
+        //   BEGIN-blok; een CASE-expressie mag een BEGIN-blok niet
+        //   voortijdig sluiten, dus de stack bepaalt welke.
+        // - END CASE → MySQL CASE-statement (alleen met open case-frame)
+        // - END TRY/CATCH of END + label → blok-frame (T-SQL)
+        let tailStart = i + word.length
+        while (tailStart < sql.length && /\s/.test(sql[tailStart]!)) tailStart++
+        const rawTail =
+          tailStart < sql.length && isSqlIdentStart(sql[tailStart])
+            ? readSqlWord(sql, tailStart)
+            : null
+        const tail = rawTail ? rawTail.toUpperCase() : null
+        const noFrame = tail !== null && END_NO_FRAME_TAIL.has(tail)
+        const caseStmtWithoutCaseFrame =
+          tail === 'CASE' && frames[frames.length - 1] !== 'case'
+        if (!noFrame && !caseStmtWithoutCaseFrame) frames.pop()
+        if (tail === 'CASE') {
+          // De CASE van `END CASE` is de tail van het END-woord: volledig
+          // in current houden én overslaan, zodat hij niet opnieuw als
+          // CASE-opener wordt geteld.
+          current += sql.slice(i, tailStart + rawTail!.length)
+          i = tailStart + rawTail!.length
+          continue
+        }
       }
 
       current += word
