@@ -195,6 +195,53 @@ describe('app store', () => {
     expect(tab2?.result?.rowCount).toBe(1)
   })
 
+  it('geeft bij streaming een nieuwe resultset-referentie per update (SAL-48 grid-rowData)', async () => {
+    // ResultSetGrid cached rowData via useMemo op `resultSet.rows`. Wanneer de
+    // store de resultset in-place muteert (zelfde objectreferentie bij elke
+    // chunk) blijft de grid op het eerste columns-only frame staan (0 rijen).
+    // Elke chunk moet dus een nieuw resultset-object opleveren.
+    let emitLater: ((chunk: QueryChunk) => void) | null = null
+    const lateEmit = (chunk: QueryChunk): void => {
+      emitLater?.(chunk)
+    }
+    const withRace = createMockNvag({
+      connections: [sampleConnection()],
+      hangingQuerySql: ['SELECT 1;'],
+      startHandler: (_executionId, emit) => {
+        emitLater = emit
+        emit({ kind: 'columns', columns: [{ name: 'id' }, { name: 'naam' }] })
+      }
+    })
+    window.nvag = withRace
+    useAppStore.setState({
+      connections: [sampleConnection()],
+      openSessions: {
+        'conn-1': {
+          config: sampleConnection(),
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1' }
+        }
+      },
+      tabs: [seedTab()],
+      activeTabId: 'tab-test'
+    })
+
+    await useAppStore.getState().runQuery('tab-test')
+    const midSet = useAppStore.getState().tabs.find((t) => t.id === 'tab-test')?.result?.results?.[0]
+    expect(midSet?.rows).toHaveLength(0)
+
+    // rows-chunk + done-chunk (streaming vervolg)
+    lateEmit({ kind: 'rows', rows: [{ values: [1, 'Jan'] }, { values: [2, 'Piet'] }] })
+    lateEmit({ kind: 'done', rowCount: 2, durationMs: 1 })
+
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-test')
+    const endSet = tab?.result?.results?.[0]
+    expect(endSet?.rows).toHaveLength(2)
+    expect(endSet).not.toBe(midSet)
+    // Grid-consumers zien een nieuwe rows-array (useMemo herberekent).
+    expect(endSet?.rows).not.toBe(midSet?.rows)
+  })
+
   it('slaat een queryfout op in het resultaat', async () => {
     const errResult = {
       executionId: 'e2',

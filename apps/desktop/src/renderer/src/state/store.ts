@@ -767,10 +767,17 @@ export const useAppStore = create<AppState>((set, get) => {
       if (chunk.kind === 'columns') {
         acc.results.push({ columns: chunk.columns, rows: [], truncated: false, rowCount: 0 })
       } else if (chunk.kind === 'rows') {
-        const rs = acc.results[acc.results.length - 1]
+        // SAL-48 (grid-fix): de resultset NIET in-place muteren. ResultSetGrid
+        // cached rowData via useMemo op `resultSet.rows`; bij een in-place
+        // push blijft de rij-referentie gelijk en toont de grid eeuwig de
+        // eerste (columns-only) frame met 0 rijen. Elke rows-chunk vervangt
+        // de resultset door een nieuw object met een nieuwe rows-array, zodat
+        // consumers de update zien.
+        const idx = acc.results.length - 1
+        const rs = acc.results[idx]
         if (rs) {
-          rs.rows.push(...chunk.rows)
-          rs.rowCount += chunk.rows.length
+          const rows = [...rs.rows, ...chunk.rows]
+          acc.results[idx] = { ...rs, rows, rowCount: rows.length }
         }
       } else if (chunk.kind === 'warning') {
         acc.messages.push({ severity: 'warning', text: chunk.message, position: chunk.position })
@@ -787,8 +794,10 @@ export const useAppStore = create<AppState>((set, get) => {
         acc.doneRowCount = chunk.rowCount
         acc.cancelled = chunk.cancelled ?? false
         if (chunk.truncated) {
-          const rs = acc.results[acc.results.length - 1]
-          if (rs) rs.truncated = true
+          // Ook hier niet in-place muteren (zelfde referentie-argument als rows).
+          const idx = acc.results.length - 1
+          const rs = acc.results[idx]
+          if (rs) acc.results[idx] = { ...rs, truncated: true }
           if (!acc.messages.some((m) => m.severity === 'warning' && /afgekapt/i.test(m.text))) {
             acc.messages.push({ severity: 'warning', text: 'Resultaat afgekapt op de max-rij-cap.' })
           }
