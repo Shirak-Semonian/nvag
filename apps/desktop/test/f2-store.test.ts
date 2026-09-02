@@ -44,6 +44,11 @@ function resetStore(): void {
   })
 }
 
+/** Laat beloofde store-updates (async IPC-mock) volledig doorlopen. */
+function flushStore(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 describe('F2-1 table data (renderer)', () => {
   beforeEach(() => {
     ;(window as unknown as { nvag: unknown }).nvag = createMockNvag({
@@ -74,6 +79,74 @@ describe('F2-1 table data (renderer)', () => {
     expect(editSpy).toBeDefined()
     const tab = useAppStore.getState().tabs[0]
     expect(tab.tableData?.lastEditMessage).toContain('1 rij(en)')
+  })
+
+  it('toont een laadfout in de error-state en wist die na een geslaagde herlaadbeurt (SAL-42)', async () => {
+    const api = createMockNvag({ connections: [sqliteConn] })
+    api.tableData.getRows = async () => {
+      throw new Error('netwerkfout')
+    }
+    ;(window as unknown as { nvag: unknown }).nvag = api
+    resetStore()
+    useAppStore.getState().openTableDataTab('conn-1', '/tmp/test.db', 'main', 'users')
+    const tabId = useAppStore.getState().tabs[0].id
+    await flushStore()
+    const failed = useAppStore.getState().tabs[0].tableData
+    expect(failed?.loading).toBe(false)
+    expect(failed?.data).toBeNull()
+    expect(failed?.error).toContain('netwerkfout')
+
+    // Herstel + "Opnieuw laden": de vorige fout is weg en de rijen staan erin.
+    api.tableData.getRows = async () => ({
+      columns: [{ name: 'id' }],
+      rows: [{ values: [1] }],
+      truncated: false,
+      rowCount: 1,
+      primaryKey: ['id'],
+      editableColumns: ['id']
+    })
+    await useAppStore.getState().loadTableRows(tabId)
+    const ok = useAppStore.getState().tabs[0].tableData
+    expect(ok?.error).toBeNull()
+    expect(ok?.loading).toBe(false)
+    expect(ok?.data?.rowCount).toBe(1)
+  })
+
+  it('laadt automatisch zodra de sessie opengaat (geen stille "Laden…", SAL-42)', async () => {
+    const api = createMockNvag({ connections: [sqliteConn] })
+    ;(window as unknown as { nvag: unknown }).nvag = api
+    resetStore()
+    // Geen sessie open: de tab opent zonder te laden.
+    useAppStore.setState({ openSessions: {} })
+    useAppStore.getState().openTableDataTab('conn-1', '/tmp/test.db', 'main', 'users')
+    const tabId = useAppStore.getState().tabs[0].id
+    const waiting = useAppStore.getState().tabs[0].tableData
+    expect(waiting?.data).toBeNull()
+    expect(waiting?.loading).toBe(false)
+    expect(waiting?.error).toBeNull()
+
+    // Sessie opent → de tab laadt vanzelf (geen handmatige actie nodig).
+    await useAppStore.getState().openSession(sqliteConn)
+    await flushStore()
+    const loaded = useAppStore.getState().tabs.find((t) => t.id === tabId)?.tableData
+    expect(loaded?.data).not.toBeNull()
+    expect(loaded?.error).toBeNull()
+    expect(loaded?.loading).toBe(false)
+  })
+
+  it('geeft een duidelijke melding bij laden zonder sessie (SAL-42)', async () => {
+    const api = createMockNvag({ connections: [sqliteConn] })
+    ;(window as unknown as { nvag: unknown }).nvag = api
+    resetStore()
+    useAppStore.setState({ openSessions: {} })
+    useAppStore.getState().openTableDataTab('conn-1', '/tmp/test.db', 'main', 'users')
+    const tabId = useAppStore.getState().tabs[0].id
+    // "Opnieuw laden" / vernieuwen zonder sessie: geen stille spinner.
+    await useAppStore.getState().loadTableRows(tabId)
+    const td = useAppStore.getState().tabs.find((t) => t.id === tabId)?.tableData
+    expect(td?.loading).toBe(false)
+    expect(td?.data).toBeNull()
+    expect(td?.error).toContain('Geen actieve sessie')
   })
 })
 

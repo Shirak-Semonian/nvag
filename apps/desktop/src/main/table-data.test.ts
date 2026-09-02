@@ -7,8 +7,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSqliteProvider } from '@nvag/provider-sqlite'
-import type { ConnectionConfig, DatabaseProvider, DbSession } from '@nvag/contracts'
-import { getTableRows, editTableRow } from './table-data'
+import type {
+  ConnectionConfig,
+  ConnectionSecret,
+  DatabaseProvider,
+  DbSession,
+  QueryOptions
+} from '@nvag/contracts'
+import { getTableRows, editTableRow, tableQueryTimeoutMessage } from './table-data'
 import { sessionManager } from './session-manager'
 import { registry } from './registry'
 
@@ -47,7 +53,8 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await provider.close(session)
+  // Sluit alle sessies (ook de in SAL-42-tests geopende fake-provider-sessies).
+  await sessionManager.closeAll()
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -133,5 +140,88 @@ describe('F2-1 tableData service', () => {
     })
     expect(result.blocked).toBeUndefined()
     expect(result.rowCount).toBe(1)
+  })
+
+  it('geeft na een timeout een duidelijke fout i.p.v. eeuwig te hangen (SAL-42)', async () => {
+    // Hangende provider: de generator geeft pas een chunk na het abort-signaal
+    // (SAL-33-gedrag). getRows moet na de timeout afbreken + provider.cancel
+    // aanroepen en een duidelijke fout gooien.
+    const base = createSqliteProvider()
+    const cancelExecutionIds: string[] = []
+    const hangingProvider: DatabaseProvider = {
+      ...base,
+      id: 'hanging-sqlite',
+      displayName: 'Hanging SQLite',
+      defaultPort: base.defaultPort,
+      capabilities: base.capabilities,
+      connect: async (cfg: ConnectionConfig, secret?: ConnectionSecret) => {
+        const s = await base.connect(cfg, secret)
+        // De session.providerId bepaalt welke provider getTableRows gebruikt;
+        // terugzetten zodat de fake-provider (executeQuery/cancel) wordt gekozen.
+        return { ...s, providerId: 'hanging-sqlite' }
+      },
+      getServerInfo: (s: DbSession) => base.getServerInfo(s),
+      close: (s: DbSession) => base.close(s),
+      getTableMetadata: (s: DbSession, db: string, sch: string, tbl: string) =>
+        base.getTableMetadata(s, db, sch, tbl),
+      // De generator heeft bewust geen yield: hij "hangt" tot het
+      // abort-signaal (SAL-42 timeout-test) en eindigt dan zonder chunks.
+      // eslint-disable-next-line require-yield
+      executeQuery: async function* (_s: DbSession, _sql: string, opts: QueryOptions) {
+        await new Promise<void>((resolve) => {
+          if (opts.signal?.aborted) resolve()
+          else opts.signal?.addEventListener('abort', () => resolve(), { once: true })
+        })
+        return
+      },
+      cancel: async (_s: DbSession, executionId: string) => {
+        cancelExecutionIds.push(executionId)
+      }
+    }
+    registry.register(hangingProvider)
+    const hangingConfig: ConnectionConfig = {
+      ...config,
+      id: 'conn-hang',
+      providerId: 'hanging-sqlite'
+    }
+    await sessionManager.open(hangingConfig)
+
+    await expect(
+      getTableRows('conn-hang', config.host, 'main', 'users', 10, 60)
+    ).rejects.toThrow(/langer dan 1 seconde/)
+    // SAL-33-infra: provider.cancel is aangeroepen voor de afgebroken query.
+    expect(cancelExecutionIds).toHaveLength(1)
+    expect(tableQueryTimeoutMessage(60_000)).toContain('60 seconden')
+  })
+
+  it('laat metadata-fouten gewoon door (geen timeout-vermomming, SAL-42)', async () => {
+    const base = createSqliteProvider()
+    const failingMetaProvider: DatabaseProvider = {
+      ...base,
+      id: 'failing-meta-sqlite',
+      displayName: 'Failing Meta SQLite',
+      defaultPort: base.defaultPort,
+      capabilities: base.capabilities,
+      connect: async (cfg: ConnectionConfig, secret?: ConnectionSecret) => {
+        const s = await base.connect(cfg, secret)
+        return { ...s, providerId: 'failing-meta-sqlite' }
+      },
+      getServerInfo: (s: DbSession) => base.getServerInfo(s),
+      close: (s: DbSession) => base.close(s),
+      getTableMetadata: async () => {
+        throw new Error('metadata kapot')
+      }
+    }
+    registry.register(failingMetaProvider)
+    const metaConfig: ConnectionConfig = {
+      ...config,
+      id: 'conn-meta-fail',
+      providerId: 'failing-meta-sqlite'
+    }
+    await sessionManager.open(metaConfig)
+
+    await expect(
+      getTableRows('conn-meta-fail', config.host, 'main', 'users', 10, 5000)
+    ).rejects.toThrow('metadata kapot')
   })
 })

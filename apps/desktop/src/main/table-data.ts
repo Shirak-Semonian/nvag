@@ -9,6 +9,8 @@
  */
 
 import type {
+  DatabaseProvider,
+  DbSession,
   QueryCellValue,
   TableDataResult,
   TableEditRequest,
@@ -20,15 +22,29 @@ import {
   buildUpdateByPk,
   buildSelectStar
 } from '@nvag/sql-dialect'
+import { randomUUID } from 'node:crypto'
 import { registry } from './registry'
 import { sessionManager } from './session-manager'
 
-function requireSession(connectionId: string) {
+function requireSession(connectionId: string): { session: DbSession; provider: DatabaseProvider } {
   const session = sessionManager.getByConnectionId(connectionId)
   if (!session) {
     throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
   }
   return { session, provider: registry.get(session.providerId) }
+}
+
+/**
+ * SAL-42: standaard timeout voor tabeldata-query's. Een niet-reagerende
+ * database (netwerk-issue, geblokkeerde query op de server) mag het paneel
+ * niet eeuwig op "Laden…" laten staan.
+ */
+export const DEFAULT_TABLE_QUERY_TIMEOUT_MS = 30_000
+
+/** Fouttekst bij een tabeldata-timeout (SAL-42; ook in tests gebruikt). */
+export function tableQueryTimeoutMessage(timeoutMs: number): string {
+  const seconds = Math.max(1, Math.round(timeoutMs / 1000))
+  return `Tabeldata-query duurde langer dan ${seconds} seconde${seconds === 1 ? '' : 'n'} en is gestopt. Controleer de verbinding en probeer opnieuw.`
 }
 
 /** SELECT Top N voor een tabel (F2-1). */
@@ -37,41 +53,82 @@ export async function getTableRows(
   database: string,
   schema: string,
   table: string,
-  maxRows = 100
+  maxRows = 100,
+  timeoutMs = DEFAULT_TABLE_QUERY_TIMEOUT_MS
 ): Promise<TableDataResult> {
   const { session, provider } = requireSession(connectionId)
   const dialect = provider.capabilities.dialect
   const sql = buildSelectStar(dialect, table, schema || undefined, maxRows)
 
-  // Metadata voor PK + bewerkbare kolommen.
-  const meta = await provider.getTableMetadata(session, database, schema || 'main', table)
-  const editableColumns = meta.columns
-    .filter((c) => !c.isIdentity && !c.isComputed)
-    .map((c) => c.name)
+  // SAL-42: hang-preventie via de bestaande cancel-infrastructuur (SAL-33):
+  // executionId + AbortSignal + provider.cancel. Bij een timeout wordt eerst
+  // de server-side query geannuleerd (waar de provider dat ondersteunt) en
+  // daarna de stream afgebroken.
+  const executionId = randomUUID()
+  const controller = new AbortController()
+  let timedOut = false
+  let timer: ReturnType<typeof setTimeout> | undefined
 
-  const columns: { name: string; dataType?: string }[] = []
-  const rows: { values: QueryCellValue[] }[] = []
-  let rowCount = 0
-  let truncated = false
-  for await (const chunk of provider.executeQuery(session, sql, { maxRows })) {
-    if (chunk.kind === 'columns') columns.push(...chunk.columns)
-    else if (chunk.kind === 'rows') {
-      rows.push(...chunk.rows)
-      rowCount += chunk.rows.length
-    } else if (chunk.kind === 'done') {
-      if (chunk.truncated) truncated = true
-    } else if (chunk.kind === 'error') {
-      throw new Error(chunk.message)
+  const abortForTimeout = (): void => {
+    timedOut = true
+    try {
+      void provider.cancel(session, executionId).catch(() => {
+        // Cancel kan falen (niet ondersteund / request al klaar); de abort
+        // hieronder maakt de stream alsnog vrij.
+      })
+    } catch {
+      // Cancel niet beschikbaar; abort volstaat voor de lokale stream.
     }
+    controller.abort()
+  }
+  if (timeoutMs > 0) {
+    timer = setTimeout(abortForTimeout, timeoutMs)
   }
 
-  return {
-    columns,
-    rows,
-    truncated,
-    rowCount,
-    primaryKey: meta.primaryKey,
-    editableColumns
+  try {
+    // Metadata voor PK + bewerkbare kolommen.
+    const meta = await provider.getTableMetadata(session, database, schema || 'main', table)
+    if (timedOut) {
+      throw new Error(tableQueryTimeoutMessage(timeoutMs))
+    }
+    const editableColumns = meta.columns
+      .filter((c) => !c.isIdentity && !c.isComputed)
+      .map((c) => c.name)
+
+    const columns: { name: string; dataType?: string }[] = []
+    const rows: { values: QueryCellValue[] }[] = []
+    let rowCount = 0
+    let truncated = false
+    for await (const chunk of provider.executeQuery(session, sql, { maxRows, executionId, signal: controller.signal })) {
+      // Na een timeout geen chunks meer verwerken; de query is geannuleerd.
+      if (timedOut) {
+        throw new Error(tableQueryTimeoutMessage(timeoutMs))
+      }
+      if (chunk.kind === 'columns') columns.push(...chunk.columns)
+      else if (chunk.kind === 'rows') {
+        rows.push(...chunk.rows)
+        rowCount += chunk.rows.length
+      } else if (chunk.kind === 'done') {
+        if (chunk.truncated) truncated = true
+      } else if (chunk.kind === 'error') {
+        throw new Error(chunk.message)
+      }
+    }
+    if (timedOut) {
+      throw new Error(tableQueryTimeoutMessage(timeoutMs))
+    }
+
+    return {
+      columns,
+      rows,
+      truncated,
+      rowCount,
+      primaryKey: meta.primaryKey,
+      editableColumns
+    }
+  } finally {
+    if (timer) clearTimeout(timer)
+    controller.abort()
   }
 }
 

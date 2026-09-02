@@ -60,6 +60,10 @@ export interface QueryTabState {
     schema: string
     table: string
     data: TableDataResult | null
+    /** SAL-42: true terwijl getRows loopt (geen dubbele/eeuwige "Laden…"). */
+    loading: boolean
+    /** SAL-42: fout van de laatste laadpoging; null zolang die niet faalde. */
+    error: string | null
     /** Nieuwe-rij-modus (insert-ready). */
     inserting: boolean
     /** Wachtende bewerking die op bevestiging wacht (guard). */
@@ -274,6 +278,22 @@ function nextTabId(): string {
 
 const MAX_RECENT = 20
 
+/**
+ * SAL-42: table-data tabs die nog nooit geladen zijn en wachten op een sessie
+ * (data null, niet bezig, geen eerdere fout). Zodra de sessie van hun
+ * verbinding opengaat worden deze tabs automatisch geladen.
+ */
+function pendingTableDataTabIds(tabs: QueryTabState[], connectionId: string): string[] {
+  const ids: string[] = []
+  for (const tab of tabs) {
+    const td = tab.tableData
+    if (tab.kind !== 'table-data' || tab.connectionId !== connectionId || !td) continue
+    if (td.data !== null || td.loading || td.error) continue
+    ids.push(tab.id)
+  }
+  return ids
+}
+
 /** providerId → dialect (F1: sqlserver/postgresql/mysql; uitbreiden per provider). */
 const PROVIDER_DIALECT: Record<string, SqlDialectId> = {
   sqlite: 'sqlite',
@@ -414,6 +434,11 @@ export const useAppStore = create<AppState>((set, get) => {
     set((s) => ({
       openSessions: { ...s.openSessions, [config.id]: { config, sessionId, serverInfo } }
     }))
+    // SAL-42: table-data tabs die op deze sessie wachtten laden nu alsnog
+    // (geen stille "Laden…" meer nadat de verbinding opengaat).
+    for (const id of pendingTableDataTabIds(get().tabs, config.id)) {
+      void get().loadTableRows(id)
+    }
     return serverInfo
   },
 
@@ -548,6 +573,11 @@ export const useAppStore = create<AppState>((set, get) => {
                 [connectionId]: { config, sessionId: sessionInfo!.sessionId, serverInfo: sessionInfo!.serverInfo }
               }
             }))
+            // SAL-42: ook via openSaved geopende sessies laten wachtende
+            // table-data tabs alsnog laden.
+            for (const id of pendingTableDataTabIds(get().tabs, connectionId)) {
+              void get().loadTableRows(id)
+            }
           }
         } catch (err) {
           const text = err instanceof Error ? err.message : String(err)
@@ -955,7 +985,6 @@ export const useAppStore = create<AppState>((set, get) => {
   // ------------------------------------------------------------------ F2-1
   openTableDataTab(connectionId, database, schema, table) {
     const id = nextTabId()
-    const conn = get().connections.find((c) => c.id === connectionId)
     const tab: QueryTabState = {
       id,
       title: `${table} — gegevens`,
@@ -972,6 +1001,8 @@ export const useAppStore = create<AppState>((set, get) => {
         schema,
         table,
         data: null,
+        loading: false,
+        error: null,
         inserting: false,
         pendingEdit: null,
         lastEditMessage: null,
@@ -979,7 +1010,9 @@ export const useAppStore = create<AppState>((set, get) => {
       }
     }
     set((s) => ({ tabs: [...s.tabs, tab], activeTabId: id }))
-    if (conn && get().openSessions[connectionId]) {
+    // SAL-42: meteen laden wanneer de sessie al open is; zonder sessie toont
+    // het paneel een duidelijke melding en laadt zodra de sessie opengaat.
+    if (get().openSessions[connectionId]) {
       void get().loadTableRows(id)
     }
   },
@@ -987,6 +1020,24 @@ export const useAppStore = create<AppState>((set, get) => {
   async loadTableRows(tabId) {
     const tab = get().tabs.find((t) => t.id === tabId)
     if (!tab?.connectionId || !tab.tableData) return
+    // SAL-42: geen dubbele gelijktijdige loads (dubbelklik / auto-load-effect).
+    if (tab.tableData.loading) return
+    const patchTableData = (patch: Partial<QueryTabState['tableData']>): void => {
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === tabId && t.tableData
+            ? { ...t, tableData: { ...t.tableData, ...patch } }
+            : t
+        )
+      }))
+    }
+    if (!get().openSessions[tab.connectionId]) {
+      // SAL-42: zonder sessie geen stille "Laden…" maar een duidelijke fout.
+      patchTableData({ error: 'Geen actieve sessie voor deze verbinding. Open eerst de verbinding.' })
+      return
+    }
+    // SAL-42: vorige fout wissen zodra een nieuwe poging begint.
+    patchTableData({ loading: true, error: null })
     try {
       const data = await window.nvag.tableData.getRows(
         tab.connectionId,
@@ -995,22 +1046,12 @@ export const useAppStore = create<AppState>((set, get) => {
         tab.tableData.table,
         100
       )
-      set((s) => ({
-        tabs: s.tabs.map((t) =>
-          t.id === tabId && t.tableData
-            ? { ...t, tableData: { ...t.tableData, data, inserting: false } }
-            : t
-        )
-      }))
+      patchTableData({ data, inserting: false, loading: false, error: null })
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err)
-      set((s) => ({
-        tabs: s.tabs.map((t) =>
-          t.id === tabId && t.tableData
-            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Fout: ${text}` } }
-            : t
-        )
-      }))
+      // SAL-42: de fout gaat naar `error` (paneel toont een error-state i.p.v.
+      // een eeuwige "Laden…"); `data` blijft staan bij een mislukte refresh.
+      patchTableData({ loading: false, error: text })
     }
   },
 

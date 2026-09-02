@@ -8,7 +8,7 @@
  *   bevestiging via de TableEditConfirmDialog.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import type { ColDef, GridApi, GridReadyEvent, CellValueChangedEvent } from 'ag-grid-community'
 import 'ag-grid-community/styles/ag-grid.css'
@@ -25,10 +25,19 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
   const tab = useAppStore((s) => s.tabs.find((t) => t.id === tabId))
   const loadTableRows = useAppStore((s) => s.loadTableRows)
   const saveTableEdit = useAppStore((s) => s.saveTableEdit)
+  const openSessions = useAppStore((s) => s.openSessions)
   const [gridApi, setGridApi] = useState<GridApi | null>(null)
 
   const td = tab?.tableData
   const resultData = td?.data ?? null
+  const hasSession = Boolean(tab?.connectionId && openSessions[tab.connectionId])
+
+  // SAL-42: een table-data tab die zonder (nog) actieve sessie is geopend
+  // toont geen stille "Laden…", maar laadt automatisch zodra de sessie er is.
+  useEffect(() => {
+    if (!tab?.connectionId || !td || resultData !== null || td.loading || td.error || !hasSession) return
+    void loadTableRows(tabId)
+  }, [tabId, tab, td, resultData, hasSession, loadTableRows])
 
   const columnDefs = useMemo<ColDef[]>(() => {
     if (!resultData) return []
@@ -60,12 +69,29 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
 
   if (!tab?.connectionId || !td) return <div className="results-empty">Geen tabel geselecteerd.</div>
   if (!resultData) {
-    return (
-      <div className="results-empty">
-        Laden…{' '}
-        <button onClick={() => void loadTableRows(tabId)}>Opnieuw laden</button>
-      </div>
-    )
+    // SAL-42: expliciete toestanden i.p.v. een eeuwige "Laden…":
+    // bezig → spinner; mislukt → fout + opnieuw laden; geen sessie → melding.
+    if (td.loading) {
+      return <div className="results-empty">Laden…</div>
+    }
+    if (td.error) {
+      return (
+        <div className="results-error table-data-load-error">
+          <span>Tabelgegevens laden mislukt: {td.error}</span>
+          <button onClick={() => void loadTableRows(tabId)}>Opnieuw laden</button>
+        </div>
+      )
+    }
+    if (!hasSession) {
+      return (
+        <div className="results-empty">
+          Geen actieve verbinding voor deze tabel. Open eerst de verbinding om de gegevens te laden.
+        </div>
+      )
+    }
+    // Sessie staat open maar er is nog geen data: de load wordt door het
+    // effect hierboven gestart (of is net bezig); toon een korte laadtekst.
+    return <div className="results-empty">Laden…</div>
   }
   const data = resultData
 
@@ -139,6 +165,13 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
           </button>
         )}
       </div>
+
+      {td.error && (
+        <div className="results-error table-data-refresh-error">
+          <span>Vernieuwen mislukt: {td.error}</span>
+          <button onClick={() => void loadTableRows(tabId)}>Opnieuw laden</button>
+        </div>
+      )}
 
       <div className="ag-theme-quartz-dark result-ag-grid">
         <AgGridReact
