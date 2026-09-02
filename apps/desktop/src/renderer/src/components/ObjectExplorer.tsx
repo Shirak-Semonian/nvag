@@ -1280,7 +1280,7 @@ export function ObjectExplorer(): React.JSX.Element {
           const userRoleDrop =
             (node.kind === 'user' || node.kind === 'role') && caps.supportsUsersAndRoles
               ? {
-                  label: node.kind === 'user' ? 'User' : 'Role',
+                  label: node.kind === 'user' ? 'Gebruiker' : 'Rol',
                   target: {
                     kind: node.kind,
                     connId,

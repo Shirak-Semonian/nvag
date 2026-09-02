@@ -864,6 +864,16 @@ export const useAppStore = create<AppState>((set, get) => {
         if (evt.executionId === start.executionId) applyChunk(evt.chunk, start.executionId)
       })
 
+      // SAL-48: `start()` resolveert wanneer de main-kant klaar is met sturen,
+      // maar de terminale chunk(s) (rows/done/error) kunnen dan nog onderweg
+      // zijn naar deze listener: de IPC-volgorde tussen de asynchrone
+      // `query:chunk`-events en de invoke-response van `start` is niet
+      // gegarandeerd. De listener hier (of in `finally`) afmelden zou die
+      // chunks weggooien → de tab bleef permanent `running:true` (alleen de
+      // columns-chunk werd verwerkt). Daarom blijft de listener geregistreerd
+      // en meldt `applyChunk` zich pas af wanneer de done/error-chunk van déze
+      // executionId is verwerkt; alleen een falende `start()` (catch) ruimt de
+      // listener hier direct op omdat er dan geen terminale chunk meer komt.
       await window.nvag.query.start(start.executionId)
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err)
@@ -882,8 +892,8 @@ export const useAppStore = create<AppState>((set, get) => {
         executionId: null,
         startedAt: null
       })
-    } finally {
       unsubscribe?.()
+    } finally {
       get().useRecentQuery(querySql, tab.connectionId)
     }
   },

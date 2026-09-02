@@ -1191,8 +1191,8 @@ describe('App (renderer-integratie)', () => {
     // Security-folder openen voor users/roles.
     fireEvent.click(within(tree()).getByText('Security'))
     await waitFor(() => expect(within(tree()).getByText('Users')).toBeTruthy())
-    await expectItem('Users', 'app_ro', 'User verwijderen…')
-    await expectItem('Roles', 'db_datareader', 'Role verwijderen…')
+    await expectItem('Users', 'app_ro', 'Gebruiker verwijderen…')
+    await expectItem('Roles', 'db_datareader', 'Rol verwijderen…')
 
     // Directe folders: synonyms + sequences.
     await expectItem('Synonyms', 'syn_oud', 'Synonym verwijderen…')

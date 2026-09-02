@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useAppStore, type QueryTabState } from './store'
 import { createMockNvag, sampleConnection, sampleTableMetadata } from '../test/mockNvag'
-import type { ConnectionConfig, NvagIpcApi } from '@nvag/contracts'
+import type { ConnectionConfig, NvagIpcApi, QueryChunk } from '@nvag/contracts'
 
 function resetStore(): void {
   useAppStore.setState({
@@ -132,6 +132,67 @@ describe('app store', () => {
     expect(tab?.running).toBe(false)
     expect(tab?.result?.rowCount).toBe(1)
     expect(withResults.queriedSql).toEqual(['SELECT 1;'])
+  })
+
+  it('verwerkt rows/done-chunks die ná de start-response aankomen en finaliseert de tab (SAL-48 race)', async () => {
+    let emitLater: ((chunk: QueryChunk) => void) | null = null
+    // TS ziet de toekenning in de closure niet en versmalt `emitLater` op
+    // top-niveau naar `null`; via deze helper geldt het gedeclareerde type.
+    const lateEmit = (chunk: QueryChunk): void => {
+      emitLater?.(chunk)
+    }
+    const withRace = createMockNvag({
+      connections: [sampleConnection()],
+      // SAL-48: net als in de echte app is de IPC-volgorde tussen de asynchrone
+      // `query:chunk`-events en de invoke-response van `start` niet gegarandeerd.
+      // De startHandler emitteert alleen de columns-chunk en keert terug; de
+      // rows/done-chunks worden pas ná de start-response via lateEmit
+      // afgeleverd. Vroeger meldde `finally` de listener dan al af en bleven
+      // rows/done weg → de tab bleef permanent `running:true`.
+      hangingQuerySql: ['SELECT 1;'],
+      startHandler: (_executionId, emit) => {
+        emitLater = emit
+        emit({ kind: 'columns', columns: [{ name: 'id' }] })
+      }
+    })
+    window.nvag = withRace
+    useAppStore.setState({
+      connections: [sampleConnection()],
+      openSessions: {
+        'conn-1': {
+          config: sampleConnection(),
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1' }
+        }
+      },
+      tabs: [seedTab()],
+      activeTabId: 'tab-test'
+    })
+
+    await useAppStore.getState().runQuery('tab-test')
+    // De start-response is binnen; er is nog geen terminale chunk verwerkt.
+    expect(useAppStore.getState().tabs.find((t) => t.id === 'tab-test')?.running).toBe(true)
+
+    // Late rows/done-chunks moeten alsnog worden verwerkt (niet afgemeld).
+    lateEmit({ kind: 'rows', rows: [{ values: [1] }, { values: [2] }, { values: [3] }, { values: [4] }] })
+    lateEmit({ kind: 'done', rowCount: 4, durationMs: 3 })
+
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-test')
+    expect(tab?.running).toBe(false)
+    expect(tab?.executionId).toBeNull()
+    expect(tab?.result?.rows).toHaveLength(4)
+    expect(tab?.result?.rowCount).toBe(4)
+    expect(tab?.result?.columns.map((c) => c.name)).toEqual(['id'])
+
+    // Een tweede run op dezelfde tab finaliseert opnieuw (geen vastgelopen
+    // state of achtergebleven listeners van de eerste run).
+    await useAppStore.getState().runQuery('tab-test')
+    lateEmit({ kind: 'rows', rows: [{ values: [5] }] })
+    lateEmit({ kind: 'done', rowCount: 1, durationMs: 1 })
+    const tab2 = useAppStore.getState().tabs.find((t) => t.id === 'tab-test')
+    expect(tab2?.running).toBe(false)
+    expect(tab2?.result?.rows).toHaveLength(1)
+    expect(tab2?.result?.rowCount).toBe(1)
   })
 
   it('slaat een queryfout op in het resultaat', async () => {
