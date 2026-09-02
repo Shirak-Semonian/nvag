@@ -105,6 +105,8 @@ interface TreeNode {
   detail?: string
   /** Objectreferentie voor viewer/script (tabel/view). */
   ref?: { connId: string; db: string; schema?: string; name: string; kind: 'table' | 'view' }
+  /** SAL-43: server-node heeft een open sessie (statusindicator ⚪/🟢-equivalent). */
+  connected?: boolean
 }
 
 interface MenuItem {
@@ -180,6 +182,8 @@ export function ObjectExplorer(): React.JSX.Element {
   const openConnectionDialog = useAppStore((s) => s.openConnectionDialog)
   const openTableQuery = useAppStore((s) => s.openTableQuery)
   const openTableDataTab = useAppStore((s) => s.openTableDataTab)
+  // SAL-43: sessie voor een opgeslagen verbinding openen (dubbelklik/"Verbinding maken").
+  const openSavedConnection = useAppStore((s) => s.openSavedConnection)
   // SAL-31: AdminDialog verhoogt dit signaal na CREATE/DROP DATABASE.
   const dbListRevision = useAppStore((s) => s.dbListRevision)
   // SAL-32: AdminDialog verhoogt dit signaal na DDL op database-objecten.
@@ -202,7 +206,7 @@ export function ObjectExplorer(): React.JSX.Element {
   /** SAL-34: eigenschappen-dialoog (definitie) van procedure/function/trigger. */
   const [objProps, setObjProps] = useState<ObjectDefinitionState | null>(null)
   /** SAL-34: korte melding (drop-succes/fout, script gegenereerd). */
-  const [notice, setNotice] = useState<{ text: string; kind: 'success' | 'error' } | null>(null)
+  const [notice, setNotice] = useState<{ text: string; kind: 'success' | 'error' | 'info' } | null>(null)
   /** Capabilities per verbinding (SAL-32: folder-gating). */
   const [capsByConn, setCapsByConn] = useState<Record<string, ProviderCapabilities>>({})
 
@@ -241,17 +245,23 @@ export function ObjectExplorer(): React.JSX.Element {
 
   // Boom opbouwen uit connections (alleen servers + folders zichtbaar).
   useEffect(() => {
-    const nodes: TreeNode[] = connections.map((conn) => ({
-      key: `conn:${conn.id}`,
-      label: conn.name,
-      kind: 'server',
-      environment: conn.environment,
-      ctx: { connId: conn.id },
-      children: openSessions[conn.id]
-        ? [{ key: `dbs:${conn.id}`, label: 'Databases', kind: 'folder', children: [], loaded: false, ctx: { connId: conn.id } }]
-        : [],
-      loaded: !!openSessions[conn.id]
-    }))
+    const nodes: TreeNode[] = connections.map((conn) => {
+      const open = !!openSessions[conn.id]
+      return {
+        key: `conn:${conn.id}`,
+        label: conn.name,
+        kind: 'server',
+        environment: conn.environment,
+        ctx: { connId: conn.id },
+        // SAL-43: connected-flag stuurt de statusindicator + contextmenu
+        // (Verbinding verbreken vs. Verbinding maken).
+        connected: open,
+        children: open
+          ? [{ key: `dbs:${conn.id}`, label: 'Databases', kind: 'folder', children: [], loaded: false, ctx: { connId: conn.id } }]
+          : [],
+        loaded: open
+      }
+    })
     commitTree(() => nodes)
     setSelection(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -320,7 +330,7 @@ export function ObjectExplorer(): React.JSX.Element {
 
   /** SAL-34: korte melding onderaan de Object Explorer (auto-dismiss). */
   const noticeTimer = useRef<number | null>(null)
-  const showNotice = useCallback((text: string, kind: 'success' | 'error'): void => {
+  const showNotice = useCallback((text: string, kind: 'success' | 'error' | 'info'): void => {
     setNotice({ text, kind })
     if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
     noticeTimer.current = window.setTimeout(() => setNotice(null), 4000)
@@ -331,6 +341,47 @@ export function ObjectExplorer(): React.JSX.Element {
       if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
     }
   }, [])
+
+  /**
+   * SAL-43: "Verbinding verbreken" uit het contextmenu. Sluit de sessie en
+   * geeft altijd terugkoppeling: bij succes verdwijnen de databases/children
+   * direct (boom-rebuild) + een bevestiging; bij een al gesloten verbinding
+   * een melding (geen stille no-op); bij een falende close-IPC een foutmelding.
+   */
+  const handleDisconnect = useCallback(
+    async (connId: string, label: string): Promise<void> => {
+      try {
+        const result = await useAppStore.getState().closeSession(connId)
+        if (!result.closed) {
+          showNotice(`Deze verbinding (${label}) is al gesloten.`, 'info')
+          return
+        }
+        if (result.error) {
+          showNotice(`Verbinding (${label}) gesloten, maar het sluiten gaf een fout: ${result.error}`, 'error')
+          return
+        }
+        showNotice(`Verbinding (${label}) verbroken.`, 'success')
+      } catch (err) {
+        const text = err instanceof Error ? err.message : String(err)
+        showNotice(`Verbinding verbreken mislukt: ${text}`, 'error')
+      }
+    },
+    [showNotice]
+  )
+
+  /** SAL-43: "Verbinding maken" op een gesloten server-node (openSaved, vault-secret). */
+  const handleConnect = useCallback(
+    async (connId: string, label: string): Promise<void> => {
+      try {
+        await openSavedConnection(connId)
+        showNotice(`Verbinding (${label}) geopend.`, 'success')
+      } catch (err) {
+        const text = err instanceof Error ? err.message : String(err)
+        showNotice(`Verbinding maken mislukt: ${text}`, 'error')
+      }
+    },
+    [openSavedConnection, showNotice]
+  )
 
   /** SAL-34: start een destructieve DROP met bevestigingsdialoog. */
   const startDrop = useCallback((target: DropTarget, label: string): void => {
@@ -761,6 +812,13 @@ export function ObjectExplorer(): React.JSX.Element {
       if (node.ref) openTableQuery(node.ref.connId, node.ref.name, node.ref.schema)
       return
     }
+    // SAL-43: dubbelklik op een gesloten server-node opent de sessie opnieuw
+    // (title beloofde dit al; dit is ook de reconnect-flow ná "Verbinding
+    // verbreken"). Bij een open server gedraagt dubbelklik zich als klik.
+    if (node.kind === 'server' && node.ctx?.connId && !node.connected) {
+      void handleConnect(node.ctx.connId, node.label)
+      return
+    }
     void toggle(node)
   }
 
@@ -768,6 +826,8 @@ export function ObjectExplorer(): React.JSX.Element {
   const buildMenu = (node: TreeNode, caps: ProviderCapabilities | undefined): MenuItem[] => {
     const connId = node.ctx?.connId
     const db = node.ctx?.db
+    const connName = connId ? connections.find((c) => c.id === connId)?.name : undefined
+    const connLabel = connName ?? node.label
     const items: MenuItem[] = []
     const refreshItem: MenuItem = {
       label: 'Vernieuwen',
@@ -787,7 +847,15 @@ export function ObjectExplorer(): React.JSX.Element {
     const disconnectItem: MenuItem = {
       label: 'Verbinding verbreken',
       action: () => {
-        if (connId) void useAppStore.getState().closeSession(connId)
+        if (!connId) return
+        void handleDisconnect(connId, connLabel)
+      }
+    }
+    const connectItem: MenuItem = {
+      label: 'Verbinding maken',
+      action: () => {
+        if (!connId) return
+        void handleConnect(connId, connLabel)
       }
     }
     const dropItem = (label: string, action: () => void): MenuItem => ({
@@ -802,7 +870,11 @@ export function ObjectExplorer(): React.JSX.Element {
         items.push({ separator: true, label: '' })
         items.push(newQueryItem())
         items.push({ separator: true, label: '' })
-        items.push(disconnectItem)
+        // SAL-43: SSMS-achtig — gesloten server toont "Verbinding maken",
+        // open server toont "Verbinding verbreken" (geen stille no-op op een
+        // al gesloten verbinding; de optie die niets kan doen ontbreekt).
+        if (connId && node.connected) items.push(disconnectItem)
+        else if (connId && !node.connected) items.push(connectItem)
         break
       case 'database': {
         if (!connId || !db) break
@@ -1168,6 +1240,12 @@ export function ObjectExplorer(): React.JSX.Element {
                   <RefreshIcon size={12} />
                 </button>
               )}
+              {node.kind === 'server' && (
+                <span
+                  className={`status-dot ${node.connected ? 'connected' : ''}`}
+                  title={node.connected ? 'Verbonden' : 'Niet verbonden — dubbelklik om te verbinden'}
+                />
+              )}
               {node.environment && <EnvBadge environment={node.environment} />}
             </div>
             {isOpen && node.children.length > 0 && (
@@ -1289,7 +1367,9 @@ function nodeTitleFor(node: TreeNode): string {
     case 'view':
       return 'Klik: kolomdetails · Dubbelklik: SELECT in nieuw tabblad'
     case 'server':
-      return 'Dubbelklik om te openen'
+      return node.connected
+        ? 'Verbonden — klik om Databases te tonen · Rechtsklik: opties'
+        : 'Niet verbonden — dubbelklik om te verbinden · Rechtsklik: opties'
     case 'folder':
       return 'Klik om uit te klappen · Rechtsklik: opties'
     case 'database':

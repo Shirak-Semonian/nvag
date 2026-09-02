@@ -36,6 +36,7 @@ let mock: NvagIpcApi & {
   openedSessions: string[]
   closedSessions: string[]
   queriedSql: string[]
+  openSavedCalls: string[]
 }
 
 beforeEach(() => {
@@ -177,12 +178,72 @@ describe('app store', () => {
     expect(mock.queriedSql).toHaveLength(0)
   })
 
+  it('toont een duidelijke fout wanneer een query draait op een gesloten verbinding (SAL-43)', async () => {
+    useAppStore.setState({
+      connections: [sampleConnection()],
+      // Tab is aan de verbinding gebonden, maar er is geen sessie open
+      // (bijv. na "Verbinding verbreken" — Ctrl+Enter omzeilt de disabled knop).
+      tabs: [seedTab({ connectionId: 'conn-1' })],
+      activeTabId: 'tab-test'
+    })
+    await useAppStore.getState().runQuery('tab-test')
+    const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-test')
+    expect(tab?.running).toBe(false)
+    expect(tab?.result?.error).toContain('Geen actieve verbinding voor deze query')
+    expect(mock.queriedSql).toHaveLength(0)
+  })
+
   it('opent en sluit sessies', async () => {
     const conn = sampleConnection()
     await useAppStore.getState().openSession(conn)
     expect(useAppStore.getState().openSessions['conn-1']?.sessionId).toBeTruthy()
-    await useAppStore.getState().closeSession('conn-1')
+    const result = await useAppStore.getState().closeSession('conn-1')
+    expect(result).toEqual({ closed: true })
     expect(useAppStore.getState().openSessions['conn-1']).toBeUndefined()
+  })
+
+  it('meldt een al gesloten verbinding zonder sessie-IPC (SAL-43)', async () => {
+    const conn = sampleConnection()
+    useAppStore.setState({ connections: [conn] })
+    const result = await useAppStore.getState().closeSession('conn-1')
+    expect(result).toEqual({ closed: false })
+    expect(mock.closedSessions).toHaveLength(0)
+    expect(useAppStore.getState().openSessions['conn-1']).toBeUndefined()
+  })
+
+  it('ruimt openSessions op en rapporteert de fout wanneer de backend-close faalt (SAL-43)', async () => {
+    const conn = sampleConnection()
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-1': {
+          config: conn,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlite', providerName: 'SQLite', serverVersion: '3.53.1' }
+        }
+      }
+    })
+    window.nvag.sessions.close = async () => {
+      throw new Error('IPC kapot')
+    }
+    const result = await useAppStore.getState().closeSession('conn-1')
+    // De backend heeft de sessie opgeruimd (finally in SessionManager.close);
+    // de renderer mag niet "verbonden" blijven staan — wel de fout tonen.
+    expect(result).toEqual({ closed: true, error: 'IPC kapot' })
+    expect(useAppStore.getState().openSessions['conn-1']).toBeUndefined()
+  })
+
+  it('opent een sessie voor een opgeslagen verbinding via openSaved (SAL-43)', async () => {
+    const conn = sampleConnection()
+    useAppStore.setState({ connections: [conn] })
+    await useAppStore.getState().openSavedConnection('conn-1')
+    expect(mock.openSavedCalls).toEqual(['conn-1'])
+    expect(useAppStore.getState().openSessions['conn-1']?.sessionId).toBeTruthy()
+
+    // No-op wanneer de sessie al open is (geen tweede openSaved-aanvraag).
+    const calls = mock.openSavedCalls.length
+    await useAppStore.getState().openSavedConnection('conn-1')
+    expect(mock.openSavedCalls).toHaveLength(calls)
   })
 
   it('sluit een tab en valt terug op de vorige actieve tab', () => {

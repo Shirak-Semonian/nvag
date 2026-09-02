@@ -1555,6 +1555,17 @@ button.danger:hover:not(:disabled) {
   border: 1px solid #c62828;
 }
 
+/* SAL-43: neutrale terugkoppeling (bijv. "verbinding is al gesloten"). */
+.oe-notice.info {
+  background: #27435f;
+  border: 1px solid #3b6a94;
+}
+
+/* SAL-43: verbindingsstatus op server-nodes in de Object Explorer. */
+.tree-node .status-dot {
+  margin-left: 6px;
+}
+
 .object-explorer .env-badge {
   margin-left: 6px;
 }

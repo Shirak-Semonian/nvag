@@ -960,12 +960,134 @@ describe('App (renderer-integratie)', () => {
     render(<App />)
     const tree = await expandSqlServerDb()
 
+    // Verbonden server toont een groene statusindicator (🟢-equivalent).
+    const serverRow = (): HTMLElement =>
+      within(tree()).getByText('SQL Server').closest('.tree-node') as HTMLElement
+    expect(serverRow().querySelector('.status-dot.connected')).toBeTruthy()
+
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
     await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
     fireEvent.click(screen.getByText('Verbinding verbreken'))
 
     await waitFor(() => expect((window.nvag as ReturnType<typeof createMockNvag>).closedSessions).toContain('s1'))
     expect(within(tree()).queryByText('Databases')).toBeNull()
+    // SAL-43: gesloten server toont de grijze (niet-verbonden) indicator.
+    expect(serverRow().querySelector('.status-dot:not(.connected)')).toBeTruthy()
+  })
+
+  it('toont een fout en klapt de boom in wanneer de backend-close faalt (SAL-43)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    // Close-IPC faalt nádat de backend de sessie al heeft opgeruimd
+    // (SessionManager.close ruimt in een finally op). De UI moet niet
+    // verbonden blijven staan maar de fout wél tonen.
+    window.nvag.sessions.close = async () => {
+      throw new Error('IPC kapot')
+    }
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
+    fireEvent.click(screen.getByText('Verbinding verbreken'))
+
+    await waitFor(() => expect(within(tree()).queryByText('Databases')).toBeNull())
+    expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined()
+    expect(screen.getByText(/gesloten, maar het sluiten gaf een fout: IPC kapot/)).toBeTruthy()
+  })
+
+  it('toont een succesmelding bij verbreken via server-contextmenu (SAL-43)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
+    fireEvent.click(screen.getByText('Verbinding verbreken'))
+
+    await waitFor(() => expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined())
+    expect(within(tree()).queryByText('Databases')).toBeNull()
+    expect(screen.getByText(/Verbinding \(SQL Server\) verbroken/)).toBeTruthy()
+  })
+
+  it('verbreken via database-contextmenu sluit de sessie en laat databases verdwijnen (SAL-43)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.contextMenu(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
+    fireEvent.click(screen.getByText('Verbinding verbreken'))
+
+    await waitFor(() => expect((window.nvag as ReturnType<typeof createMockNvag>).closedSessions).toContain('s1'))
+    expect(within(tree()).queryByText('Databases')).toBeNull()
+    expect(within(tree()).queryByText('Klanten')).toBeNull()
+    expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined()
+    expect(screen.getByText(/Verbinding \(SQL Server\) verbroken/)).toBeTruthy()
+  })
+
+  it('biedt op een gesloten server Verbinding maken aan (geen Verbinding verbreken) en verbindt opnieuw (SAL-43)', async () => {
+    const conn = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    const state = { databases: [{ name: 'Klanten' }] as DatabaseInfo[] }
+    const mock = createMockNvag({
+      connections: [conn],
+      databases: state.databases,
+      capabilities: {
+        supportsSchemas: true,
+        supportsSequences: true,
+        supportsSynonyms: true,
+        supportsTriggers: true,
+        supportsExecutionPlans: false,
+        supportsMonitoring: false,
+        supportsTransactions: true,
+        supportsIdentityColumns: true,
+        supportsGeneratedColumns: true,
+        supportsDdlAdmin: true,
+        supportsUsersAndRoles: true,
+        supportsBackupRestore: true,
+        maxResultRowsDefault: 1000,
+        dialect: 'tsql'
+      }
+    })
+    window.nvag = mock
+    // OpenSessions is bewust leeg: opgeslagen verbinding zonder sessie.
+    useAppStore.setState({ connections: [conn] })
+    render(<App />)
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    await waitFor(() => expect(within(tree()).getByText('SQL Server')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Verbinding maken')).toBeTruthy())
+    expect(screen.queryByText('Verbinding verbreken')).toBeNull()
+
+    fireEvent.click(screen.getByText('Verbinding maken'))
+    await waitFor(() => expect(mock.openSavedCalls).toEqual(['conn-sql']))
+    await waitFor(() => expect(useAppStore.getState().openSessions['conn-sql']).toBeTruthy())
+
+    // Server uitklappen → databases zijn weer zichtbaar.
+    fireEvent.click(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(within(tree()).getByText('Databases')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Databases'))
+    await waitFor(() => expect(within(tree()).getByText('Klanten')).toBeTruthy())
+  })
+
+  it('verbindt opnieuw via dubbelklik op de gesloten server-node (SAL-43)', async () => {
+    openSqlServerExplorerFull()
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    // Verbreken via server-contextmenu.
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
+    fireEvent.click(screen.getByText('Verbinding verbreken'))
+    await waitFor(() => expect(within(tree()).queryByText('Databases')).toBeNull())
+
+    // Dubbelklik op de gesloten server → sessie wordt opnieuw geopend.
+    fireEvent.doubleClick(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(mock.openSavedCalls).toEqual(['conn-sql']))
+    await waitFor(() => expect(useAppStore.getState().openSessions['conn-sql']).toBeTruthy())
+    // De server stond nog uitgeklapt → Databases-folder is direct zichtbaar.
+    await waitFor(() => expect(within(tree()).getByText('Databases')).toBeTruthy())
   })
 
   it('sluit het contextmenu bij buiten-klik en met Escape (SAL-34)', async () => {

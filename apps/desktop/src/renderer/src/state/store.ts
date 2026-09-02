@@ -93,6 +93,16 @@ export interface ConnectionWithSession {
   serverInfo: ServerInfo
 }
 
+/**
+ * SAL-43: resultaat van closeSession.
+ * - `{ closed: true }`: er was een sessie en die is (poging tot) gesloten en
+ *   uit openSessions verwijderd. `error` is gevuld wanneer de backend-close
+ *   faalde (de backend heeft de sessie dan wél al opgeruimd — zie de
+ *   try/finally in SessionManager.close — dus de UI mag niet verbonden blijven).
+ * - `{ closed: false }`: er was geen sessie open (stille no-op voorkomen).
+ */
+export type CloseSessionResult = { closed: true; error?: string } | { closed: false }
+
 /** Tabs van de AdminDialog (SAL-34: Object Explorer kan een specifieke tab openen). */
 export type AdminDialogTab = 'database' | 'schema' | 'table' | 'view' | 'index' | 'users' | 'backup'
 
@@ -157,7 +167,9 @@ interface AppState {
   saveConnection: (config: ConnectionConfig, secret?: ConnectionSecret) => Promise<ConnectionConfig>
   removeConnection: (id: string) => Promise<void>
   openSession: (config: ConnectionConfig, secret?: ConnectionSecret) => Promise<ServerInfo>
-  closeSession: (connectionId: string) => Promise<void>
+  closeSession: (connectionId: string) => Promise<CloseSessionResult>
+  /** SAL-43: opent een sessie voor een opgeslagen verbinding (vault-secret) zonder tab-switch (Object Explorer: dubbelklik / "Verbinding maken"). */
+  openSavedConnection: (connectionId: string) => Promise<void>
 
   /** Nieuwe lege query-tab; met `opts` direct met sql/verbinding/database/titel gevuld. */
   addTab: (opts?: {
@@ -444,13 +456,42 @@ export const useAppStore = create<AppState>((set, get) => {
 
   async closeSession(connectionId) {
     const session = get().openSessions[connectionId]
-    if (session) {
+    if (!session) return { closed: false }
+    let error: string | undefined
+    try {
       await window.nvag.sessions.close(session.sessionId)
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err)
+    } finally {
+      // SAL-43: ook bij een falende close-IPC de openSessions-entry verwijderen.
+      // SessionManager.close ruimt de backend-sessie in een finally op voordat
+      // de fout terugkomt; een verbonden-ogende renderer zou anders een
+      // bevroren boom + mislukkende queries opleveren (stille no-op).
       set((s) => {
         const next = { ...s.openSessions }
         delete next[connectionId]
         return { openSessions: next }
       })
+    }
+    return error ? { closed: true, error } : { closed: true }
+  },
+
+  async openSavedConnection(connectionId) {
+    if (get().openSessions[connectionId]) return
+    const sessionInfo = await window.nvag.sessions.openSaved(connectionId)
+    const config = get().connections.find((c) => c.id === connectionId)
+    if (!config) {
+      throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+    }
+    set((s) => ({
+      openSessions: {
+        ...s.openSessions,
+        [connectionId]: { config, sessionId: sessionInfo.sessionId, serverInfo: sessionInfo.serverInfo }
+      }
+    }))
+    // SAL-42: table-data tabs die op deze sessie wachtten laden nu alsnog.
+    for (const id of pendingTableDataTabIds(get().tabs, connectionId)) {
+      void get().loadTableRows(id)
     }
   },
 
@@ -644,9 +685,34 @@ export const useAppStore = create<AppState>((set, get) => {
   async runQuery(tabId, sql, opts) {
     const tab = get().tabs.find((t) => t.id === tabId)
     const querySql = (sql ?? tab?.sql ?? '').trim()
-    if (!tab || !tab.connectionId || tab.running) return
+    if (!tab || tab.running) return
+    if (!tab.connectionId) return
     const session = get().openSessions[tab.connectionId]
-    if (!session) return
+    if (!session) {
+      // SAL-43: geen stille no-op meer wanneer een tab op een gesloten
+      // verbinding draait (Ctrl+Enter/F5 omzeilt de disabled Uitvoeren-knop).
+      const text = 'Geen actieve verbinding voor deze query. Open eerst de verbinding (dubbelklik op de server in de Object Explorer) en voer de query opnieuw uit.'
+      set((s) => ({
+        tabs: s.tabs.map((t) =>
+          t.id === tabId
+            ? {
+                ...t,
+                result: {
+                  executionId: '',
+                  columns: [],
+                  rows: [],
+                  truncated: false,
+                  rowCount: 0,
+                  durationMs: 0,
+                  error: text,
+                  messages: [{ severity: 'error', text }]
+                }
+              }
+            : t
+        )
+      }))
+      return
+    }
 
     const acc = createAccumulator()
     let unsubscribe: (() => void) | null = null
