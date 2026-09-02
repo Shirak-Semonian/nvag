@@ -46,6 +46,19 @@ describe('buildSelectStar', () => {
   it('tsql: brackets', () => {
     expect(buildSelectStar('tsql', 'users')).toBe('SELECT * FROM [users]')
   })
+
+  it('tsql: TOP (n) vóór de kolomlijst bij maxRows (SAL-42)', () => {
+    // T-SQL staat geen "SELECT * FROM [t] TOP (n)" toe; TOP hoort na SELECT.
+    expect(buildSelectStar('tsql', 'users', undefined, 100)).toBe(
+      'SELECT TOP (100) * FROM [users]'
+    )
+    expect(buildSelectStar('tsql', 't', 'dbo', 100)).toBe(
+      'SELECT TOP (100) * FROM [dbo].[t]'
+    )
+    expect(buildSelectStar('tsql', 't', 'dbo', 0)).toBe(
+      'SELECT TOP (0) * FROM [dbo].[t]'
+    )
+  })
 })
 
 describe('compat free functions', () => {

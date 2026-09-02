@@ -1028,7 +1028,12 @@ export function containsKeyword(sql: string, keyword: string): boolean {
   return false
 }
 
-/** Genereer "SELECT * FROM <table>" met correcte quoting en optionele LIMIT/OFFSET. */
+/**
+ * Genereer "SELECT * FROM <table>" met correcte quoting en optionele LIMIT/OFFSET.
+ * Let op dialect-plaatsing: de meeste dialecten plakken de limiet achter de
+ * FROM-clausule, maar T-SQL TOP (n) hoort vóór de kolomlijst
+ * (SAL-42 live-bevinding: "SELECT * FROM [t] TOP (n)" is ongeldige T-SQL).
+ */
 export function buildSelectStar(
   dialect: SqlDialectId,
   table: string,
@@ -1041,7 +1046,13 @@ export function buildSelectStar(
     ? `${d.quoteIdentifier(schema)}.${d.quoteIdentifier(table)}`
     : d.quoteIdentifier(table)
   const limit = d.buildLimit(maxRows, offset)
-  return `SELECT * FROM ${name}${limit ? ` ${limit}` : ''}`
+  if (!limit) return `SELECT * FROM ${name}`
+  const hasMax = maxRows !== undefined && maxRows !== null
+  const hasOffset = offset !== undefined && offset !== null
+  if (dialect === 'tsql' && hasMax && !hasOffset) {
+    return `SELECT TOP (${maxRows}) * FROM ${name}`
+  }
+  return `SELECT * FROM ${name} ${limit}`
 }
 
 // ---------------------------------------------------------------------------
