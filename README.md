@@ -31,6 +31,13 @@
   bevestigen), auditlogging en een capability-gated Backup-tab; daarnaast
   packaging (AppImage/tar.gz/deb/rpm) met CI-workflow.
 
+**Release 1.0.0 (2026-09-02, SAL-41)**: verse Linux-distributie in
+`apps/desktop/release/` (`Nvag-1.0.0.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
+met alle fixes/features van SAL-29 t/m SAL-40: query-cancel, SSMS-niveau
+Object Explorer + contextmenu's, provider-fixes Oracle/Db2/Databricks en de
+statement-splitter. Rooktest van de gebouwde AppImage geslaagd: app start,
+lokale SQLite-connectie + Object Explorer werken (tabellen zichtbaar).
+
 **Doorlopende kwaliteit**: `pnpm dev` start de app; `pnpm -r typecheck` en
 `pnpm -r test` blijven groen (desktop-suite 223 tests).
 
