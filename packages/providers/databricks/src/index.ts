@@ -120,11 +120,26 @@ export function createDatabricksProvider(): DatabaseProvider {
       const session = await client.openSession({
         ...(config.database ? { initialCatalog: config.database, initialSchema: 'default' } : {})
       })
+      // SAL-39 (bevinding 18): zonder expliciete catalogus geldt de
+      // warehouse-defaultcatalogus (bv. `workspace` op een UC-testaccount);
+      // bepaal die zodat session.database het effectieve catalogus-niveau is.
+      let database = config.database ?? ''
+      if (!database) {
+        try {
+          const probe = await session.executeStatement('SELECT current_catalog() AS cat')
+          const probeRows = (await probe.fetchAll()) as Record<string, unknown>[]
+          await probe.close()
+          const cat = probeRows[0]?.['cat']
+          if (cat != null) database = String(cat)
+        } catch {
+          /* leeg laten: warehouse-default zonder expliciete catalogus */
+        }
+      }
       const dbSession: DbSession = {
         handle: { client, session } satisfies DatabricksSessionHandle,
         connectionId: config.id,
         providerId: 'databricks',
-        database: config.database ?? ''
+        database
       }
       sessions.set(config.id, dbSession)
       return dbSession
@@ -215,8 +230,16 @@ export function createDatabricksProvider(): DatabaseProvider {
       await stmt.close()
       const out: TableInfo[] = []
       for (const r of rows) {
-        const vals = Object.values(r)
-        const name = String(vals[2] ?? '')
+        // SAL-39 (bevinding 16): SHOW TABLES retourneert per rij
+        // [database, tableName, isTemporary]. Lees bij voorkeur de kolom
+        // `tableName`; zonder kolomnamen: index 1 (niet index 2 =
+        // isTemporary, die elke tabel als 'false' opleverde).
+        const keys = Object.keys(r)
+        const nameKey =
+          keys.find((k) => k.toLowerCase() === 'tablename') ??
+          keys.find((k) => k.toLowerCase() === 'name')
+        const raw = nameKey ? r[nameKey] : Object.values(r)[1]
+        const name = raw != null ? String(raw) : ''
         if (name) out.push({ name, schema, type: 'table' })
       }
       return out
@@ -349,9 +372,13 @@ export function createDatabricksProvider(): DatabaseProvider {
       }
 
       const stmtText = statements[0]!
-      const isSelect = /^\s*(SELECT|WITH|SHOW|DESCRIBE)\b/i.test(stmtText)
+      // SAL-39 (bevinding 19): Databricks accepteert géén LIMIT achter
+      // SHOW/DESCRIBE — de cap geldt alleen voor SELECT/WITH. SHOW/DESCRIBE
+      // blijven wél resultaat-streams (columns+rows) voor de query-editor.
+      const capWithLimit = /^\s*(SELECT|WITH)\b/i.test(stmtText)
+      const isResultSet = /^\s*(SELECT|WITH|SHOW|DESCRIBE|DESC)\b/i.test(stmtText)
       const capped =
-        isSelect && !containsKeyword(stmtText, 'LIMIT')
+        capWithLimit && !containsKeyword(stmtText, 'LIMIT')
           ? `${stmtText} ${buildLimit('databricks', maxRows)}`.trim()
           : stmtText
 
@@ -380,7 +407,7 @@ export function createDatabricksProvider(): DatabaseProvider {
           return
         }
         const { columns, rows } = value!
-        if (isSelect) {
+        if (isResultSet) {
           yield { kind: 'columns', columns }
           const out: QueryRow[] = []
           for (const row of rows) {

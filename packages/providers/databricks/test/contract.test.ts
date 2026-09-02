@@ -12,6 +12,8 @@ function getConfig(): ConnectionConfig | null {
   if (!url) return null
   try {
     const u = new URL(url)
+    const pathSegment = u.pathname.replace(/^\//, '').replace(/\/+$/, '')
+    const httpPath = u.searchParams.get('httpPath') ?? undefined
     return {
       id: 'contract-databricks',
       name: 'contract',
@@ -23,7 +25,13 @@ function getConfig(): ConnectionConfig | null {
       auth: 'token',
       ssl: { mode: 'require' },
       connectionTimeoutMs: 15000,
-      database: u.pathname.replace(/^\//, '') || 'default',
+      // SAL-39 (bevindingen 17–18): httpPath is verplicht voor de live-
+      // verbinding en komt uit de query-parameter van de test-URL. Het
+      // URL-pad is een *catalogus* (bv. /workspace op Unity Catalog);
+      // '/default' is géén catalogus maar een schema binnen de catalogus →
+      // database leeg laten, dan geldt de warehouse-defaultcatalogus.
+      extraParams: httpPath ? { httpPath } : undefined,
+      database: pathSegment && pathSegment !== 'default' ? pathSegment : '',
       group: 'Contract'
     }
   } catch {
@@ -67,7 +75,9 @@ describe('databricks provider', () => {
         makeLimitQuery: (table, n) => `SELECT * FROM ${table} LIMIT ${n}`,
         schema: 'default',
         multipleStatements: 'reject',
-        skips: { errorPosition: true, objectDefinition: true }
+        // SAL-39 (bevinding 20): objectdefinitie (SHOW CREATE TABLE) werkt
+        // live — geen skip meer. Error-positie blijft niet-ondersteund.
+        skips: { errorPosition: true }
       },
       { enabled: true }
     )
