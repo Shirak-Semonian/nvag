@@ -224,7 +224,8 @@ export async function executeImport(
   const provider = registry.get(session.providerId)
   // Multi-statement import: de providers weigeren meerdere statements per
   // uitvoering (MULTIPLE_STATEMENTS) — splits en voer één voor één uit.
-  const statements = splitStatements(sql)
+  // Dialect meegeven zodat T-SQL GO-batches per batch worden gesplitst.
+  const statements = splitStatements(sql, provider.capabilities.dialect)
   let rowCount = 0
   for (const stmt of statements) {
     let stmtRows = 0

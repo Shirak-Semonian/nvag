@@ -689,7 +689,7 @@ export function createSqlServerProvider(): DatabaseProvider {
       const executionId = opts.executionId
       const signal = opts.signal
 
-      const statements = splitStatements(sqlText)
+      const statements = splitStatements(sqlText, CAPABILITIES.dialect)
       if (statements.length === 0) {
         yield { kind: 'done', rowCount: 0, durationMs: 0 }
         return

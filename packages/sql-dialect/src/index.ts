@@ -580,16 +580,69 @@ export function wrapErrorPosition(
 // Statement-splitsing en top-level keyword-detectie (quote/comment-bewust)
 // ---------------------------------------------------------------------------
 
+/** Keywords die een routine-body introduceren (CREATE PROCEDURE/FUNCTION/...). */
+const ROUTINE_BODY_KEYWORDS = new Set(['PROCEDURE', 'FUNCTION', 'TRIGGER', 'EVENT'])
+
+/** T-SQL BEGIN-varianten die géén compound-blok openen (`BEGIN TRAN` e.d.). */
+const BEGIN_NO_BLOCK_TAIL = new Set(['TRAN', 'TRANSACTION', 'DISTRIBUTED', 'DIALOG', 'CONVERSATION'])
+
+/** MySQL END-varianten die géén BEGIN-blok sluiten (END IF/LOOP/WHILE/...). */
+const END_NO_BLOCK_TAIL = new Set(['IF', 'LOOP', 'WHILE', 'REPEAT', 'CASE'])
+
+function isSqlIdentStart(ch: string | undefined): boolean {
+  return ch !== undefined && /[A-Za-z_]/.test(ch)
+}
+
+function isSqlIdentChar(ch: string | undefined): boolean {
+  return ch !== undefined && /[A-Za-z0-9_$]/.test(ch)
+}
+
+/** Leest een SQL-woord (identifier-tekens) vanaf i; '' wanneer i geen start is. */
+function readSqlWord(sql: string, i: number): string {
+  let j = i
+  while (j < sql.length && isSqlIdentChar(sql[j])) j++
+  return sql.slice(i, j)
+}
+
+/** Eerste identifier ná witruimte vanaf i (hoofdletters), of null. */
+function nextSqlWordUpper(sql: string, i: number): string | null {
+  let j = i
+  while (j < sql.length && /\s/.test(sql[j]!)) j++
+  if (j >= sql.length || !isSqlIdentStart(sql[j])) return null
+  return readSqlWord(sql, j).toUpperCase()
+}
+
+/**
+ * Wanneer sql[i] een PostgreSQL-dollar-quote opent (`$$` of `$tag$`),
+ * retourneert de delimiter; anders null. `$1`-parameters openen géén quote.
+ */
+function dollarQuoteDelimiterAt(sql: string, i: number): string | null {
+  if (sql[i] !== '$') return null
+  const m = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(i, i + 128))
+  return m ? m[0] : null
+}
+
 /**
  * Splits SQL op ';' in losse statements, zonder te splitsen binnen
- * string-literals, gequotede identifiers of commentaar.
+ * string-literals, gequotede identifiers, commentaar of dollar-quoted
+ * strings — en zonder routine-bodies (`CREATE ... BEGIN ... END`) te knippen.
  *
  * - Trailing ';' en lege statements worden genegeerd.
  * - `SELECT 1; SELECT 2` → ['SELECT 1', 'SELECT 2'] (2 statements)
  * - `SELECT ';'`        → ["SELECT ';'"]             (1 statement)
  * - `/* x; y *​/ SELECT 1;` → ['/* x; y *​/ SELECT 1']   (1 statement)
+ * - `CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql`
+ *   → 1 statement (PostgreSQL dollar-quoted body; de ';' zitten in de body)
+ * - `CREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END;`
+ *   → 1 statement (MySQL/T-SQL BEGIN...END-blok; interne ';' splitten niet)
+ *
+ * @param sql de te splitsen SQL-tekst
+ * @param dialect optioneel dialect. Voor 'tsql' wordt een GO-regel op een
+ *   eigen regel als batchscheiding behandeld (mssql verstuurt per batch).
+ *   Zonder dialect worden dollar-quotes en BEGIN...END-routine-bodies via
+ *   generieke heuristiek herkend, zodat bestaande aanroepen blijven werken.
  */
-export function splitStatements(sql: string): string[] {
+export function splitStatements(sql: string, dialect?: SqlDialectId): string[] {
   const out: string[] = []
   let current = ''
   let i = 0
@@ -598,6 +651,21 @@ export function splitStatements(sql: string): string[] {
   let inBacktick = false
   let inLineComment = false
   let inBlockComment = false
+  let dollarDelim: string | null = null
+
+  // Routine-body-herkenning (MySQL/T-SQL stored programs en triggers):
+  // zodra het huidige statement een routine-keyword bevat en daarna met
+  // BEGIN...END opent, tellen ';' binnen het blok niet als statement-einde.
+  let routineBody = false
+  let blockDepth = 0
+
+  const flush = (): void => {
+    const trimmed = current.trim()
+    if (trimmed.length > 0) out.push(trimmed)
+    current = ''
+    routineBody = false
+    blockDepth = 0
+  }
 
   while (i < sql.length) {
     const ch = sql[i]!
@@ -618,6 +686,18 @@ export function splitStatements(sql: string): string[] {
         continue
       }
       i++
+      continue
+    }
+    if (dollarDelim !== null) {
+      // PostgreSQL dollar-quoted string: overslaan tot dezelfde delimiter.
+      if (sql.startsWith(dollarDelim, i)) {
+        current += dollarDelim
+        i += dollarDelim.length
+        dollarDelim = null
+      } else {
+        current += ch
+        i++
+      }
       continue
     }
     if (inSingle) {
@@ -691,19 +771,83 @@ export function splitStatements(sql: string): string[] {
       i++
       continue
     }
-    if (ch === ';') {
-      const trimmed = current.trim()
-      if (trimmed.length > 0) out.push(trimmed)
-      current = ''
+    if (ch === '$') {
+      const delim = dollarQuoteDelimiterAt(sql, i)
+      if (delim !== null) {
+        dollarDelim = delim
+        current += delim
+        i += delim.length
+        continue
+      }
+      // Géén dollar-quote (bijv. PG `$1`-parameter): gewoon karakter
+      current += ch
       i++
       continue
     }
+    if (ch === ';') {
+      if (blockDepth > 0) {
+        // Binnen een routine-body: ';' is een statement-scheiding in de body,
+        // géén einde van het CREATE-statement.
+        current += ch
+        i++
+        continue
+      }
+      flush()
+      i++
+      continue
+    }
+
+    // Identifiers op top-niveau: routine-keywords, BEGIN...END en GO herkennen
+    // zonder elke letter afzonderlijk te hoeven testen.
+    if (isSqlIdentStart(ch) && !isSqlIdentChar(sql[i - 1])) {
+      const word = readSqlWord(sql, i)
+      const upper = word.toUpperCase()
+      const boundaryAfter = !isSqlIdentChar(sql[i + word.length])
+
+      // T-SQL: GO op een eigen regel is een batchscheiding. De provider
+      // verstuurt per batch; een ';' binnen BEGIN...END mag niet splitten,
+      // maar GO scheidt wél batches.
+      if (
+        dialect === 'tsql' &&
+        upper === 'GO' &&
+        boundaryAfter &&
+        blockDepth === 0
+      ) {
+        const sinceLine = sql.lastIndexOf('\n', i - 1) + 1
+        if (/^\s*$/.test(sql.slice(sinceLine, i))) {
+          flush()
+          // Rest van de GO-regel (optionele count) overslaan
+          i += word.length
+          while (i < sql.length && sql[i] !== '\n') i++
+          if (i < sql.length && sql[i] === '\n') i++
+          continue
+        }
+      }
+
+      if (ROUTINE_BODY_KEYWORDS.has(upper) && !routineBody) {
+        routineBody = true
+      } else if (upper === 'BEGIN' && routineBody) {
+        // `BEGIN TRAN` e.d. opent geen compound-blok; een routine-body begint
+        // met een losse BEGIN.
+        const tail = nextSqlWordUpper(sql, i + word.length)
+        if (tail === null || !BEGIN_NO_BLOCK_TAIL.has(tail)) blockDepth++
+      } else if (upper === 'END' && blockDepth > 0) {
+        // MySQL: END IF/LOOP/WHILE/REPEAT/CASE sluit géén BEGIN-blok; een
+        // losse END (of END + label) wél.
+        const tail = nextSqlWordUpper(sql, i + word.length)
+        if (tail === null || !END_NO_BLOCK_TAIL.has(tail)) blockDepth--
+      }
+
+      current += word
+      i += word.length
+      continue
+    }
+
     current += ch
     i++
   }
 
-  const trimmed = current.trim()
-  if (trimmed.length > 0) out.push(trimmed)
+  flush()
   return out
 }
 
@@ -729,6 +873,8 @@ export function containsKeyword(sql: string, keyword: string): boolean {
   let inBacktick = false
   let inLineComment = false
   let inBlockComment = false
+  let inDollar = false
+  let dollarDelim: string | null = null
 
   while (i < upper.length) {
     const ch = upper[i]!
@@ -746,6 +892,19 @@ export function containsKeyword(sql: string, keyword: string): boolean {
         continue
       }
       i++
+      continue
+    }
+    if (inDollar) {
+      // PostgreSQL dollar-quoted body: de keyword-zoektocht slaat de hele
+      // body over (anders telt een clausule in de body ten onrechte mee).
+      const delim = dollarDelim
+      if (delim !== null && upper.startsWith(delim, i)) {
+        inDollar = false
+        dollarDelim = null
+        i += delim.length
+      } else {
+        i++
+      }
       continue
     }
     if (inSingle) {
@@ -809,6 +968,15 @@ export function containsKeyword(sql: string, keyword: string): boolean {
       inBacktick = true
       i++
       continue
+    }
+    if (ch === '$') {
+      const delim = dollarQuoteDelimiterAt(upper, i)
+      if (delim !== null) {
+        inDollar = true
+        dollarDelim = delim
+        i += delim.length
+        continue
+      }
     }
 
     // Buiten quotes/comments: match op woordgrens?

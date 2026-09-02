@@ -431,7 +431,7 @@ export function createMySqlProvider(): DatabaseProvider {
       const executionId = opts.executionId
       const signal = opts.signal
 
-      const statements = splitStatements(sql)
+      const statements = splitStatements(sql, CAPABILITIES.dialect)
       if (statements.length === 0) {
         yield { kind: 'done', rowCount: 0, durationMs: 0 }
         return

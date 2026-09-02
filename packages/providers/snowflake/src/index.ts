@@ -331,7 +331,7 @@ export function createSnowflakeProvider(): DatabaseProvider {
       const { conn } = session.handle as SnowflakeSessionHandle
       const maxRows = opts.maxRows ?? CAPABILITIES.maxResultRowsDefault
 
-      const statements = splitStatements(sql)
+      const statements = splitStatements(sql, CAPABILITIES.dialect)
       if (statements.length === 0) {
         yield { kind: 'done', rowCount: 0, durationMs: 0 }
         return

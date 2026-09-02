@@ -331,7 +331,7 @@ export function createDb2Provider(): DatabaseProvider {
       const handle = session.handle as Db2SessionHandle
       const maxRows = opts.maxRows ?? CAPABILITIES.maxResultRowsDefault
 
-      const statements = splitStatements(sqlText)
+      const statements = splitStatements(sqlText, CAPABILITIES.dialect)
       if (statements.length === 0) {
         yield { kind: 'done', rowCount: 0, durationMs: 0 }
         return

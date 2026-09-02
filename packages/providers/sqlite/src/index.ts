@@ -400,7 +400,7 @@ export function createSqliteProvider(): DatabaseProvider {
       // Statements splitsen op ';' (quote/comment-bewust; F1: echte parser per dialect).
       // Contract: maximaal één statement per executeQuery; node:sqlite zou de
       // rest stilletjes negeren, dus weigeren is veiliger dan stilletjes truncaten.
-      const statements = splitStatements(sql)
+      const statements = splitStatements(sql, CAPABILITIES.dialect)
 
       if (statements.length === 0) {
         yield { kind: 'done', rowCount: 0, durationMs: 0 }
