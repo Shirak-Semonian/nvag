@@ -130,6 +130,13 @@ const api: NvagIpcApi = {
     listUsers: handle<AdminUserInfo[]>('admin:listUsers'),
     createUser: handle<AdminActionResult>('admin:createUser'),
     dropUser: handle<AdminActionResult>('admin:dropUser'),
+    dropProcedure: handle<AdminActionResult>('admin:dropProcedure'),
+    dropFunction: handle<AdminActionResult>('admin:dropFunction'),
+    dropTrigger: handle<AdminActionResult>('admin:dropTrigger'),
+    dropSequence: handle<AdminActionResult>('admin:dropSequence'),
+    dropSynonym: handle<AdminActionResult>('admin:dropSynonym'),
+    dropRole: handle<AdminActionResult>('admin:dropRole'),
+    dropConstraint: handle<AdminActionResult>('admin:dropConstraint'),
     capabilities: handle<ProviderCapabilities>('admin:capabilities'),
     backupDatabase: handle<BackupResult>('admin:backupDatabase'),
     restoreDatabase: handle<RestoreResult>('admin:restoreDatabase')

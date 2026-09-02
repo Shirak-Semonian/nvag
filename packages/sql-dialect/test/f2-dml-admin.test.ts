@@ -11,6 +11,7 @@ import {
   buildCreateView,
   buildDeleteByPk,
   buildDrop,
+  buildDropConstraint,
   buildInsertValues,
   buildUpdateByPk,
   quoteValue
@@ -104,6 +105,44 @@ describe('Admin-DDL (F2-3)', () => {
     expect(buildDrop('sqlite', 'TABLE', 'users', { schema: 'main' })).toContain('DROP TABLE "main"."users"')
     expect(buildDrop('postgres', 'VIEW', 'v', { schema: 'public' })).toContain('DROP VIEW "public"."v"')
     expect(buildDrop('mysql', 'DATABASE', 'app')).toContain('DROP DATABASE `app`')
+  })
+
+  it('bouwt DROP voor procedure/function/trigger/sequence/synonym (SAL-45)', () => {
+    expect(buildDrop('tsql', 'PROCEDURE', 'sp_rapport', { schema: 'dbo' })).toBe('DROP PROCEDURE [dbo].[sp_rapport];')
+    expect(buildDrop('tsql', 'FUNCTION', 'fn_bereken', { schema: 'dbo' })).toBe('DROP FUNCTION [dbo].[fn_bereken];')
+    expect(buildDrop('tsql', 'TRIGGER', 'trg_ins', { schema: 'dbo' })).toBe('DROP TRIGGER [dbo].[trg_ins];')
+    expect(buildDrop('postgres', 'PROCEDURE', 'sp_rapport', { schema: 'public' })).toBe('DROP PROCEDURE "public"."sp_rapport";')
+    expect(buildDrop('tsql', 'SEQUENCE', 'seq_nr', { schema: 'dbo' })).toBe('DROP SEQUENCE [dbo].[seq_nr];')
+    expect(buildDrop('tsql', 'SYNONYM', 'syn_oud', { schema: 'dbo' })).toBe('DROP SYNONYM [dbo].[syn_oud];')
+  })
+
+  it('bouwt DROP USER / ROLE zonder schema (database-scoped principals, SAL-45)', () => {
+    expect(buildDrop('tsql', 'USER', 'app_ro')).toBe('DROP USER [app_ro];')
+    expect(buildDrop('postgres', 'USER', 'app_ro')).toBe('DROP USER "app_ro";')
+    expect(buildDrop('tsql', 'ROLE', 'db_reader')).toBe('DROP ROLE [db_reader];')
+    expect(buildDrop('postgres', 'ROLE', 'db_reader')).toBe('DROP ROLE "db_reader";')
+  })
+
+  it('bouwt DROP INDEX dialect-correct: tsql/mysql ON-tabel, overig zonder ON (SAL-45)', () => {
+    expect(buildDrop('tsql', 'INDEX', 'idx_naam', { schema: 'dbo', table: 'klanten' })).toBe('DROP INDEX [idx_naam] ON [dbo].[klanten];')
+    expect(buildDrop('mysql', 'INDEX', 'idx_naam', { schema: 'app', table: 'klanten' })).toBe('DROP INDEX `idx_naam` ON `app`.`klanten`;')
+    expect(buildDrop('postgres', 'INDEX', 'idx_naam', { schema: 'public', table: 'klanten' })).toBe('DROP INDEX "public"."idx_naam";')
+    expect(buildDrop('sqlite', 'INDEX', 'idx_naam', { schema: 'main', table: 'klanten' })).toBe('DROP INDEX "main"."idx_naam";')
+  })
+
+  it('vereist een ON-tabel voor DROP INDEX op tsql/mysql (SAL-45)', () => {
+    expect(() => buildDrop('tsql', 'INDEX', 'idx_naam')).toThrow(/tabelnaam/)
+  })
+
+  it('bouwt postgres DROP TRIGGER met ON-tabel; vereist tabelnaam (SAL-45)', () => {
+    expect(buildDrop('postgres', 'TRIGGER', 'trg_ins', { schema: 'public', table: 'klanten' })).toBe('DROP TRIGGER "trg_ins" ON "public"."klanten";')
+    expect(() => buildDrop('postgres', 'TRIGGER', 'trg_ins', { schema: 'public' })).toThrow(/tabel/)
+  })
+
+  it('bouwt ALTER TABLE … DROP CONSTRAINT op tsql/postgres (SAL-45)', () => {
+    expect(buildDropConstraint('tsql', 'dbo', 'klanten', 'CK_leeftijd')).toBe('ALTER TABLE [dbo].[klanten] DROP CONSTRAINT [CK_leeftijd];')
+    expect(buildDropConstraint('postgres', 'public', 'klanten', 'klanten_pkey')).toBe('ALTER TABLE "public"."klanten" DROP CONSTRAINT "klanten_pkey";')
+    expect(() => buildDropConstraint('mysql', 'app', 'klanten', 'CK_x')).toThrow(/niet ondersteund/)
   })
 
   it('bouwt CREATE INDEX met UNIQUE-optie', () => {

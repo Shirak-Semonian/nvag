@@ -364,6 +364,42 @@ export function registerIpcHandlers(): void {
     if (r.ok) audit('admin.ddl', `DROP USER ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
+  // SAL-45: DROP-procedures voor de overige Object Explorer-objecttypen.
+  ipcMain.handle('admin:dropProcedure', async (_e, connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean) => {
+    const r = await admin.dropProcedure(connectionId, database, schema, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP PROCEDURE ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropFunction', async (_e, connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean) => {
+    const r = await admin.dropFunction(connectionId, database, schema, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP FUNCTION ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropTrigger', async (_e, connectionId: string, database: string, schema: string | undefined, name: string, table?: string, confirmed?: boolean) => {
+    const r = await admin.dropTrigger(connectionId, database, schema, name, table, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP TRIGGER ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropSequence', async (_e, connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean) => {
+    const r = await admin.dropSequence(connectionId, database, schema, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP SEQUENCE ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropSynonym', async (_e, connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean) => {
+    const r = await admin.dropSynonym(connectionId, database, schema, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP SYNONYM ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropRole', async (_e, connectionId: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropRole(connectionId, name, confirmed)
+    if (r.ok) audit('admin.ddl', `DROP ROLE ${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
+  ipcMain.handle('admin:dropConstraint', async (_e, connectionId: string, database: string, schema: string | undefined, table: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropConstraint(connectionId, database, schema, table, name, confirmed)
+    if (r.ok) audit('admin.ddl', `ALTER TABLE ${schema ? schema + '.' : ''}${table} DROP CONSTRAINT ${name}`, { server: connectionStore.get(connectionId)?.name })
+    return r
+  })
 
   // ------------------------------------------------------------------ F4: backup & restore (DBA)
   ipcMain.handle('admin:backupDatabase', async (_e, connectionId: string, database: string, targetPath: string, confirmed?: boolean) => {

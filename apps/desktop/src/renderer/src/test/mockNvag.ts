@@ -33,6 +33,9 @@ export interface MockNvagOptions {
   synonyms?: string[]
   users?: string[]
   roles?: string[]
+  /** SAL-45: triggers/sequences in de objectfolders (live mock-lijsten). */
+  triggers?: string[]
+  sequences?: string[]
   tableMetadata?: Record<string, TableMetadata>
   /** Overschrijft admin.capabilities (SAL-32: folder-gating per provider). */
   capabilities?: ProviderCapabilities
@@ -294,8 +297,10 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         (options.procedures ?? []).map((name) => ({ name, schema: 'main', type: 'procedure' as const })),
       listFunctions: async () =>
         (options.functions ?? []).map((name) => ({ name, schema: 'main' })),
-      listTriggers: async () => [],
-      listSequences: async () => [],
+      listTriggers: async () =>
+        (options.triggers ?? []).map((name) => ({ name, schema: 'main', table: 'klanten' })),
+      listSequences: async () =>
+        (options.sequences ?? []).map((name) => ({ name, schema: 'main' })),
       listSynonyms: async () =>
         (options.synonyms ?? []).map((name) => ({ name, schema: 'main' })),
       listUsers: async () =>
@@ -434,10 +439,111 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         return { ok: true, sql: '' }
       },
       createIndex: async () => ({ ok: true, sql: '' }),
-      dropIndex: async () => ({ ok: true, sql: '' }),
+      dropIndex: async (connId: string, _db: string, _schema: string, table: string, index: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropIndex', args: [connId, table, index], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP INDEX ${index};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        const meta = options.tableMetadata?.[table]
+        if (meta) meta.indexes = meta.indexes.filter((i) => i.name !== index)
+        return { ok: true, sql: '' }
+      },
       listUsers: async () => [],
       createUser: async () => ({ ok: true, sql: '' }),
-      dropUser: async () => ({ ok: true, sql: '' }),
+      dropUser: async (connId: string, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropUser', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP USER ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        if (options.users) {
+          const i = options.users.indexOf(name)
+          if (i >= 0) options.users.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
+      // SAL-45: DROP-methods voor de overige objecttypen (muteren dezelfde
+      // in-memory lijsten die de metadata-mock leest, zodat de auto-refresh
+      // na een drop in componenttests objecten ziet verdwijnen).
+      dropProcedure: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropProcedure', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP PROCEDURE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        if (options.procedures) {
+          const i = options.procedures.indexOf(name)
+          if (i >= 0) options.procedures.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropFunction: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropFunction', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP FUNCTION ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        if (options.functions) {
+          const i = options.functions.indexOf(name)
+          if (i >= 0) options.functions.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropTrigger: async (connId: string, _db: string, _schema: string | undefined, name: string, table?: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropTrigger', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP TRIGGER ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        // Zowel folder-level (Database Triggers) als tabel-level triggers.
+        if (options.triggers) {
+          const i = options.triggers.indexOf(name)
+          if (i >= 0) options.triggers.splice(i, 1)
+        }
+        if (table && options.tableMetadata?.[table]) {
+          const meta = options.tableMetadata[table]
+          meta.triggers = meta.triggers.filter((t) => t !== name)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropSequence: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropSequence', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP SEQUENCE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        if (options.sequences) {
+          const i = options.sequences.indexOf(name)
+          if (i >= 0) options.sequences.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropSynonym: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropSynonym', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP SYNONYM ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        if (options.synonyms) {
+          const i = options.synonyms.indexOf(name)
+          if (i >= 0) options.synonyms.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropRole: async (connId: string, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropRole', args: [connId, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `DROP ROLE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        if (options.roles) {
+          const i = options.roles.indexOf(name)
+          if (i >= 0) options.roles.splice(i, 1)
+        }
+        return { ok: true, sql: '' }
+      },
+      dropConstraint: async (connId: string, _db: string, _schema: string | undefined, table: string, name: string, confirmed?: boolean) => {
+        adminRequests.push({ action: 'dropConstraint', args: [connId, table, name], confirmed })
+        if (options.adminDropBlocked && !confirmed) {
+          return { ok: false, sql: `ALTER TABLE ${table} DROP CONSTRAINT ${name};`, blocked: ['ALTER op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+        }
+        const meta = options.tableMetadata?.[table]
+        if (meta) meta.constraints = meta.constraints.filter((c) => c.name !== name)
+        return { ok: true, sql: '' }
+      },
       capabilities: async () =>
         options.capabilities ?? {
           supportsSchemas: true,

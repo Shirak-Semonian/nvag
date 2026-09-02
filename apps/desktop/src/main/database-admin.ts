@@ -28,6 +28,7 @@ import {
   buildCreateTableFromColumns,
   buildCreateView,
   buildDrop,
+  buildDropConstraint,
   quoteIdentifier
 } from '@nvag/sql-dialect'
 import { registry } from './registry'
@@ -219,6 +220,101 @@ export async function dropIndex(
 }
 
 // ---------------------------------------------------------------------------
+// SAL-45: DROP voor programmeerbare/schema-objecten (procedure/function/
+// trigger/sequence/synonym) en constraint. Deze objecttypen zitten in de
+// Object Explorer-folders (Programmability, Synonyms, Sequences,
+// tabel-subobjecten); de SQL is dialect-correct via @nvag/sql-dialect en
+// doorloopt dezelfde guard als de overige DROP-acties (SAL-34).
+// ---------------------------------------------------------------------------
+
+type SchemaDbObjectType = 'PROCEDURE' | 'FUNCTION' | 'TRIGGER' | 'SEQUENCE' | 'SYNONYM'
+
+async function dropSchemaDbObject(
+  connectionId: string,
+  database: string,
+  schema: string | undefined,
+  name: string,
+  objectType: SchemaDbObjectType,
+  options?: { table?: string },
+  confirmed?: boolean
+) {
+  const { provider } = requireSession(connectionId)
+  const sql = buildDrop(provider.capabilities.dialect, objectType, name, {
+    schema: schema || null,
+    table: options?.table
+  })
+  void database
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+}
+
+export async function dropProcedure(
+  connectionId: string,
+  database: string,
+  schema: string | undefined,
+  name: string,
+  confirmed?: boolean
+) {
+  return dropSchemaDbObject(connectionId, database, schema, name, 'PROCEDURE', undefined, confirmed)
+}
+
+export async function dropFunction(
+  connectionId: string,
+  database: string,
+  schema: string | undefined,
+  name: string,
+  confirmed?: boolean
+) {
+  return dropSchemaDbObject(connectionId, database, schema, name, 'FUNCTION', undefined, confirmed)
+}
+
+export async function dropTrigger(
+  connectionId: string,
+  database: string,
+  schema: string | undefined,
+  name: string,
+  table?: string,
+  confirmed?: boolean
+) {
+  // tsql DML-triggers zijn schema-gebonden en hebben geen ON-tabel nodig;
+  // postgres vereist `DROP TRIGGER … ON <tabel>`.
+  return dropSchemaDbObject(connectionId, database, schema, name, 'TRIGGER', { table }, confirmed)
+}
+
+export async function dropSequence(
+  connectionId: string,
+  database: string,
+  schema: string | undefined,
+  name: string,
+  confirmed?: boolean
+) {
+  return dropSchemaDbObject(connectionId, database, schema, name, 'SEQUENCE', undefined, confirmed)
+}
+
+export async function dropSynonym(
+  connectionId: string,
+  database: string,
+  schema: string | undefined,
+  name: string,
+  confirmed?: boolean
+) {
+  return dropSchemaDbObject(connectionId, database, schema, name, 'SYNONYM', undefined, confirmed)
+}
+
+export async function dropConstraint(
+  connectionId: string,
+  database: string,
+  schema: string | undefined,
+  table: string,
+  name: string,
+  confirmed?: boolean
+) {
+  const { provider } = requireSession(connectionId)
+  const sql = buildDropConstraint(provider.capabilities.dialect, schema || null, table, name)
+  void database
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+}
+
+// ---------------------------------------------------------------------------
 // Users & roles (gated via capabilities)
 // ---------------------------------------------------------------------------
 
@@ -269,11 +365,24 @@ export async function dropUser(connectionId: string, name: string, confirmed?: b
     throw new Error('Deze provider ondersteunt geen users/roles.')
   }
   const dialect = provider.capabilities.dialect
-  if (dialect === 'postgres') {
-    const sql = `DROP USER ${quoteIdentifier('postgres', name)};`
+  if (dialect === 'postgres' || dialect === 'tsql') {
+    const sql = buildDrop(dialect, 'USER', name)
     return runDdl(connectionId, sql, 'admin.ddl', confirmed)
   }
   throw new Error(`Users verwijderen is niet geïmplementeerd voor dialect ${dialect}.`)
+}
+
+export async function dropRole(connectionId: string, name: string, confirmed?: boolean) {
+  const { provider } = requireSession(connectionId)
+  if (!provider.capabilities.supportsUsersAndRoles) {
+    throw new Error('Deze provider ondersteunt geen users/roles.')
+  }
+  const dialect = provider.capabilities.dialect
+  if (dialect === 'postgres' || dialect === 'tsql') {
+    const sql = buildDrop(dialect, 'ROLE', name)
+    return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  }
+  throw new Error(`Roles verwijderen is niet geïmplementeerd voor dialect ${dialect}.`)
 }
 
 function quoteLiteralPg(value: string): string {

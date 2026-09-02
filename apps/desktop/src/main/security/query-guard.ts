@@ -28,7 +28,7 @@ interface GuardPattern {
 
 const DANGEROUS_PATTERNS: GuardPattern[] = [
   // Destructief DDL — overal bevestiging.
-  { pattern: /\bDROP\s+(TABLE|VIEW|DATABASE|SCHEMA|INDEX|TRIGGER|PROCEDURE|FUNCTION|SEQUENCE)\b/i, reason: 'DROP-statement', severity: 'confirm' },
+  { pattern: /\bDROP\s+(TABLE|VIEW|DATABASE|SCHEMA|INDEX|TRIGGER|PROCEDURE|FUNCTION|SEQUENCE|SYNONYM|USER|ROLE)\b/i, reason: 'DROP-statement', severity: 'confirm' },
   { pattern: /\bTRUNCATE\b/i, reason: 'TRUNCATE-statement', severity: 'confirm' },
   { pattern: /\bALTER\s+(TABLE|DATABASE|SCHEMA|VIEW)\b/i, reason: 'ALTER-statement', severity: 'confirm' },
   // F4: RESTORE overschrijft een database → destructief, altijd bevestigen.

@@ -8,8 +8,31 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSqliteProvider } from '@nvag/provider-sqlite'
-import type { ConnectionConfig, Environment } from '@nvag/contracts'
-import { createTable, dropTable, backupDatabase, restoreDatabase } from './database-admin'
+import type {
+  ConnectionConfig,
+  ConnectionSecret,
+  DatabaseProvider,
+  DbSession,
+  Environment,
+  ProviderCapabilities,
+  QueryChunk,
+  QueryOptions,
+  ServerInfo
+} from '@nvag/contracts'
+import {
+  createTable,
+  dropTable,
+  dropProcedure,
+  dropFunction,
+  dropTrigger,
+  dropSequence,
+  dropSynonym,
+  dropRole,
+  dropConstraint,
+  dropUser,
+  backupDatabase,
+  restoreDatabase
+} from './database-admin'
 import { sessionManager } from './session-manager'
 import { registry } from './registry'
 
@@ -176,5 +199,191 @@ describe('F4 backup/restore guard-flow', () => {
     const r = await restoreDatabase('adm-1', 'main', join(dir, 'bestaand-niet.db'), true)
     expect(r.ok).toBe(false)
     expect(r.message).toMatch(/niet gevonden/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SAL-45: DROP voor procedure/function/trigger/sequence/synonym/user/role/
+// constraint op een tsql-achtige provider (SQL Server-dialect). De fake
+// provider registreert de uitgevoerde SQL zodat de gegenereerde DROP-statements
+// gecontroleerd worden (de echte uitvoering valideert de live-tests).
+// ---------------------------------------------------------------------------
+
+const TSQL_BASE_CAPS: Omit<ProviderCapabilities, 'dialect'> = {
+  supportsSchemas: true,
+  supportsSequences: true,
+  supportsSynonyms: true,
+  supportsTriggers: true,
+  supportsExecutionPlans: false,
+  supportsMonitoring: false,
+  supportsTransactions: true,
+  supportsIdentityColumns: true,
+  supportsGeneratedColumns: true,
+  supportsDdlAdmin: true,
+  supportsUsersAndRoles: true,
+  supportsBackupRestore: false,
+  maxResultRowsDefault: 1000
+}
+
+function makeFakeTsqlProvider(id: string, executed: string[]): DatabaseProvider {
+  const sessions = new Set<DbSession>()
+  const caps: ProviderCapabilities = { ...TSQL_BASE_CAPS, dialect: 'tsql' }
+  return {
+    id,
+    displayName: id,
+    defaultPort: 1433,
+    capabilities: caps,
+    async connect(config: ConnectionConfig, _secret?: ConnectionSecret): Promise<DbSession> {
+      const session: DbSession = {
+        handle: {},
+        connectionId: config.id,
+        providerId: id,
+        database: config.database ?? 'master'
+      }
+      sessions.add(session)
+      return session
+    },
+    async testConnection() {
+      return { ok: true }
+    },
+    async getServerInfo(session: DbSession): Promise<ServerInfo> {
+      return { providerId: id, providerName: id, serverVersion: 'x', currentDatabase: session.database }
+    },
+    async close(session: DbSession): Promise<void> {
+      sessions.delete(session)
+    },
+    async listDatabases() {
+      return []
+    },
+    async listSchemas() {
+      return []
+    },
+    async listTables() {
+      return []
+    },
+    async listViews() {
+      return []
+    },
+    async listProcedures() {
+      return []
+    },
+    async listFunctions() {
+      return []
+    },
+    async listTriggers() {
+      return []
+    },
+    async listSequences() {
+      return []
+    },
+    async listSynonyms() {
+      return []
+    },
+    async listUsers() {
+      return []
+    },
+    async listRoles() {
+      return []
+    },
+    async getTableMetadata() {
+      return { columns: [], primaryKey: [], foreignKeys: [], indexes: [], constraints: [], triggers: [], dependencies: [] }
+    },
+    async getObjectDefinition() {
+      return 'CREATE TABLE t (id int);'
+    },
+    async *executeQuery(
+      _session: DbSession,
+      sql: string,
+      _opts: QueryOptions
+    ): AsyncIterable<QueryChunk> {
+      executed.push(sql)
+      yield { kind: 'done', rowCount: 0, durationMs: 1 }
+    },
+    async cancel() {},
+    async getExecutionStats() {
+      return { rowCount: 0, durationMs: 0 }
+    }
+  }
+}
+
+describe('SAL-45 DROP-methods (tsql dialect, fake provider)', () => {
+  const executed: string[] = []
+  const cfg: ConnectionConfig = {
+    id: 'adm-tsql',
+    name: 'Admin TSQL',
+    providerId: 'fake-sqlserver',
+    environment: 'DEV',
+    host: 'localhost',
+    auth: 'username-password',
+    ssl: { mode: 'disable' },
+    connectionTimeoutMs: 5000,
+    group: 'Test'
+  }
+
+  beforeAll(async () => {
+    registry.register(makeFakeTsqlProvider('fake-sqlserver', executed))
+    await sessionManager.open(cfg)
+  })
+
+  afterAll(async () => {
+    await sessionManager.closeAll()
+  })
+
+  beforeEach(() => {
+    executed.length = 0
+    setEnvironment('DEV')
+  })
+
+  it('blokkeert DROP zonder bevestiging (guard confirm) en voert na bevestiging uit', async () => {
+    const blocked = await dropProcedure('adm-tsql', 'db', 'dbo', 'sp_x')
+    expect(blocked.ok).toBe(false)
+    expect(blocked.guardSeverity).toBe('confirm')
+    expect(executed).toEqual([])
+
+    const r = await dropProcedure('adm-tsql', 'db', 'dbo', 'sp_x', true)
+    expect(r.ok).toBe(true)
+    expect(executed).toEqual(['DROP PROCEDURE [dbo].[sp_x];'])
+  })
+
+  it('dropt procedure/function/sequence/synonym met schema-qualificatie', async () => {
+    await dropFunction('adm-tsql', 'db', 'dbo', 'fn_x', true)
+    await dropSequence('adm-tsql', 'db', 'dbo', 'seq_x', true)
+    await dropSynonym('adm-tsql', 'db', 'dbo', 'syn_x', true)
+    expect(executed).toEqual([
+      'DROP FUNCTION [dbo].[fn_x];',
+      'DROP SEQUENCE [dbo].[seq_x];',
+      'DROP SYNONYM [dbo].[syn_x];'
+    ])
+  })
+
+  it('dropt een trigger (tsql zonder ON-tabel)', async () => {
+    await dropTrigger('adm-tsql', 'db', 'dbo', 'trg_x', undefined, true)
+    expect(executed).toEqual(['DROP TRIGGER [dbo].[trg_x];'])
+  })
+
+  it('dropt user/role zonder schema (database-scoped principals)', async () => {
+    // DROP USER/ROLE is ook confirm-gated (SAL-45: guard-patroon uitgebreid).
+    const blockedUser = await dropUser('adm-tsql', 'app_ro')
+    expect(blockedUser.ok).toBe(false)
+    expect(executed).toEqual([])
+
+    await dropUser('adm-tsql', 'app_ro', true)
+    expect(executed).toEqual(['DROP USER [app_ro];'])
+    executed.length = 0
+    const blockedRole = await dropRole('adm-tsql', 'db_reader')
+    expect(blockedRole.ok).toBe(false)
+    await dropRole('adm-tsql', 'db_reader', true)
+    expect(executed).toEqual(['DROP ROLE [db_reader];'])
+  })
+
+  it('dropt een constraint via ALTER TABLE … DROP CONSTRAINT', async () => {
+    const r = await dropConstraint('adm-tsql', 'db', 'dbo', 'klanten', 'CK_leeftijd', true)
+    expect(r.ok).toBe(true)
+    expect(executed).toEqual(['ALTER TABLE [dbo].[klanten] DROP CONSTRAINT [CK_leeftijd];'])
+  })
+
+  it('weigert dropRole op providers zonder supportsUsersAndRoles', async () => {
+    // de sqlite-provider uit de eerste suite ondersteunt geen users/roles.
+    await expect(dropRole('adm-1', 'x', true)).rejects.toThrow(/geen users\/roles/)
   })
 })

@@ -1360,23 +1360,76 @@ export function buildCreateTableFromColumns(
   return `CREATE TABLE ${name} (\n  ${lines.join(',\n  ')}\n);`
 }
 
-/** DROP-object DDL (tabel/view/schema/database/index/...). */
+/** Objecttypen die via DROP-object-DDL verwijderd kunnen worden (SAL-45). */
+export type DropObjectType =
+  | 'TABLE'
+  | 'VIEW'
+  | 'SCHEMA'
+  | 'DATABASE'
+  | 'INDEX'
+  | 'TRIGGER'
+  | 'SEQUENCE'
+  | 'PROCEDURE'
+  | 'FUNCTION'
+  | 'SYNONYM'
+  | 'USER'
+  | 'ROLE'
+
+/**
+ * DROP-object DDL (tabel/view/schema/database/index/procedure/...).
+ *
+ * Dialect-regels (SAL-45):
+ * - INDEX: tsql/mysql gebruiken `DROP INDEX … ON <tabel>`; de overige
+ *   dialecten (postgres/sqlite/db2/oracle/…) droppen de index zelfstandig.
+ * - TRIGGER op postgres: altijd `DROP TRIGGER … ON <tabel>`.
+ * - USER/ROLE zijn database-scoped principals: geen schema-qualificatie.
+ * - De overige objecttypen zijn schema-gebonden en worden met schema gequoted.
+ */
 export function buildDrop(
   dialect: SqlDialectId,
-  objectType: 'TABLE' | 'VIEW' | 'SCHEMA' | 'DATABASE' | 'INDEX' | 'TRIGGER' | 'SEQUENCE' | 'PROCEDURE' | 'FUNCTION',
+  objectType: DropObjectType,
   name: string,
   options?: { schema?: string | null; table?: string }
 ): string {
   const d = DIALECTS[dialect]
-  if (objectType === 'INDEX' && options?.table) {
-    const tableName = d.quoteQualifiedName(options.schema, options.table)
+  if (objectType === 'INDEX') {
     if (dialect === 'tsql' || dialect === 'mysql') {
-      return `DROP INDEX ${d.quoteIdentifier(name)} ON ${tableName};`
+      if (!options?.table) {
+        throw new Error('DROP INDEX vereist een tabelnaam (ON <tabel>) voor dit dialect.')
+      }
+      return `DROP INDEX ${d.quoteIdentifier(name)} ON ${d.quoteQualifiedName(options.schema, options.table)};`
     }
-    return `DROP INDEX ${d.quoteIdentifier(name)} ON ${tableName};`
+    return `DROP INDEX ${d.quoteQualifiedName(options?.schema ?? null, name)};`
+  }
+  if (objectType === 'TRIGGER' && dialect === 'postgres') {
+    if (!options?.table) {
+      throw new Error('DROP TRIGGER op PostgreSQL vereist de naam van de tabel (ON <tabel>).')
+    }
+    return `DROP TRIGGER ${d.quoteIdentifier(name)} ON ${d.quoteQualifiedName(options.schema, options.table)};`
+  }
+  if (objectType === 'USER' || objectType === 'ROLE') {
+    return `DROP ${objectType} ${d.quoteIdentifier(name)};`
   }
   const qualified = d.quoteQualifiedName(options?.schema ?? null, name)
   return `DROP ${objectType} ${qualified};`
+}
+
+/**
+ * ALTER TABLE … DROP CONSTRAINT (SAL-45).
+ * SQL Server en PostgreSQL kennen `DROP CONSTRAINT` op tabelniveau;
+ * voor de overige dialecten niet ondersteund (MySQL: DROP FOREIGN KEY/CHECK).
+ */
+export function buildDropConstraint(
+  dialect: SqlDialectId,
+  schema: string | null | undefined,
+  table: string,
+  name: string
+): string {
+  const d = DIALECTS[dialect]
+  if (dialect !== 'tsql' && dialect !== 'postgres') {
+    throw new Error(`DROP CONSTRAINT wordt voor dialect ${dialect} niet ondersteund.`)
+  }
+  return `ALTER TABLE ${d.quoteQualifiedName(schema, table)} DROP CONSTRAINT ${d.quoteIdentifier(name)};`
 }
 
 /** CREATE INDEX DDL (admin, F2-3). */

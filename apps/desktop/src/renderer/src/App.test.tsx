@@ -505,6 +505,9 @@ describe('App (renderer-integratie)', () => {
     synonyms: string[]
     users: string[]
     roles: string[]
+    // SAL-45: triggers/sequences + tabelmetadata voor subobject-drop-tests.
+    triggers: string[]
+    sequences: string[]
   }
 
   function openSqlServerExplorerFull(adminDropBlocked = false): SqlServerExplorerState {
@@ -517,7 +520,9 @@ describe('App (renderer-integratie)', () => {
       functions: ['fn_bereken'],
       synonyms: ['syn_oud'],
       users: ['app_ro'],
-      roles: ['db_datareader']
+      roles: ['db_datareader'],
+      triggers: ['trg_klanten_ins'],
+      sequences: ['seq_ordernr']
     }
     window.nvag = createMockNvag({
       connections: [conn],
@@ -529,6 +534,17 @@ describe('App (renderer-integratie)', () => {
       synonyms: state.synonyms,
       users: state.users,
       roles: state.roles,
+      triggers: state.triggers,
+      sequences: state.sequences,
+      // SAL-45: tabel-subobjecten (index/constraint) voor drop-test.
+      tableMetadata: {
+        klanten: {
+          ...sampleTableMetadata('klanten'),
+          indexes: [{ name: 'idx_klanten_naam', columns: ['naam'], isUnique: false, isPrimaryKey: false }],
+          constraints: [{ name: 'CK_leeftijd', type: 'CHECK', definition: '(leeftijd >= 0)' }],
+          triggers: ['trg_klanten_ins']
+        }
+      },
       // SAL-34: guard-blokkade van admin-DROP simuleren (PROD-achtig).
       adminDropBlocked,
       capabilities: {
@@ -1146,5 +1162,273 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(screen.getByText(/Geannuleerd/)).toBeTruthy())
     await waitFor(() => expect(screen.getByRole('button', { name: '▶ Uitvoeren' })).toBeTruthy())
     expect(screen.queryByRole('button', { name: /■ Annuleren/ })).toBeNull()
+  })
+
+  // ------------------------------------------------------------------ SAL-45
+
+  it('toont "… verwijderen…" in het contextmenu van procedure/function/trigger/sequence/synonym/user/role en opent bevestiging (SAL-45)', async () => {
+    openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    const expectItem = async (folder: string, object: string, item: string): Promise<void> => {
+      fireEvent.click(within(tree()).getByText(folder))
+      await waitFor(() => expect(within(tree()).getByText(object)).toBeTruthy())
+      fireEvent.contextMenu(within(tree()).getByText(object))
+      await waitFor(() => expect(screen.getByText(item)).toBeTruthy())
+      // Menu sluiten (klik elders in de boom).
+      fireEvent.click(within(tree()).getByText('Tables'))
+      await waitFor(() => expect(screen.queryByText(item)).toBeNull())
+    }
+
+    // Programmability-folder openen voor routines/triggers.
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
+    await expectItem('Stored Procedures', 'sp_rapport', 'Procedure verwijderen…')
+    await expectItem('Functions', 'fn_bereken', 'Functie verwijderen…')
+    await expectItem('Database Triggers', 'trg_klanten_ins', 'Trigger verwijderen…')
+
+    // Security-folder openen voor users/roles.
+    fireEvent.click(within(tree()).getByText('Security'))
+    await waitFor(() => expect(within(tree()).getByText('Users')).toBeTruthy())
+    await expectItem('Users', 'app_ro', 'User verwijderen…')
+    await expectItem('Roles', 'db_datareader', 'Role verwijderen…')
+
+    // Directe folders: synonyms + sequences.
+    await expectItem('Synonyms', 'syn_oud', 'Synonym verwijderen…')
+    await expectItem('Sequences', 'seq_ordernr', 'Sequence verwijderen…')
+
+    // Bevestiging: contextmenu → verwijderen → dialoog met SQL; annuleren niets.
+    // (Stored Procedures-folder is nog uitgeklapt van de item-checks.)
+    fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
+    await waitFor(() => expect(screen.getByText('Procedure verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Procedure verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    expect(screen.getByText(/DROP PROCEDURE \[main\]\.\[sp_rapport\]/)).toBeTruthy()
+    expect(screen.getByText(/kan niet ongedaan worden gemaakt/)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(within(tree()).getByText('sp_rapport')).toBeTruthy()
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    expect(mock.adminRequests.filter((r) => r.action === 'dropProcedure')).toHaveLength(0)
+  })
+
+  it('verwijdert een procedure via het contextmenu na bevestiging en ververst de folder (SAL-45)', async () => {
+    const state = openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Stored Procedures'))
+    await waitFor(() => expect(within(tree()).getByText('sp_rapport')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
+    await waitFor(() => expect(screen.getByText('Procedure verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Procedure verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+
+    await waitFor(() => expect(within(tree()).queryByText('sp_rapport')).toBeNull())
+    expect(state.procedures.includes('sp_rapport')).toBe(false)
+    expect(screen.getByText(/'sp_rapport' verwijderd/)).toBeTruthy()
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    const drops = mock.adminRequests.filter((r) => r.action === 'dropProcedure')
+    expect(drops.length).toBe(1)
+  })
+
+  it('toont guard-redenen bij een geblokkeerde functie-drop en voert pas na tweede bevestiging uit (SAL-45)', async () => {
+    const state = openSqlServerExplorerFull(true)
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Functions')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Functions'))
+    await waitFor(() => expect(within(tree()).getByText('fn_bereken')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('fn_bereken'))
+    await waitFor(() => expect(screen.getByText('Functie verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Functie verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+
+    await waitFor(() => expect(screen.getByText(/PROD-omgeving vereist bevestiging/)).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Toch verwijderen' })).toBeTruthy()
+    expect(within(tree()).getByText('fn_bereken')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toch verwijderen' }))
+    await waitFor(() => expect(within(tree()).queryByText('fn_bereken')).toBeNull())
+    expect(state.functions.includes('fn_bereken')).toBe(false)
+    const drops = (window.nvag as ReturnType<typeof createMockNvag>).adminRequests.filter((r) => r.action === 'dropFunction')
+    expect(drops.length).toBe(2)
+    expect(drops[0]?.confirmed).toBeFalsy()
+    expect(drops[1]?.confirmed).toBe(true)
+  })
+
+  it('biedt verwijder-items voor tabel-subobjecten (index/constraint) en ververst na bevestiging (SAL-45)', async () => {
+    const state = openSqlServerExplorerFull()
+    render(<App />)
+    const tree = await expandSqlServerDb()
+
+    // Tabel-subfolders openen via de chevron (rijklik opent de viewer).
+    fireEvent.click(within(tree()).getByText('Tables'))
+    await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Tabel uitklappen' }))
+    await waitFor(() => expect(within(tree()).getByText('Indexes')).toBeTruthy())
+    expect(within(tree()).getByText('Constraints')).toBeTruthy()
+
+    // Index: menu-item + bevestiging + verdwijnt uit de subfolder.
+    fireEvent.click(within(tree()).getByText('Indexes'))
+    await waitFor(() => expect(within(tree()).getByText('idx_klanten_naam')).toBeTruthy())
+    fireEvent.contextMenu(within(tree()).getByText('idx_klanten_naam'))
+    await waitFor(() => expect(screen.getByText('Index verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Index verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    expect(screen.getByText(/DROP INDEX \[idx_klanten_naam\] ON \[main\]\.\[klanten\]/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    await waitFor(() => expect(within(tree()).queryByText('idx_klanten_naam')).toBeNull())
+    expect(screen.getByText(/Index 'idx_klanten_naam' verwijderd/)).toBeTruthy()
+
+    // Constraint: menu-item + bevestiging.
+    fireEvent.click(within(tree()).getByText('Constraints'))
+    await waitFor(() => expect(within(tree()).getByText('CK_leeftijd')).toBeTruthy())
+    fireEvent.contextMenu(within(tree()).getByText('CK_leeftijd'))
+    await waitFor(() => expect(screen.getByText('Constraint verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Constraint verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    expect(screen.getByText(/ALTER TABLE \[main\]\.\[klanten\] DROP CONSTRAINT \[CK_leeftijd\]/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    await waitFor(() => expect(within(tree()).queryByText('CK_leeftijd')).toBeNull())
+    expect(screen.getByText(/Constraint 'CK_leeftijd' verwijderd/)).toBeTruthy()
+
+    const mock = window.nvag as ReturnType<typeof createMockNvag>
+    expect(mock.adminRequests.some((r) => r.action === 'dropIndex')).toBe(true)
+    expect(mock.adminRequests.some((r) => r.action === 'dropConstraint')).toBe(true)
+    expect(state.tables).toEqual(['klanten'])
+  })
+
+  it('verwijdert een opgeslagen verbinding via het server-contextmenu na bevestiging (SAL-45)', async () => {
+    const connSql = sampleConnection({ id: 'conn-sql', name: 'SQL Server', providerId: 'sqlserver', database: 'master' })
+    const connOther = sampleConnection({ id: 'conn-other', name: 'Andere server', providerId: 'sqlserver', database: 'master' })
+    const mock = createMockNvag({
+      connections: [connSql, connOther],
+      databases: [{ name: 'Klanten' }],
+      capabilities: {
+        supportsSchemas: true,
+        supportsSequences: false,
+        supportsSynonyms: false,
+        supportsTriggers: true,
+        supportsExecutionPlans: false,
+        supportsMonitoring: false,
+        supportsTransactions: true,
+        supportsIdentityColumns: true,
+        supportsGeneratedColumns: true,
+        supportsDdlAdmin: true,
+        supportsUsersAndRoles: true,
+        supportsBackupRestore: true,
+        maxResultRowsDefault: 1000,
+        dialect: 'tsql'
+      }
+    })
+    window.nvag = mock
+    useAppStore.setState({
+      connections: [connSql, connOther],
+      openSessions: {
+        'conn-sql': {
+          config: connSql,
+          sessionId: 's1',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+    render(<App />)
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    await waitFor(() => expect(within(tree()).getByText('SQL Server')).toBeTruthy())
+    expect(within(tree()).getByText('Andere server')).toBeTruthy()
+
+    // Annuleren doet niets.
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Verwijderen…'))
+    await waitFor(() => expect(screen.getByText(/Opgeslagen verbinding 'SQL Server' verwijderen\?/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
+    await waitFor(() => expect(screen.queryByText(/Opgeslagen verbinding 'SQL Server' verwijderen\?/)).toBeNull())
+    expect(within(tree()).getByText('SQL Server')).toBeTruthy()
+    expect(mock.savedConfigs.some((c) => c.id === 'conn-sql')).toBe(true)
+
+    // Bevestigen verwijdert de opgeslagen verbinding + sluit de sessie;
+    // de andere connectie blijft onaangetast.
+    fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
+    await waitFor(() => expect(screen.getByText('Verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Verwijderen…'))
+    await waitFor(() => expect(screen.getByText(/Opgeslagen verbinding 'SQL Server' verwijderen\?/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+
+    await waitFor(() => expect(within(tree()).queryByText('SQL Server')).toBeNull())
+    expect(within(tree()).getByText('Andere server')).toBeTruthy()
+    expect(mock.savedConfigs.some((c) => c.id === 'conn-sql')).toBe(false)
+    expect(mock.savedConfigs.some((c) => c.id === 'conn-other')).toBe(true)
+    expect(mock.closedSessions).toContain('s1')
+    expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined()
+    expect(useAppStore.getState().openSessions['conn-other']).toBeUndefined()
+    expect(screen.getByText(/Opgeslagen verbinding 'SQL Server' verwijderd/)).toBeTruthy()
+  })
+
+  it('verbergt verwijder-items wanneer supportsDdlAdmin of de capability ontbreekt (SAL-45)', async () => {
+    const conn = sampleConnection({ id: 'conn-min', name: 'Minimaal', providerId: 'sqlserver', database: 'master' })
+    window.nvag = createMockNvag({
+      connections: [conn],
+      databases: [{ name: 'Klanten' }],
+      procedures: ['sp_verborgen'],
+      synonyms: ['syn_verborgen'],
+      users: ['app_verborgen'],
+      capabilities: {
+        supportsSchemas: true,
+        supportsSequences: false,
+        supportsSynonyms: false,
+        supportsTriggers: true,
+        supportsExecutionPlans: false,
+        supportsMonitoring: false,
+        supportsTransactions: true,
+        supportsIdentityColumns: true,
+        supportsGeneratedColumns: true,
+        supportsDdlAdmin: false,
+        supportsUsersAndRoles: false,
+        supportsBackupRestore: false,
+        maxResultRowsDefault: 1000,
+        dialect: 'tsql'
+      }
+    })
+    useAppStore.setState({
+      connections: [conn],
+      openSessions: {
+        'conn-min': {
+          config: conn,
+          sessionId: 's-min',
+          serverInfo: { providerId: 'sqlserver', providerName: 'SQL Server', serverVersion: '17', currentDatabase: 'master' }
+        }
+      }
+    })
+    render(<App />)
+    const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
+    fireEvent.click(within(tree()).getByText('Minimaal'))
+    await waitFor(() => expect(within(tree()).getByText('Databases')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Databases'))
+    await waitFor(() => expect(within(tree()).getByText('Klanten')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Klanten'))
+    await waitFor(() => expect(within(tree()).getByText('Programmability')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Programmability'))
+    await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
+    fireEvent.click(within(tree()).getByText('Stored Procedures'))
+    await waitFor(() => expect(within(tree()).getByText('sp_verborgen')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('sp_verborgen'))
+    await waitFor(() => expect(screen.getByText('Script Object als CREATE')).toBeTruthy())
+    expect(screen.queryByText('Procedure verwijderen…')).toBeNull()
+    // Zonder supportsSynonyms/UsersAndRoles geen folders/items.
+    expect(within(tree()).queryByText('Synonyms')).toBeNull()
+    expect(within(tree()).queryByText('Users')).toBeNull()
   })
 })

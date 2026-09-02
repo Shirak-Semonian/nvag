@@ -634,6 +634,15 @@ export interface NvagIpcApi {
     listUsers(connectionId: string): Promise<AdminUserInfo[]>
     createUser(req: AdminUserRequest, confirmed?: boolean): Promise<AdminActionResult>
     dropUser(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    // SAL-45: DROP voor de overige Object Explorer-objecttypen (routines,
+    // trigger, sequence, synonym) en tabel-constraints.
+    dropProcedure(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropFunction(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropTrigger(connectionId: string, database: string, schema: string | undefined, name: string, table?: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropSequence(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropSynonym(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropRole(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropConstraint(connectionId: string, database: string, schema: string | undefined, table: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
     /** Capabilities van de provider (voor UI-gating). */
     capabilities(connectionId: string): Promise<ProviderCapabilities>
     // Fase 4: Backup & Restore (DBA), gated via `supportsBackupRestore`

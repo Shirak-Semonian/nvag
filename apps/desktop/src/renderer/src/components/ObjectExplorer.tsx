@@ -12,7 +12,7 @@ import type {
   TableInfo,
   ViewInfo
 } from '@nvag/contracts'
-import { buildCreateDatabase, buildDrop, quoteQualifiedName } from '@nvag/sql-dialect'
+import { buildCreateDatabase, buildDrop, buildDropConstraint, quoteQualifiedName } from '@nvag/sql-dialect'
 import { useAppStore, type AdminDialogTab } from '../state/store'
 import { ObjectViewer, type ObjectViewerSelection } from './ObjectViewer'
 import { EnvBadge } from './StatusBar'
@@ -133,6 +133,23 @@ type DropTarget =
   | { kind: 'table'; connId: string; db: string; schema: string; table: string; sql: string }
   | { kind: 'view'; connId: string; db: string; schema: string; view: string; sql: string }
   | { kind: 'schema'; connId: string; db: string; schema: string; sql: string }
+  // SAL-45: schema-gebonden objecten (routines/trigger/sequence/synonym).
+  | {
+      kind: 'procedure' | 'function' | 'trigger' | 'sequence' | 'synonym'
+      connId: string
+      db: string
+      schema?: string
+      name: string
+      /** Alleen postgres-triggers: DROP TRIGGER … ON <tabel>. */
+      table?: string
+      /** Trigger-node onder een tabel-subfolder (refresh via tabelnode). */
+      tableLevel?: boolean
+      sql: string
+    }
+  // SAL-45: database-scoped principals (users/roles, geen schema).
+  | { kind: 'user' | 'role'; connId: string; db: string; name: string; sql: string }
+  // SAL-45: tabel-subobjecten (index/constraint via tabel-context).
+  | { kind: 'index' | 'constraint'; connId: string; db: string; schema: string; table: string; name: string; sql: string }
 
 interface DropConfirmState {
   target: DropTarget
@@ -389,56 +406,6 @@ export function ObjectExplorer(): React.JSX.Element {
     setConfirm({ target, label, busy: false, confirmed: false })
   }, [])
 
-  /**
-   * Voert de bevestigde DROP uit. De eerste poging gaat zonder `confirmed`
-   * door de environment-safety-guard (F2-3): bij een confirm-blokkade toont de
-   * dialoog de redenen en wordt de actie pas na een tweede, expliciete
-   * bevestiging opnieuw uitgevoerd met `confirmed: true`. Annuleren doet nooit
-   * iets destructiefs.
-   */
-  const runDrop = useCallback(
-    async (state: DropConfirmState): Promise<void> => {
-      const t = state.target
-      setConfirm({ ...state, busy: true, error: null })
-      try {
-        let result: AdminActionResult
-        switch (t.kind) {
-          case 'database':
-            result = await window.nvag.admin.dropDatabase(t.connId, t.db, state.confirmed)
-            break
-          case 'table':
-            result = await window.nvag.admin.dropTable(t.connId, t.db, t.schema, t.table, state.confirmed)
-            break
-          case 'view':
-            result = await window.nvag.admin.dropView(t.connId, t.db, t.schema, t.view, state.confirmed)
-            break
-          case 'schema':
-            result = await window.nvag.admin.dropSchema(t.connId, t.db, t.schema, state.confirmed)
-            break
-        }
-        if (!result.ok && result.blocked && result.blocked.length > 0) {
-          // guard-blokkade: redenen tonen; volgende poging is expliciet bevestigd.
-          setConfirm({ ...state, busy: false, reasons: result.blocked, confirmed: true })
-          return
-        }
-        setConfirm(null)
-        if (t.kind === 'database') {
-          // SAL-31-signaal: Object Explorer + database-dropdown herladen.
-          useAppStore.getState().bumpDbListRevision()
-          showNotice(`Database '${t.db}' verwijderd.`, 'success')
-        } else {
-          // SAL-32-signaal: geopende objectfolders herladen.
-          useAppStore.getState().bumpDbObjectsRevision()
-          const name = t.kind === 'table' ? t.table : t.kind === 'view' ? t.view : t.schema
-          showNotice(`'${name}' verwijderd.`, 'success')
-        }
-      } catch (err) {
-        setConfirm({ ...state, busy: false, error: err instanceof Error ? err.message : String(err) })
-      }
-    },
-    [showNotice]
-  )
-
   const buildDatabaseFolders = useCallback(
     async (connId: string, db: string): Promise<TreeNode[]> => {
       const caps = await ensureCaps(connId)
@@ -569,7 +536,14 @@ export function ObjectExplorer(): React.JSX.Element {
         }
         case 'triggers': {
           const trigs = await window.nvag.metadata.listTriggers(connId, db)
-          return trigs.map((t) => mkLeaf('trigger', t.name, t.name, t.schema, { detail: t.table }))
+          // SAL-45: tabelnaam meenemen in ctx — postgres vereist
+          // `DROP TRIGGER … ON <tabel>`; de tabel zit ook in detail.
+          return trigs.map((t) =>
+            mkLeaf('trigger', t.name, t.name, t.schema, {
+              detail: t.table,
+              ctx: { connId, db, schema: t.schema, name: t.name, table: t.table }
+            })
+          )
         }
         case 'users': {
           const users = await window.nvag.metadata.listUsers(connId, db)
@@ -648,6 +622,153 @@ export function ObjectExplorer(): React.JSX.Element {
       ]
     },
     []
+  )
+
+  /**
+   * SAL-45: herlaadt de tabelnode (metadata) zodat geopende tabel-subfolders
+   * (Indexes/Constraints/Triggers) na een drop actuele objecten tonen.
+   */
+  const refreshTableNode = useCallback(
+    async (connId: string, db: string, schema: string | undefined, table: string): Promise<void> => {
+      const findTable = (nodes: TreeNode[]): TreeNode | undefined => {
+        for (const n of nodes) {
+          if (
+            n.kind === 'table' &&
+            n.ctx?.connId === connId &&
+            n.ctx.db === db &&
+            n.ctx.schema === schema &&
+            n.ctx.name === table
+          )
+            return n
+          const found = findTable(n.children)
+          if (found) return found
+        }
+        return undefined
+      }
+      const node = findTable(treeRef.current)
+      if (!node) return
+      await runLoader(node, () => loadChildren(node), 'tabelmetagegevens')
+    },
+    [loadChildren, runLoader]
+  )
+
+  /** SAL-45: opgeslagen verbinding verwijderen (niet-destructief voor server). */
+  const [removeConn, setRemoveConn] = useState<{
+    connId: string
+    label: string
+    busy: boolean
+    error: string | null
+  } | null>(null)
+
+  const runRemoveConnection = useCallback(
+    async (state: { connId: string; label: string }): Promise<void> => {
+      setRemoveConn({ ...state, busy: true, error: null })
+      try {
+        await useAppStore.getState().removeConnection(state.connId)
+        setRemoveConn(null)
+        showNotice(`Opgeslagen verbinding '${state.label}' verwijderd.`, 'success')
+      } catch (err) {
+        setRemoveConn({ ...state, busy: false, error: err instanceof Error ? err.message : String(err) })
+      }
+    },
+    [showNotice]
+  )
+
+  /**
+   * Voert de bevestigde DROP uit. De eerste poging gaat zonder `confirmed`
+   * door de environment-safety-guard (F2-3): bij een confirm-blokkade toont de
+   * dialoog de redenen en wordt de actie pas na een tweede, expliciete
+   * bevestiging opnieuw uitgevoerd met `confirmed: true`. Annuleren doet nooit
+   * iets destructiefs.
+   */
+  const runDrop = useCallback(
+    async (state: DropConfirmState): Promise<void> => {
+      const t = state.target
+      setConfirm({ ...state, busy: true, error: null })
+      try {
+        let result: AdminActionResult
+        switch (t.kind) {
+          case 'database':
+            result = await window.nvag.admin.dropDatabase(t.connId, t.db, state.confirmed)
+            break
+          case 'table':
+            result = await window.nvag.admin.dropTable(t.connId, t.db, t.schema, t.table, state.confirmed)
+            break
+          case 'view':
+            result = await window.nvag.admin.dropView(t.connId, t.db, t.schema, t.view, state.confirmed)
+            break
+          case 'schema':
+            result = await window.nvag.admin.dropSchema(t.connId, t.db, t.schema, state.confirmed)
+            break
+          // SAL-45: schema-gebonden objecten via de nieuwe admin-DROP-IPC's.
+          case 'procedure':
+            result = await window.nvag.admin.dropProcedure(t.connId, t.db, t.schema, t.name, state.confirmed)
+            break
+          case 'function':
+            result = await window.nvag.admin.dropFunction(t.connId, t.db, t.schema, t.name, state.confirmed)
+            break
+          case 'trigger':
+            result = await window.nvag.admin.dropTrigger(t.connId, t.db, t.schema, t.name, t.table, state.confirmed)
+            break
+          case 'sequence':
+            result = await window.nvag.admin.dropSequence(t.connId, t.db, t.schema, t.name, state.confirmed)
+            break
+          case 'synonym':
+            result = await window.nvag.admin.dropSynonym(t.connId, t.db, t.schema, t.name, state.confirmed)
+            break
+          case 'user':
+            result = await window.nvag.admin.dropUser(t.connId, t.name, state.confirmed)
+            break
+          case 'role':
+            result = await window.nvag.admin.dropRole(t.connId, t.name, state.confirmed)
+            break
+          case 'index':
+            result = await window.nvag.admin.dropIndex(t.connId, t.db, t.schema, t.table, t.name, state.confirmed)
+            break
+          case 'constraint':
+            result = await window.nvag.admin.dropConstraint(t.connId, t.db, t.schema, t.table, t.name, state.confirmed)
+            break
+        }
+        if (!result.ok && result.blocked && result.blocked.length > 0) {
+          // guard-blokkade: redenen tonen; volgende poging is expliciet bevestigd.
+          setConfirm({ ...state, busy: false, reasons: result.blocked, confirmed: true })
+          return
+        }
+        setConfirm(null)
+        if (t.kind === 'database') {
+          // SAL-31-signaal: Object Explorer + database-dropdown herladen.
+          useAppStore.getState().bumpDbListRevision()
+          showNotice(`Database '${t.db}' verwijderd.`, 'success')
+          return
+        }
+        // SAL-45: tabel-subobjecten (index/constraint/trigger op een tabel)
+        // vereisen een metadata-refresh van de tabel zelf (de subfolders zijn
+        // structureel en worden niet door dbObjectsRevision herladen).
+        if (t.kind === 'index' || t.kind === 'constraint') {
+          void refreshTableNode(t.connId, t.db, t.schema, t.table)
+        } else if (t.kind === 'trigger' && t.tableLevel && t.table) {
+          void refreshTableNode(t.connId, t.db, t.schema, t.table)
+        } else {
+          // SAL-32-signaal: geopende objectfolders herladen.
+          useAppStore.getState().bumpDbObjectsRevision()
+        }
+        const label =
+          t.kind === 'table'
+            ? t.table
+            : t.kind === 'view'
+              ? t.view
+              : t.kind === 'schema'
+                ? t.schema
+                : t.kind === 'index' || t.kind === 'constraint'
+                  ? `${t.kind === 'index' ? 'Index' : 'Constraint'} '${t.name}'`
+                  : t.name
+        const display = t.kind === 'index' || t.kind === 'constraint' ? label : `'${label}'`
+        showNotice(`${display} verwijderd.`, 'success')
+      } catch (err) {
+        setConfirm({ ...state, busy: false, error: err instanceof Error ? err.message : String(err) })
+      }
+    },
+    [refreshTableNode, showNotice]
   )
 
   /** Verwijdert alle afstammeling-keys uit de expanded-set (bij inklappen van een parent). */
@@ -875,6 +996,17 @@ export function ObjectExplorer(): React.JSX.Element {
         // al gesloten verbinding; de optie die niets kan doen ontbreekt).
         if (connId && node.connected) items.push(disconnectItem)
         else if (connId && !node.connected) items.push(connectItem)
+        // SAL-45: opgeslagen verbinding verwijderen (niet-destructief voor de
+        // server zelf; alleen de opgeslagen verwijzing + open sessie).
+        if (connId) {
+          items.push({ separator: true, label: '' })
+          items.push(
+            dropItem('Verwijderen…', () => {
+              setMenu(null)
+              setRemoveConn({ connId, label: connLabel, busy: false, error: null })
+            })
+          )
+        }
         break
       case 'database': {
         if (!connId || !db) break
@@ -1070,6 +1202,42 @@ export function ObjectExplorer(): React.JSX.Element {
               setObjProps({ connId, db: database, schema, name: objName, kind: type })
             })
           )
+          // SAL-45: "… verwijderen…" voor routines/triggers, gated op
+          // supportsDdlAdmin. PostgreSQL-triggers vereisen de tabelnaam
+          // (DROP TRIGGER … ON <tabel>); zonder tabel geen menu-item.
+          const dropType = node.kind === 'procedure' ? 'PROCEDURE' : node.kind === 'function' ? 'FUNCTION' : 'TRIGGER'
+          const dropLabel = node.kind === 'procedure' ? 'Procedure' : node.kind === 'function' ? 'Functie' : 'Trigger'
+          const dropKind: 'procedure' | 'function' | 'trigger' =
+            node.kind === 'procedure' ? 'procedure' : node.kind === 'function' ? 'function' : 'trigger'
+          const canDropTrigger = node.kind !== 'trigger' || caps?.dialect !== 'postgres' || !!node.ctx?.table
+          if (caps?.supportsDdlAdmin && canDropTrigger) {
+            items.push({ separator: true, label: '' })
+            items.push(
+              dropItem(`${dropLabel} verwijderen…`, () =>
+                startDrop(
+                  {
+                    kind: dropKind,
+                    connId,
+                    db: database,
+                    schema: node.ctx?.schema,
+                    name: objName,
+                    table: node.ctx?.table,
+                    // Alleen trigger-nodes ónder een tabel-subfolder refreshen de
+                    // tabelnode; folder-level (Database Triggers) gebruikt de
+                    // normale dbObjectsRevision-refresh.
+                    tableLevel: node.key.startsWith('c:') ? Boolean(node.ctx?.table) : undefined,
+                    sql: caps.dialect
+                      ? buildDrop(caps.dialect, dropType, objName, {
+                          schema: node.ctx?.schema ?? null,
+                          table: node.ctx?.table
+                        })
+                      : `DROP ${dropType} ${objName};`
+                  },
+                  `${dropLabel} '${objName}' verwijderen`
+                )
+              )
+            )
+          }
         }
         break
       }
@@ -1081,24 +1249,90 @@ export function ObjectExplorer(): React.JSX.Element {
         const objName = node.ctx?.name
         if (connId && objName && db) {
           items.push(newQueryItem(db))
-          if (node.kind === 'schema' && caps?.supportsSchemas && caps?.supportsDdlAdmin) {
-            items.push({ separator: true, label: '' })
-            items.push(
-              dropItem('Schema verwijderen…', () =>
-                startDrop(
-                  {
-                    kind: 'schema',
+          if (!caps?.supportsDdlAdmin) break
+          // SAL-45: "… verwijderen…" per objecttype, capability-gated.
+          // - schema: alleen waar supportsSchemas
+          // - user/role: alleen waar supportsUsersAndRoles
+          // - sequence/synonym: DDL-admin volstaat (folder is al gated).
+          const schemaDrop =
+            node.kind === 'schema' && caps.supportsSchemas
+              ? {
+                  label: 'Schema',
+                  target: { kind: 'schema' as const, connId, db, schema: objName, sql: caps.dialect ? buildDrop(caps.dialect, 'SCHEMA', objName) : `DROP SCHEMA ${objName};` }
+                }
+              : null
+          const seqSynDrop =
+            node.kind === 'sequence' || node.kind === 'synonym'
+              ? {
+                  label: node.kind === 'sequence' ? 'Sequence' : 'Synonym',
+                  target: {
+                    kind: node.kind,
                     connId,
                     db,
-                    schema: objName,
-                    sql: caps.dialect ? buildDrop(caps.dialect, 'SCHEMA', objName) : `DROP SCHEMA ${objName};`
-                  },
-                  `Schema '${objName}' verwijderen`
-                )
+                    schema: node.ctx?.schema,
+                    name: objName,
+                    sql: caps.dialect
+                      ? buildDrop(caps.dialect, node.kind === 'sequence' ? 'SEQUENCE' : 'SYNONYM', objName, { schema: node.ctx?.schema ?? null })
+                      : `DROP ${node.kind === 'sequence' ? 'SEQUENCE' : 'SYNONYM'} ${objName};`
+                  } as DropTarget
+                }
+              : null
+          const userRoleDrop =
+            (node.kind === 'user' || node.kind === 'role') && caps.supportsUsersAndRoles
+              ? {
+                  label: node.kind === 'user' ? 'User' : 'Role',
+                  target: {
+                    kind: node.kind,
+                    connId,
+                    db,
+                    name: objName,
+                    sql: caps.dialect ? buildDrop(caps.dialect, node.kind === 'user' ? 'USER' : 'ROLE', objName) : `DROP ${node.kind === 'user' ? 'USER' : 'ROLE'} ${objName};`
+                  } as DropTarget
+                }
+              : null
+          const drop = schemaDrop ?? seqSynDrop ?? userRoleDrop
+          if (drop) {
+            items.push({ separator: true, label: '' })
+            items.push(
+              dropItem(`${drop.label} verwijderen…`, () =>
+                startDrop(drop.target, `${drop.label} '${objName}' verwijderen`)
               )
             )
           }
         }
+        break
+      }
+      // SAL-45: tabel-subobjecten index/constraint (via tabel-context).
+      case 'index':
+      case 'constraint': {
+        const ctx = node.ctx
+        const objName = ctx?.name
+        const table = ctx?.table
+        if (!connId || !db || !ctx || !objName || !table) break
+        if (!caps?.supportsDdlAdmin) break
+        // DROP CONSTRAINT bestaat alleen op tsql/postgres (buildDropConstraint);
+        // index-drop is dialect-correct via buildDrop.
+        if (node.kind === 'constraint' && caps.dialect !== 'tsql' && caps.dialect !== 'postgres') break
+        const label = node.kind === 'index' ? 'Index' : 'Constraint'
+        const sql =
+          node.kind === 'index'
+            ? caps.dialect
+              ? buildDrop(caps.dialect, 'INDEX', objName, { schema: ctx.schema ?? null, table })
+              : `DROP INDEX ${objName} ON ${table};`
+            : caps.dialect
+              ? buildDropConstraint(caps.dialect, ctx.schema ?? null, table, objName)
+              : `ALTER TABLE ${table} DROP CONSTRAINT ${objName};`
+        items.push({ separator: true, label: '' })
+        items.push(
+          dropItem(`${label} verwijderen…`, () =>
+            startDrop(
+              node.kind === 'index'
+                ? { kind: 'index', connId, db, schema: ctx.schema ?? '', table, name: objName, sql }
+                : { kind: 'constraint', connId, db, schema: ctx.schema ?? '', table, name: objName, sql },
+              `${label} '${objName}' verwijderen`
+            )
+          )
+        )
         break
       }
       default:
@@ -1341,6 +1575,17 @@ export function ObjectExplorer(): React.JSX.Element {
           error={confirm.error}
           onConfirm={() => void runDrop(confirm)}
           onCancel={() => setConfirm(null)}
+        />
+      )}
+      {removeConn && (
+        <ConfirmDialog
+          title={`Opgeslagen verbinding '${removeConn.label}' verwijderen?`}
+          message="Alleen de opgeslagen verbinding wordt uit de lijst verwijderd (een open sessie wordt gesloten). De server/database zelf wordt niet gewijzigd."
+          confirmLabel="Verwijderen"
+          busy={removeConn.busy}
+          error={removeConn.error}
+          onConfirm={() => void runRemoveConnection(removeConn)}
+          onCancel={() => setRemoveConn(null)}
         />
       )}
       {dbProps && <DatabasePropertiesDialog state={dbProps} onClose={() => setDbProps(null)} />}
