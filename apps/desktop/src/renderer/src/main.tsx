@@ -1,7 +1,15 @@
 import './assets/main.css'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { AllCommunityModule, ModuleRegistry, provideGlobalGridOptions } from 'ag-grid-community'
 import App from './App'
+
+// AG Grid v33+: features zijn opgesplitst in modules — zonder registratie
+// gooit elk grid bij het opstarten (o.a. rowSelection/ColumnFilter/TextEditor,
+// nodig voor query-resultaten en het Tabelgegevens-paneel). Registreer alle
+// community-modules + gebruik de legacy-theme (CSS-gebaseerd, ag-theme-*).
+ModuleRegistry.registerModules([AllCommunityModule])
+provideGlobalGridOptions({ theme: 'legacy' })
 
 // Monaco worker setup (electron-vite: workers via ?worker imports)
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'

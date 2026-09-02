@@ -31,6 +31,17 @@
   bevestigen), auditlogging en een capability-gated Backup-tab; daarnaast
   packaging (AppImage/tar.gz/deb/rpm) met CI-workflow.
 
+**Release 1.0.1 (2026-09-02, SAL-44)**: verse Linux-distributie in
+`apps/desktop/release/` (`Nvag-1.0.1.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
+met de SAL-42/SAL-43-fixes: Tabelgegevens-paneel toont fout/timeout i.p.v.
+eeuwige "Laden…" (incl. tsql `TOP (n)`-fix zodat tabeldata op SQL Server
+weer laadt) en "Verbinding verbreken" sluit de sessie zichtbaar (boom klapt
+in, geen stille no-op). Daarnaast: AG Grid v36-modules geregistreerd
+(`AllCommunityModule` + legacy-theme) — de grid-panelen (tabelgegevens en
+query-resultaten) crashten/leegden anders in de gebundelde app. Rooktest
+van de gebouwde AppImage geslaagd: app start, SQLite-connectie, Object
+Explorer, tabeldata laden + verbinding verbreken werken.
+
 **Release 1.0.0 (2026-09-02, SAL-41)**: verse Linux-distributie in
 `apps/desktop/release/` (`Nvag-1.0.0.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
 met alle fixes/features van SAL-29 t/m SAL-40: query-cancel, SSMS-niveau
