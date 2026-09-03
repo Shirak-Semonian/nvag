@@ -6,7 +6,7 @@ Supported platforms: **SQL Server, Azure SQL, PostgreSQL, MySQL, MariaDB, Db2, O
 
 ## Features
 
-- **Object Explorer** — databases, tables, views, procedures, functions, users, roles, schemas and more; SSMS-level context menus
+- **Object Explorer** — databases, tables, views, procedures, functions, users, roles, schemas and more; full-featured context menus
 - **Query Editor** — SQL with autocomplete, multiple tabs, run/cancel, results in a grid (sort, filter, copy, export to CSV/Excel)
 - **Database administration** — create, alter, view properties and drop databases and objects; backup/restore
 - **Table data** — view and edit rows
