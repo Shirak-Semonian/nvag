@@ -1,17 +1,11 @@
-# Maintainer: Shirak Semonian <shirak@localhost>
-# LET OP vóór indiening bij AUR:
-#   1. vervang het e-mailadres door een publiek bereikbaar adres
-#      (AUR vereist een geldig e-mailadres; 'localhost' wordt afgewezen);
-#   2. vul _repo_owner in met de GitHub-eigenaar van de publieke Nvag-repo;
-#   3. ververs sha256sums met `updpkgsums` zodra de eerste CI-release
-#      (artefacten op GitHub Releases) er ligt — zie README.md in deze map.
+# Maintainer: Shirak Semonian <semonian.it.solutions@gmail.com>
 
 pkgname=nvag-bin
 pkgver=1.0.4
 pkgrel=1
 pkgdesc="Database Management Studio voor meerdere databaseplatformen (SQL Server, PostgreSQL, MySQL, MariaDB, Db2, Oracle, Snowflake, Azure SQL/Synapse, Databricks, SQLite) — prebuilt AppImage van GitHub Releases"
 arch=('x86_64')
-url="https://github.com/OWNER/Nvag"
+url="https://github.com/Shirak-Semonian/nvag"
 license=('custom') # eigen/ongespecificeerd; LICENSE toevoegen aan de GitHub-repo vóór publicatie
 depends=('gtk3' 'libnotify' 'libsecret' 'libxss' 'nss')
 optdepends=('fuse2: AppImage-runtime; zonder FUSE2 ook via --appimage-extract-and-run')
@@ -22,18 +16,13 @@ conflicts=('nvag')
 # beschadigt het artefact — byte-identiek installeren.
 options=('!strip' '!debug')
 
-# _repo_owner: GitHub-eigenaar van de publieke Nvag-repo — INVULLEN vóór
-# AUR-indiening (zelfde eigenaar als in README.md en docs/09-publicatie.md).
-_repo_owner='OWNER'
+_repo_owner='Shirak-Semonian'
 
 source=("https://github.com/${_repo_owner}/Nvag/releases/download/v${pkgver}/Nvag-${pkgver}.AppImage"
         'nvag.desktop'
         'icon.png')
 
-# sha256 van de lokale bestanden in deze map (nvag.desktop, icon.png) zijn
-# definitief. De AppImage (source[0]) wordt pas na de eerste CI-release op
-# GitHub Releases bepaald — vóór AUR-indiening verversen met: updpkgsums
-sha256sums=('SKIP'
+sha256sums=('64ce2e557cb93ef121e2c25c35a2be59ddb63b6468b276c550717294bb8a6a2a'
             'bb5c6cfab891b0b03161ef934858e22c126c0186dac0d4525c25c0cbbd38c8d6'
             '4363016ccf3541c84ae6a1eee83f507fb2b775aa89b9d6c8163875640267f9e9')
 
