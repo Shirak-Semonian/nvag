@@ -1941,6 +1941,24 @@ button.danger:hover:not(:disabled) {
   border-bottom: 1px solid var(--border);
   padding-bottom: 6px;
 }
+/* SAL-51: database-context-regel in de Admin-dialoog (doeldatabase). */
+.admin-dbrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 12px;
+}
+.admin-dbrow label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted, #9a9a9a);
+}
+.admin-dbrow select {
+  min-width: 180px;
+}
 .admin-tab {
   border: 1px solid transparent;
   background: transparent;

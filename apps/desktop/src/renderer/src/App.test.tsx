@@ -846,6 +846,32 @@ describe('App (renderer-integratie)', () => {
     expect(screen.getByText(/'klanten' verwijderd/)).toBeTruthy()
   })
 
+  it('geeft bij DROP uit het contextmenu de database van de node door (SAL-51)', async () => {
+    openSqlServerExplorerFull()
+    const api = window.nvag as ReturnType<typeof createMockNvag>
+    const dropTable = vi.fn(
+      async (_connId: string, _db: string, _schema: string, _table: string, _confirmed?: boolean) => ({
+        ok: true,
+        sql: 'DROP TABLE [dbo].[klanten];'
+      })
+    )
+    api.admin.dropTable = dropTable
+
+    render(<App />)
+    const tree = await expandSqlServerDb()
+    fireEvent.click(within(tree()).getByText('Tables'))
+    await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
+
+    fireEvent.contextMenu(within(tree()).getByText('klanten'))
+    await waitFor(() => expect(screen.getByText('Tabel verwijderen…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Tabel verwijderen…'))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    await waitFor(() => expect(dropTable).toHaveBeenCalled())
+    // De drop gaat naar de database van de node (Klanten), niet naar master.
+    expect(dropTable.mock.calls[0]?.[1]).toBe('Klanten')
+  })
+
   it('biedt folder-contextmenu\'s met "Nieuwe X aanmaken…" die de AdminDialog op de juiste tab openen (SAL-34)', async () => {
     openSqlServerExplorerFull()
     render(<App />)
@@ -858,6 +884,8 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
     expect(screen.getByRole('tab', { name: 'Tabellen' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByPlaceholderText('naam')).toBeTruthy()
+    // SAL-51: de database van de folder (Klanten) is de doeldatabase van de dialoog.
+    expect((screen.getByLabelText('Doeldatabase') as HTMLSelectElement).value).toBe('Klanten')
     fireEvent.click(screen.getByRole('button', { name: 'Sluiten' }))
     await waitFor(() => expect(screen.queryByText(/Database Administration/)).toBeNull())
 

@@ -633,7 +633,9 @@ export interface NvagIpcApi {
     dropIndex(connectionId: string, database: string, schema: string, table: string, index: string, confirmed?: boolean): Promise<AdminActionResult>
     listUsers(connectionId: string): Promise<AdminUserInfo[]>
     createUser(req: AdminUserRequest, confirmed?: boolean): Promise<AdminActionResult>
-    dropUser(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    // SAL-51: database-parameter — tsql-users/roles zijn database-principals;
+    // de DDL draait dan op de doeldatabase (postgres: clusterbreed, no-op).
+    dropUser(connectionId: string, database: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
     // SAL-45: DROP voor de overige Object Explorer-objecttypen (routines,
     // trigger, sequence, synonym) en tabel-constraints.
     dropProcedure(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
@@ -641,7 +643,7 @@ export interface NvagIpcApi {
     dropTrigger(connectionId: string, database: string, schema: string | undefined, name: string, table?: string, confirmed?: boolean): Promise<AdminActionResult>
     dropSequence(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
     dropSynonym(connectionId: string, database: string, schema: string | undefined, name: string, confirmed?: boolean): Promise<AdminActionResult>
-    dropRole(connectionId: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
+    dropRole(connectionId: string, database: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
     dropConstraint(connectionId: string, database: string, schema: string | undefined, table: string, name: string, confirmed?: boolean): Promise<AdminActionResult>
     // SAL-50: eigenschappen van een bestaande database lezen/wijzigen
     // (bewerkbare eigenschappen-dialoog + ALTER DATABASE).

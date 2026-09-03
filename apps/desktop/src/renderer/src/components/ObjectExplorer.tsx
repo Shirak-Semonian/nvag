@@ -718,10 +718,10 @@ export function ObjectExplorer(): React.JSX.Element {
             result = await window.nvag.admin.dropSynonym(t.connId, t.db, t.schema, t.name, state.confirmed)
             break
           case 'user':
-            result = await window.nvag.admin.dropUser(t.connId, t.name, state.confirmed)
+            result = await window.nvag.admin.dropUser(t.connId, t.db, t.name, state.confirmed)
             break
           case 'role':
-            result = await window.nvag.admin.dropRole(t.connId, t.name, state.confirmed)
+            result = await window.nvag.admin.dropRole(t.connId, t.db, t.name, state.confirmed)
             break
           case 'index':
             result = await window.nvag.admin.dropIndex(t.connId, t.db, t.schema, t.table, t.name, state.confirmed)
@@ -1050,7 +1050,9 @@ export function ObjectExplorer(): React.JSX.Element {
             label: 'Nieuwe objecten aanmaken…',
             action: () => {
               setMenu(null)
-              useAppStore.getState().openAdminDialog(connId, 'database')
+              // SAL-51: database-context meesturen — schakelt de gebruiker na
+              // het openen naar een object-tab, dan is de doeldatabase al X.
+              useAppStore.getState().openAdminDialog(connId, 'database', db)
             }
           })
         }
@@ -1059,7 +1061,8 @@ export function ObjectExplorer(): React.JSX.Element {
             label: 'Taken…',
             action: () => {
               setMenu(null)
-              useAppStore.getState().openAdminDialog(connId, 'backup')
+              // SAL-51: database-context meegeven (backup-tab preselecteert db).
+              useAppStore.getState().openAdminDialog(connId, 'backup', db)
             }
           })
         }
@@ -1097,7 +1100,9 @@ export function ObjectExplorer(): React.JSX.Element {
             label: createAction.label,
             action: () => {
               setMenu(null)
-              useAppStore.getState().openAdminDialog(connId, createAction.tab)
+              // SAL-51: database van de folder meegeven — "Nieuwe tabel…" op de
+              // Tables-folder van db X maakt de tabel in X aan (niet in master).
+              useAppStore.getState().openAdminDialog(connId, createAction.tab, node.ctx?.db ?? null)
             }
           })
         }

@@ -359,8 +359,8 @@ export function registerIpcHandlers(): void {
     if (r.ok) audit('admin.ddl', `CREATE USER ${req.name}`, { server: connectionStore.get(req.connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropUser', async (_e, connectionId: string, name: string, confirmed?: boolean) => {
-    const r = await admin.dropUser(connectionId, name, confirmed)
+  ipcMain.handle('admin:dropUser', async (_e, connectionId: string, database: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropUser(connectionId, database, name, confirmed)
     if (r.ok) audit('admin.ddl', `DROP USER ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
@@ -390,8 +390,8 @@ export function registerIpcHandlers(): void {
     if (r.ok) audit('admin.ddl', `DROP SYNONYM ${schema ? schema + '.' : ''}${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })
-  ipcMain.handle('admin:dropRole', async (_e, connectionId: string, name: string, confirmed?: boolean) => {
-    const r = await admin.dropRole(connectionId, name, confirmed)
+  ipcMain.handle('admin:dropRole', async (_e, connectionId: string, database: string, name: string, confirmed?: boolean) => {
+    const r = await admin.dropRole(connectionId, database, name, confirmed)
     if (r.ok) audit('admin.ddl', `DROP ROLE ${name}`, { server: connectionStore.get(connectionId)?.name })
     return r
   })

@@ -1631,3 +1631,234 @@ export function scriptObject(
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// SAL-51: datatype-dropdown per provider/dialect
+// ---------------------------------------------------------------------------
+
+/**
+ * Dialect-correcte datatype-lijsten voor de kolomdefinitie in de
+ * Admin-dialoog (tabel aanmaken). Statische lijst per dialect — de
+ * Admin-dialoog toont ze als combobox (eigen type typen blijft mogelijk).
+ */
+const DATA_TYPES_BY_DIALECT: Record<SqlDialectId, string[]> = {
+  tsql: [
+    'int',
+    'bigint',
+    'smallint',
+    'tinyint',
+    'bit',
+    'decimal',
+    'numeric',
+    'money',
+    'smallmoney',
+    'float',
+    'real',
+    'char',
+    'varchar',
+    'text',
+    'nchar',
+    'nvarchar',
+    'ntext',
+    'date',
+    'time',
+    'datetime',
+    'datetime2',
+    'datetimeoffset',
+    'smalldatetime',
+    'uniqueidentifier',
+    'binary',
+    'varbinary',
+    'image',
+    'xml',
+    'sql_variant'
+  ],
+  postgres: [
+    'integer',
+    'bigint',
+    'smallint',
+    'serial',
+    'bigserial',
+    'decimal',
+    'numeric',
+    'real',
+    'double precision',
+    'money',
+    'character varying',
+    'varchar',
+    'character',
+    'char',
+    'text',
+    'date',
+    'time',
+    'timestamp',
+    'timestamptz',
+    'interval',
+    'boolean',
+    'uuid',
+    'json',
+    'jsonb',
+    'bytea',
+    'inet'
+  ],
+  mysql: [
+    'tinyint',
+    'smallint',
+    'mediumint',
+    'int',
+    'integer',
+    'bigint',
+    'decimal',
+    'numeric',
+    'float',
+    'double',
+    'bit',
+    'char',
+    'varchar',
+    'tinytext',
+    'text',
+    'mediumtext',
+    'longtext',
+    'binary',
+    'varbinary',
+    'blob',
+    'date',
+    'time',
+    'datetime',
+    'timestamp',
+    'year',
+    'boolean',
+    'enum',
+    'set',
+    'json'
+  ],
+  sqlite: ['INTEGER', 'TEXT', 'REAL', 'BLOB', 'NUMERIC', 'DATE', 'DATETIME', 'BOOLEAN'],
+  db2: [
+    'SMALLINT',
+    'INTEGER',
+    'BIGINT',
+    'DECIMAL',
+    'NUMERIC',
+    'REAL',
+    'DOUBLE',
+    'FLOAT',
+    'CHAR',
+    'VARCHAR',
+    'LONG VARCHAR',
+    'CLOB',
+    'GRAPHIC',
+    'VARGRAPHIC',
+    'DBCLOB',
+    'BINARY',
+    'VARBINARY',
+    'BLOB',
+    'DATE',
+    'TIME',
+    'TIMESTAMP',
+    'BOOLEAN',
+    'XML'
+  ],
+  oracle: [
+    'NUMBER',
+    'INTEGER',
+    'BINARY_FLOAT',
+    'BINARY_DOUBLE',
+    'FLOAT',
+    'VARCHAR2',
+    'NVARCHAR2',
+    'CHAR',
+    'NCHAR',
+    'CLOB',
+    'NCLOB',
+    'LONG',
+    'RAW',
+    'LONG RAW',
+    'BLOB',
+    'BFILE',
+    'DATE',
+    'TIMESTAMP',
+    'TIMESTAMP WITH TIME ZONE',
+    'TIMESTAMP WITH LOCAL TIME ZONE',
+    'INTERVAL YEAR TO MONTH',
+    'INTERVAL DAY TO SECOND',
+    'XMLTYPE'
+  ],
+  snowflake: [
+    'NUMBER',
+    'DECIMAL',
+    'INT',
+    'INTEGER',
+    'BIGINT',
+    'SMALLINT',
+    'TINYINT',
+    'BYTEINT',
+    'FLOAT',
+    'DOUBLE',
+    'REAL',
+    'VARCHAR',
+    'CHAR',
+    'CHARACTER',
+    'STRING',
+    'TEXT',
+    'BOOLEAN',
+    'DATE',
+    'DATETIME',
+    'TIME',
+    'TIMESTAMP',
+    'TIMESTAMP_NTZ',
+    'TIMESTAMP_LTZ',
+    'TIMESTAMP_TZ',
+    'BINARY',
+    'VARBINARY',
+    'VARIANT',
+    'OBJECT',
+    'ARRAY',
+    'GEOGRAPHY'
+  ],
+  databricks: [
+    'TINYINT',
+    'SMALLINT',
+    'INT',
+    'INTEGER',
+    'BIGINT',
+    'DECIMAL',
+    'FLOAT',
+    'DOUBLE',
+    'STRING',
+    'VARCHAR',
+    'CHAR',
+    'BOOLEAN',
+    'BINARY',
+    'DATE',
+    'TIMESTAMP',
+    'TIMESTAMP_NTZ',
+    'ARRAY<STRING>',
+    'MAP<STRING, STRING>',
+    'STRUCT<col1 STRING>'
+  ]
+}
+
+/** Datatypes van een dialect (kolomdefinitie-dropdown in de Admin-dialoog). */
+export function dataTypeOptionsFor(dialect: SqlDialectId): string[] {
+  return DATA_TYPES_BY_DIALECT[dialect] ?? DATA_TYPES_BY_DIALECT.sqlite
+}
+
+/**
+ * Dialect-passende standaardtypes voor een nieuwe tabel in de Admin-dialoog:
+ * [primary-key-type, tweede-kolom-type]. Alleen voor de dialoog-defaults;
+ * de datatypes zelf blijven volledig bewerkbaar.
+ */
+export function defaultColumnDataTypes(dialect: SqlDialectId): [string, string] {
+  switch (dialect) {
+    case 'tsql':
+      return ['int', 'nvarchar(255)']
+    case 'postgres':
+      return ['integer', 'text']
+    case 'mysql':
+      return ['int', 'varchar(255)']
+    case 'sqlite':
+      return ['INTEGER', 'TEXT']
+    default:
+      return [DATA_TYPES_BY_DIALECT[dialect]?.[0] ?? 'INTEGER', DATA_TYPES_BY_DIALECT[dialect]?.[1] ?? 'TEXT']
+  }
+}

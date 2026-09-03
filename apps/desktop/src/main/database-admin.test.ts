@@ -28,6 +28,7 @@ import {
   dropFunction,
   dropProcedure,
   dropRole,
+  dropSchema,
   dropSequence,
   dropSynonym,
   dropTable,
@@ -333,11 +334,15 @@ describe('SAL-45 DROP-methods (tsql dialect, fake provider)', () => {
 
   beforeAll(async () => {
     registry.register(makeFakeTsqlProvider('fake-sqlserver', executed))
+    // SAL-51: database-context-DDL opent een tijdelijke sessie via
+    // configProvider (config + secret van de opgeslagen verbinding).
+    sessionManager.configProvider = () => ({ config: cfg, secret: undefined })
     await sessionManager.open(cfg)
   })
 
   afterAll(async () => {
     await sessionManager.closeAll()
+    sessionManager.configProvider = null
   })
 
   beforeEach(() => {
@@ -374,16 +379,16 @@ describe('SAL-45 DROP-methods (tsql dialect, fake provider)', () => {
 
   it('dropt user/role zonder schema (database-scoped principals)', async () => {
     // DROP USER/ROLE is ook confirm-gated (SAL-45: guard-patroon uitgebreid).
-    const blockedUser = await dropUser('adm-tsql', 'app_ro')
+    const blockedUser = await dropUser('adm-tsql', '', 'app_ro')
     expect(blockedUser.ok).toBe(false)
     expect(executed).toEqual([])
 
-    await dropUser('adm-tsql', 'app_ro', true)
+    await dropUser('adm-tsql', '', 'app_ro', true)
     expect(executed).toEqual(['DROP USER [app_ro];'])
     executed.length = 0
-    const blockedRole = await dropRole('adm-tsql', 'db_reader')
+    const blockedRole = await dropRole('adm-tsql', '', 'db_reader')
     expect(blockedRole.ok).toBe(false)
-    await dropRole('adm-tsql', 'db_reader', true)
+    await dropRole('adm-tsql', '', 'db_reader', true)
     expect(executed).toEqual(['DROP ROLE [db_reader];'])
   })
 
@@ -395,7 +400,7 @@ describe('SAL-45 DROP-methods (tsql dialect, fake provider)', () => {
 
   it('weigert dropRole op providers zonder supportsUsersAndRoles', async () => {
     // de sqlite-provider uit de eerste suite ondersteunt geen users/roles.
-    await expect(dropRole('adm-1', 'x', true)).rejects.toThrow(/geen users\/roles/)
+    await expect(dropRole('adm-1', '', 'x', true)).rejects.toThrow(/geen users\/roles/)
   })
 })
 
@@ -610,5 +615,189 @@ describe('SAL-50 database-eigenschappen op niet-tsql-providers (sqlite)', () => 
     await expect(alterDatabase('adm-s50-sqlite', 'main', { name: 'x' }, true)).rejects.toThrow(
       /niet ondersteund/
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SAL-51: database-context voor admin-DDL. Wanneer een actie een doeldatabase
+// meekrijgt die afwijkt van de sessie-database, voert runDdl de DDL uit op een
+// korte, aparte sessie die direct op die database verbonden is (tsql/mysql/
+// postgres) — niet op de sessie-database (master). Zo belandt CREATE TABLE van
+// de Tables-folder van database X in X, en werkt DROP op objecten van X zonder
+// eerst de sessie te wisselen.
+// ---------------------------------------------------------------------------
+
+describe('SAL-51 database-context admin-DDL (tsql dialect, fake provider)', () => {
+  const executed: string[] = []
+  const connectedDbs: string[] = []
+  const closedSessions: number[] = []
+
+  const cfg: ConnectionConfig = {
+    id: 'adm-ctx',
+    name: 'Admin Context',
+    providerId: 'fake-sqlserver51',
+    environment: 'DEV',
+    host: 'localhost',
+    database: 'master',
+    auth: 'username-password',
+    ssl: { mode: 'disable' },
+    connectionTimeoutMs: 5000,
+    group: 'Test'
+  }
+
+  function makeContextProvider(id: string): DatabaseProvider {
+    const caps: ProviderCapabilities = { ...TSQL_BASE_CAPS, dialect: 'tsql' }
+    let seq = 0
+    return {
+      id,
+      displayName: id,
+      defaultPort: 1433,
+      capabilities: caps,
+      async connect(config: ConnectionConfig): Promise<DbSession> {
+        connectedDbs.push(config.database ?? 'master')
+        seq += 1
+        return {
+          handle: {},
+          connectionId: config.id,
+          providerId: id,
+          database: config.database ?? 'master',
+          // @ts-expect-error test-only marker om gesloten sessies te tellen
+          _seq: seq
+        }
+      },
+      async testConnection() {
+        return { ok: true }
+      },
+      async getServerInfo(session: DbSession): Promise<ServerInfo> {
+        return { providerId: id, providerName: id, serverVersion: 'x', currentDatabase: session.database }
+      },
+      async close(session: DbSession): Promise<void> {
+        closedSessions.push(Number((session as unknown as { _seq?: number })._seq ?? 0))
+      },
+      async listDatabases() {
+        return []
+      },
+      async listSchemas() {
+        return []
+      },
+      async listTables() {
+        return []
+      },
+      async listViews() {
+        return []
+      },
+      async listProcedures() {
+        return []
+      },
+      async listFunctions() {
+        return []
+      },
+      async listTriggers() {
+        return []
+      },
+      async listSequences() {
+        return []
+      },
+      async listSynonyms() {
+        return []
+      },
+      async listUsers() {
+        return []
+      },
+      async listRoles() {
+        return []
+      },
+      async getTableMetadata() {
+        return { columns: [], primaryKey: [], foreignKeys: [], indexes: [], constraints: [], triggers: [], dependencies: [] }
+      },
+      async getObjectDefinition() {
+        return 'CREATE TABLE t (id int);'
+      },
+      async *executeQuery(
+        _session: DbSession,
+        sql: string,
+        _opts: QueryOptions
+      ): AsyncIterable<QueryChunk> {
+        executed.push(sql)
+        yield { kind: 'done', rowCount: 0, durationMs: 1 }
+      },
+      async cancel() {},
+      async getExecutionStats() {
+        return { rowCount: 0, durationMs: 0 }
+      }
+    }
+  }
+
+  beforeAll(async () => {
+    registry.register(makeContextProvider('fake-sqlserver51'))
+    sessionManager.configProvider = () => ({ config: cfg, secret: undefined })
+    await sessionManager.open(cfg)
+  })
+
+  afterAll(async () => {
+    await sessionManager.closeAll()
+    sessionManager.configProvider = null
+  })
+
+  beforeEach(() => {
+    executed.length = 0
+    connectedDbs.length = 0
+    closedSessions.length = 0
+    setEnvironment('DEV')
+  })
+
+  it('voert CREATE TABLE op de doeldatabase uit via een tijdelijke sessie (niet master)', async () => {
+    const r = await createTable(
+      'adm-ctx',
+      'Factuur',
+      'dbo',
+      'klanten',
+      [
+        { name: 'id', dataType: 'int', primaryKey: true },
+        { name: 'naam', dataType: 'nvarchar(255)' }
+      ],
+      true
+    )
+    expect(r.ok).toBe(true)
+    // De DDL draaide op een sessie die direct op 'Factuur' was verbonden.
+    expect(connectedDbs).toEqual(['Factuur'])
+    expect(executed.some((sql) => sql.startsWith('CREATE TABLE [dbo].[klanten]'))).toBe(true)
+    // De tijdelijke sessie is netjes gesloten.
+    expect(closedSessions.length).toBe(1)
+  })
+
+  it('draait zonder extra sessie wanneer database leeg is of gelijk aan de sessie-database', async () => {
+    await createTable('adm-ctx', '', undefined, 'klanten2', [{ name: 'id', dataType: 'int', primaryKey: true }], true)
+    expect(connectedDbs).toEqual([])
+
+    await dropTable('adm-ctx', 'master', 'dbo', 'klanten2', true)
+    expect(connectedDbs).toEqual([])
+    expect(executed.some((sql) => sql.startsWith('DROP TABLE [dbo].[klanten2]'))).toBe(true)
+  })
+
+  it('voert DROP TABLE op de doeldatabase uit (bug: geen "geen rechten" door master-sessie)', async () => {
+    const r = await dropTable('adm-ctx', 'Factuur', 'dbo', 'klanten', true)
+    expect(r.ok).toBe(true)
+    expect(connectedDbs).toEqual(['Factuur'])
+    expect(executed).toEqual(['DROP TABLE [dbo].[klanten];'])
+  })
+
+  it('voert user/role-DROP op de doeldatabase uit (database-principals)', async () => {
+    const user = await dropUser('adm-ctx', 'Factuur', 'app_ro', true)
+    expect(user.ok).toBe(true)
+    const role = await dropRole('adm-ctx', 'Factuur', 'db_reader', true)
+    expect(role.ok).toBe(true)
+    expect(connectedDbs).toEqual(['Factuur', 'Factuur'])
+    expect(executed).toEqual(['DROP USER [app_ro];', 'DROP ROLE [db_reader];'])
+  })
+
+  it('voert procedure/schema/constraint-DROP op de doeldatabase uit', async () => {
+    await dropProcedure('adm-ctx', 'Factuur', 'dbo', 'sp_x', true)
+    await dropSchema('adm-ctx', 'Factuur', 'audit', true)
+    await dropConstraint('adm-ctx', 'Factuur', 'dbo', 'klanten', 'CK_leeftijd', true)
+    expect(connectedDbs).toEqual(['Factuur', 'Factuur', 'Factuur'])
+    expect(executed.some((sql) => sql.startsWith('DROP PROCEDURE [dbo].[sp_x]'))).toBe(true)
+    expect(executed.some((sql) => sql.startsWith('DROP SCHEMA [audit]'))).toBe(true)
+    expect(executed.some((sql) => sql.startsWith('ALTER TABLE [dbo].[klanten] DROP CONSTRAINT [CK_leeftijd]'))).toBe(true)
   })
 })

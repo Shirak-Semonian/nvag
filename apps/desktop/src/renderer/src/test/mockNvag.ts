@@ -488,7 +488,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       },
       listUsers: async () => [],
       createUser: async () => ({ ok: true, sql: '' }),
-      dropUser: async (connId: string, name: string, confirmed?: boolean) => {
+      dropUser: async (connId: string, _db: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropUser', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
           return { ok: false, sql: `DROP USER ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
@@ -562,7 +562,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
         }
         return { ok: true, sql: '' }
       },
-      dropRole: async (connId: string, name: string, confirmed?: boolean) => {
+      dropRole: async (connId: string, _db: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropRole', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
           return { ok: false, sql: `DROP ROLE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }

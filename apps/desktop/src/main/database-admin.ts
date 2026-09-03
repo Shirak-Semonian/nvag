@@ -24,7 +24,8 @@ import type {
   DbSession,
   ProviderCapabilities,
   QueryRow,
-  RestoreResult
+  RestoreResult,
+  SqlDialectId
 } from '@nvag/contracts'
 import {
   buildAlterDatabaseStatements,
@@ -56,18 +57,77 @@ export function capabilities(connectionId: string): ProviderCapabilities {
   return provider.capabilities
 }
 
+// ---------------------------------------------------------------------------
+// SAL-51: database-context voor admin-DDL.
+//
+// De DDL-admin-API's krijgen een `database` mee (Object Explorer-folder van
+// database X, of de database-dropdown in de Admin-dialoog). Vroeger werd die
+// parameter genegeerd en draaide de DDL op de sessie-database (meestal
+// master): een via "Nieuwe tabel…" aangemaakte tabel belandde in master en
+// een DROP op een object van een andere database faalde met "geen rechten".
+//
+// Oplossing per provider (keuze, zie SAL-51):
+// - tsql / mysql / postgres: de DDL wordt uitgevoerd op een korte, aparte
+//   sessie die direct op de doeldatabase is verbonden
+//   (`connect({ ...config, database: target })`). Dit is deterministisch:
+//   een in-place `USE [db]` op de gedeelde sessie is niet betrouwbaar omdat
+//   executeQuery requests over de pool verdeelt (concurrente requests kunnen
+//   op een andere pool-verbinding met de oude database terechtkomen). Een
+//   aparte sessie laat bovendien de sessie-database van query-tabs ongemoeid.
+// - sqlite/overig: de "database" is de verbinding zelf (bestand/instantie);
+//   daar blijft de bestaande sessie in gebruik (database leeg of gelijk aan
+//   de sessie-database → geen extra sessie).
+// ---------------------------------------------------------------------------
+const DATABASE_CONTEXT_DIALECTS: ReadonlySet<SqlDialectId> = new Set(['tsql', 'mysql', 'postgres'])
+
+interface ResolvedSession {
+  session: DbSession
+  provider: DatabaseProvider
+  /** Sluit een tijdelijke (database-context)sessie; no-op op de hoofdsessie. */
+  done: () => Promise<void>
+}
+
+async function resolveSession(connectionId: string, database?: string | null): Promise<ResolvedSession> {
+  const { session, provider } = requireSession(connectionId)
+  const target = (database ?? '').trim()
+  if (!target || target === session.database || !DATABASE_CONTEXT_DIALECTS.has(provider.capabilities.dialect)) {
+    return { session, provider, done: async () => undefined }
+  }
+  const source = sessionManager.configProvider?.(connectionId)
+  if (!source) {
+    throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+  }
+  // Eigen connectionId (… #dbctx) zodat de provider-sessie-administratie die
+  // op connectionId keyed (sqlserver e.d.) de oorspronkelijke sessie niet
+  // overschrijft bij het opruimen van de tijdelijke sessie.
+  const temp = await provider.connect({ ...source.config, id: `${connectionId}#dbctx`, database: target }, source.secret)
+  return {
+    session: temp,
+    provider,
+    done: async () => {
+      try {
+        await provider.close(temp)
+      } catch {
+        // opruimen is best-effort; de DDL is dan al uitgevoerd
+      }
+    }
+  }
+}
+
 /**
  * Voert een DDL-statement uit met guard-check (warn/confirm-semantiek).
  * Retourneert bij een `confirm`-blokkade `{ ok: false, blocked, guardSeverity }`
  * zodat de UI een bevestiging kan tonen; de actie zelf wordt dan niet uitgevoerd.
+ * Wanneer `database` is meegegeven en afwijkt van de sessie-database wordt de
+ * DDL op een tijdelijke sessie op die database uitgevoerd (SAL-51).
  */
 export async function runDdl(
   connectionId: string,
   sql: string,
   action: 'admin.ddl',
-  confirmed?: boolean
+  confirmed?: boolean,
+  database?: string | null
 ): Promise<AdminActionResult> {
-  const { session, provider } = requireSession(connectionId)
   const conn = connectionStore.get(connectionId)
   if (conn) {
     const guard = checkQuery(sql, conn.environment)
@@ -78,8 +138,13 @@ export async function runDdl(
       // warn-niveau (of bevestigde confirm): doorlopen met waarschuwing.
       if (guard.severity === 'warn') {
         try {
-          for await (const chunk of provider.executeQuery(session, sql, {})) {
-            if (chunk.kind === 'error') throw new Error(chunk.message)
+          const ctx = await resolveSession(connectionId, database)
+          try {
+            for await (const chunk of ctx.provider.executeQuery(ctx.session, sql, {})) {
+              if (chunk.kind === 'error') throw new Error(chunk.message)
+            }
+          } finally {
+            await ctx.done()
           }
         } catch (err) {
           throw err
@@ -89,10 +154,15 @@ export async function runDdl(
       }
     }
   }
-  for await (const chunk of provider.executeQuery(session, sql, {})) {
-    if (chunk.kind === 'error') {
-      throw new Error(chunk.message)
+  const ctx = await resolveSession(connectionId, database)
+  try {
+    for await (const chunk of ctx.provider.executeQuery(ctx.session, sql, {})) {
+      if (chunk.kind === 'error') {
+        throw new Error(chunk.message)
+      }
     }
+  } finally {
+    await ctx.done()
   }
   void action
   return { ok: true, sql }
@@ -110,13 +180,13 @@ export async function dropDatabase(connectionId: string, name: string, confirmed
   return runDdl(connectionId, sql, 'admin.ddl', confirmed)
 }
 
-export async function createSchema(connectionId: string, _database: string, name: string, confirmed?: boolean) {
+export async function createSchema(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsSchemas && provider.capabilities.dialect !== 'mysql') {
     throw new Error('Deze provider ondersteunt geen aparte schemas.')
   }
   const sql = buildCreateSchema(provider.capabilities.dialect, name)
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function dropSchema(connectionId: string, database: string, name: string, confirmed?: boolean) {
@@ -129,8 +199,7 @@ export async function dropSchema(connectionId: string, database: string, name: s
     provider.capabilities.dialect === 'mysql'
       ? buildDrop('mysql', 'DATABASE', name)
       : buildDrop(provider.capabilities.dialect, 'SCHEMA', name)
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function createTable(
@@ -151,8 +220,7 @@ export async function createTable(
     schema || null,
     columns
   )
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function dropTable(
@@ -164,8 +232,7 @@ export async function dropTable(
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildDrop(provider.capabilities.dialect, 'TABLE', table, { schema: schema || null })
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function createView(
@@ -178,8 +245,7 @@ export async function createView(
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildCreateView(provider.capabilities.dialect, schema || null, name, selectSql)
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function dropView(
@@ -191,8 +257,7 @@ export async function dropView(
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildDrop(provider.capabilities.dialect, 'VIEW', name, { schema: schema || null })
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function createIndex(connectionId: string, database: string, schema: string | undefined, index: AdminIndexDef, confirmed?: boolean) {
@@ -205,8 +270,7 @@ export async function createIndex(connectionId: string, database: string, schema
     index.columns,
     index.unique
   )
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function dropIndex(
@@ -222,8 +286,7 @@ export async function dropIndex(
     schema: schema || null,
     table
   })
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 // ---------------------------------------------------------------------------
@@ -250,8 +313,7 @@ async function dropSchemaDbObject(
     schema: schema || null,
     table: options?.table
   })
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 export async function dropProcedure(
@@ -317,8 +379,7 @@ export async function dropConstraint(
 ) {
   const { provider } = requireSession(connectionId)
   const sql = buildDropConstraint(provider.capabilities.dialect, schema || null, table, name)
-  void database
-  return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+  return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
 }
 
 // ---------------------------------------------------------------------------
@@ -366,7 +427,7 @@ export async function createUser(connectionId: string, name: string, password?: 
   throw new Error(`Users aanmaken is niet geïmplementeerd voor dialect ${dialect}.`)
 }
 
-export async function dropUser(connectionId: string, name: string, confirmed?: boolean) {
+export async function dropUser(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsUsersAndRoles) {
     throw new Error('Deze provider ondersteunt geen users/roles.')
@@ -374,12 +435,15 @@ export async function dropUser(connectionId: string, name: string, confirmed?: b
   const dialect = provider.capabilities.dialect
   if (dialect === 'postgres' || dialect === 'tsql') {
     const sql = buildDrop(dialect, 'USER', name)
-    return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+    // tsql: gebruikers zijn database-principals → DDL op de doeldatabase;
+    // postgres: gebruikers zijn clusterbreed (database-parameter maakt dan
+    // niets uit, maar een gelijke doeldatabase is een no-op).
+    return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
   }
   throw new Error(`Users verwijderen is niet geïmplementeerd voor dialect ${dialect}.`)
 }
 
-export async function dropRole(connectionId: string, name: string, confirmed?: boolean) {
+export async function dropRole(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsUsersAndRoles) {
     throw new Error('Deze provider ondersteunt geen users/roles.')
@@ -387,7 +451,7 @@ export async function dropRole(connectionId: string, name: string, confirmed?: b
   const dialect = provider.capabilities.dialect
   if (dialect === 'postgres' || dialect === 'tsql') {
     const sql = buildDrop(dialect, 'ROLE', name)
-    return runDdl(connectionId, sql, 'admin.ddl', confirmed)
+    return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
   }
   throw new Error(`Roles verwijderen is niet geïmplementeerd voor dialect ${dialect}.`)
 }
@@ -758,6 +822,12 @@ export async function getDatabaseProperties(
  * semantiek als de overige admin-DDL: een confirm-blokkade retourneert
  * `{ ok: false, blocked }` met de gegenereerde SQL; de UI vraagt bevestiging
  * en voert daarna dezelfde actie opnieuw uit met `confirmed: true`.
+ *
+ * SAL-51: een naamswijziging (MODIFY NAME) kan niet draaien terwijl de eigen
+ * sessie op de te hernoemen database staat — de open verbinding blokkeert de
+ * rename. In dat geval wordt de sessie eerst weggezet (master) en pas daarna
+ * uitgevoerd (SQL Server: master is altijd bereikbaar; query-tabs zetten hun
+ * database zelf terug vóór een uitvoering).
  */
 export async function alterDatabase(
   connectionId: string,
@@ -782,9 +852,7 @@ export async function alterDatabase(
       if (guard.severity === 'warn') {
         // Defensief: ALTER is per guard-patroon confirm, maar mocht een
         // lichtere classificatie langskomen dan uitvoeren met waarschuwing.
-        for (const stmt of statements) {
-          await executeStatement(provider, session, stmt)
-        }
+        await runAlterStatements(connectionId, session, provider, database, changes)
         return {
           ok: true,
           sql,
@@ -794,10 +862,27 @@ export async function alterDatabase(
       }
     }
   }
-  for (const stmt of statements) {
-    await executeStatement(provider, session, stmt)
-  }
+  await runAlterStatements(connectionId, session, provider, database, changes)
   const result: AlterDatabaseResult = { ok: true, sql }
   if (changes.name) result.renamedTo = changes.name.trim()
   return result
+}
+
+/** Voert ALTER DATABASE-statements uit; zet de sessie eerst weg van de
+ * doeldatabase wanneer die zelf hernoemd wordt (anders blokkeert de eigen
+ * verbinding de MODIFY NAME). */
+async function runAlterStatements(
+  connectionId: string,
+  session: DbSession,
+  provider: DatabaseProvider,
+  database: string,
+  changes: Record<string, string>
+): Promise<void> {
+  const statements = buildAlterDatabaseStatements(provider.capabilities.dialect, database, changes)
+  if (changes.name && session.database === database) {
+    await sessionManager.switchDatabase(connectionId, 'master')
+  }
+  for (const stmt of statements) {
+    await executeStatement(provider, session, stmt)
+  }
 }

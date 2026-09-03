@@ -6,11 +6,17 @@
  * Alle acties tonen de gegenereerde SQL en passeren de environment-safety.
  */
 
-import { useEffect, useState } from 'react'
-import type { AdminActionResult, AdminColumnDef } from '@nvag/contracts'
+import { useEffect, useRef, useState } from 'react'
+import type { AdminActionResult, AdminColumnDef, SqlDialectId } from '@nvag/contracts'
+import { dataTypeOptionsFor, defaultColumnDataTypes } from '@nvag/sql-dialect'
 import { useAppStore, type AdminDialogTab } from '../state/store'
 
 type AdminTab = AdminDialogTab
+
+/** SAL-51: dialecten waar DDL op een andere database kan draaien (de
+ * Admin-dialoog toont daar een database-dropdown). SQLite e.d.: de database
+ * ís de verbinding (geen dropdown; database='' → sessie-database). */
+const MULTI_DB_DIALECTS: ReadonlySet<SqlDialectId> = new Set(['tsql', 'mysql', 'postgres'])
 
 type AdminActionFn = (confirmed?: boolean) => Promise<AdminActionResult>
 
@@ -51,14 +57,49 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
   // SAL-34: Object Explorer kan een specifieke tab openen (bijv. 'table' bij
   // "Nieuwe tabel…"); zonder opgave default naar 'database'.
   const requestedTab = useAppStore((s) => s.adminDialogTab)
+  // SAL-51: database-context van de open-actie (Tables-folder van db X →
+  // X); zonder opgave de sessie-database van de verbinding.
+  const requestedDatabase = useAppStore((s) => s.adminDialogDatabase)
+  const sessionDb = useAppStore((s) => (connectionId ? s.openSessions[connectionId]?.serverInfo.currentDatabase : null))
 
   const [tab, setTab] = useState<AdminTab>(requestedTab ?? 'database')
   const [message, setMessage] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingConfirm | null>(null)
 
+  const dialect: SqlDialectId | undefined = caps?.dialect
+  const multiDb = dialect !== undefined && MULTI_DB_DIALECTS.has(dialect)
+  /** SAL-51: actieve doeldatabase van de dialoog (leeg = sessie-database). */
+  const [database, setDatabase] = useState<string>(() => requestedDatabase ?? sessionDb ?? '')
+  const [dbOptions, setDbOptions] = useState<string[]>([])
+
   useEffect(() => {
     if (connectionId) void loadAdminState(connectionId)
   }, [connectionId, loadAdminState])
+
+  // SAL-51: databaselijst van de verbinding ophalen voor de dropdown. Alleen
+  // waar de DDL een database-context kent (tsql/mysql/postgres); sqlite e.d.
+  // heeft precies één database (de verbinding zelf).
+  useEffect(() => {
+    if (!connectionId || !multiDb) {
+      setDbOptions([])
+      return
+    }
+    let alive = true
+    window.nvag.metadata
+      .listDatabases(connectionId)
+      .then((list) => {
+        if (!alive) return
+        const names = list.map((d) => d.name)
+        setDbOptions(names)
+        setDatabase((prev) => prev || names[0] || '')
+      })
+      .catch(() => {
+        if (alive) setDbOptions([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [connectionId, multiDb])
 
   /**
    * Voert een admin-actie uit met environment-safety (F2-3):
@@ -144,6 +185,11 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
   const supportsUsers = caps?.supportsUsersAndRoles ?? false
   const supportsBackup = caps?.supportsBackupRestore ?? false
 
+  // SAL-51: tabs op 'database' (server-level CREATE/DROP DATABASE) en 'users'
+  // (postgres: clusterbreed) krijgen geen database-context; de overige tabs
+  // (schema/table/view/index/backup) werken op de gekozen doeldatabase.
+  const targetDb = multiDb && tab !== 'database' && tab !== 'users' ? database : ''
+
   return (
     <div className="modal-backdrop" onClick={close}>
       <div className="modal admin-modal" onClick={(e) => e.stopPropagation()}>
@@ -153,6 +199,24 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
             ✕
           </button>
         </div>
+        {multiDb && tab !== 'database' && tab !== 'users' && (
+          <div className="admin-dbrow">
+            <label>
+              Doeldatabase{' '}
+              <select value={database} onChange={(e) => setDatabase(e.target.value)} aria-label="Doeldatabase">
+                {!database && <option value="">(sessie-database)</option>}
+                {dbOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+                {database && !dbOptions.includes(database) && (
+                  <option value={database}>{database} (sessie)</option>
+                )}
+              </select>
+            </label>
+          </div>
+        )}
         <div className="admin-tabs" role="tablist">
           {(['database', 'schema', 'table', 'view', 'index', 'users', 'backup'] as AdminTab[]).map((t) => (
             <button
@@ -177,12 +241,12 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
         </div>
         <div className="admin-body">
           {tab === 'database' && <DatabaseAdminTab connectionId={connectionId} onRun={run} />}
-          {tab === 'schema' && <SchemaAdminTab connectionId={connectionId} onRun={run} supportsSchemas={supportsSchemas} />}
-          {tab === 'table' && <TableAdminTab connectionId={connectionId} onRun={run} />}
-          {tab === 'view' && <ViewAdminTab connectionId={connectionId} onRun={run} />}
-          {tab === 'index' && <IndexAdminTab connectionId={connectionId} onRun={run} />}
+          {tab === 'schema' && <SchemaAdminTab connectionId={connectionId} database={targetDb} onRun={run} supportsSchemas={supportsSchemas} />}
+          {tab === 'table' && <TableAdminTab connectionId={connectionId} database={targetDb} onRun={run} />}
+          {tab === 'view' && <ViewAdminTab connectionId={connectionId} database={targetDb} onRun={run} />}
+          {tab === 'index' && <IndexAdminTab connectionId={connectionId} database={targetDb} onRun={run} />}
           {tab === 'users' && <UsersAdminTab connectionId={connectionId} onRun={run} users={users} />}
-          {tab === 'backup' && <BackupAdminTab connectionId={connectionId} onRun={run} />}
+          {tab === 'backup' && <BackupAdminTab connectionId={connectionId} database={targetDb} onRun={run} />}
         </div>
         {pending && (
           <div className="admin-confirm">
@@ -236,7 +300,7 @@ function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null
   )
 }
 
-function SchemaAdminTab({ connectionId, onRun, supportsSchemas }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void>; supportsSchemas: boolean }): React.JSX.Element {
+function SchemaAdminTab({ connectionId, database, onRun, supportsSchemas }: { connectionId: string | null; database: string; onRun: (fn: AdminActionFn, label: string) => Promise<void>; supportsSchemas: boolean }): React.JSX.Element {
   const [name, setName] = useState('')
   if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
   if (!supportsSchemas) return <div className="results-empty">Deze provider ondersteunt geen aparte schemas.</div>
@@ -250,14 +314,14 @@ function SchemaAdminTab({ connectionId, onRun, supportsSchemas }: { connectionId
         <button
           className="primary"
           disabled={!name}
-          onClick={() => onRun((confirmed) => window.nvag.admin.createSchema(connectionId, '', name, confirmed), `CREATE SCHEMA ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.createSchema(connectionId, database, name, confirmed), `CREATE SCHEMA ${name}`)}
         >
           Creëren
         </button>
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun((confirmed) => window.nvag.admin.dropSchema(connectionId, '', name, confirmed), `DROP SCHEMA ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropSchema(connectionId, database, name, confirmed), `DROP SCHEMA ${name}`)}
         >
           Verwijderen
         </button>
@@ -266,16 +330,38 @@ function SchemaAdminTab({ connectionId, onRun, supportsSchemas }: { connectionId
   )
 }
 
-function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
+/**
+ * SAL-51: TableAdminTab — tabel aanmaken op de gekozen doeldatabase en een
+ * datatype-combobox (dialect-correcte types via @nvag/sql-dialect; eigen type
+ * typen blijft mogelijk, datalist-input). De standaardkolom krijgt een
+ * dialect-passend type (tsql: int, sqlite: INTEGER, …).
+ */
+function TableAdminTab({ connectionId, database, onRun }: { connectionId: string | null; database: string; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
   const [table, setTable] = useState('')
   const [schema, setSchema] = useState('')
-  const [columns, setColumns] = useState<AdminColumnDef[]>([{ name: 'id', dataType: 'INTEGER', primaryKey: true }])
+  const caps = useAppStore((s) => s.adminCapabilities)
+  const dialect: SqlDialectId = caps?.dialect ?? 'sqlite'
+  const [columns, setColumns] = useState<AdminColumnDef[]>([])
+  const seededFor = useRef<SqlDialectId | null>(null)
+
+  // Vul bij het eerste render (of zodra het dialect bekend is) een
+  // dialect-passende standaardkolom in — niet overschrijven zodra de
+  // gebruiker kolommen heeft bewerkt.
+  useEffect(() => {
+    if (seededFor.current === dialect) return
+    seededFor.current = dialect
+    const [pkType] = defaultColumnDataTypes(dialect)
+    setColumns([{ name: 'id', dataType: pkType, primaryKey: true }])
+  }, [dialect])
 
   if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
 
   const updateColumn = (i: number, patch: Partial<AdminColumnDef>): void => {
     setColumns((cols) => cols.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
   }
+
+  const typeOptions = dataTypeOptionsFor(dialect)
+  const addColumnType = defaultColumnDataTypes(dialect)[1]
 
   return (
     <div className="admin-form">
@@ -306,7 +392,12 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
                 <input value={c.name} onChange={(e) => updateColumn(i, { name: e.target.value })} />
               </td>
               <td>
-                <input value={c.dataType} onChange={(e) => updateColumn(i, { dataType: e.target.value })} />
+                <input
+                  list={`admin-datatypes-${connectionId}`}
+                  value={c.dataType}
+                  onChange={(e) => updateColumn(i, { dataType: e.target.value })}
+                  placeholder="type"
+                />
               </td>
               <td>
                 <input type="checkbox" checked={c.primaryKey ?? false} onChange={(e) => updateColumn(i, { primaryKey: e.target.checked })} />
@@ -323,7 +414,12 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
           ))}
         </tbody>
       </table>
-      <button onClick={() => setColumns((cols) => [...cols, { name: '', dataType: 'TEXT' }])}>
+      <datalist id={`admin-datatypes-${connectionId}`}>
+        {typeOptions.map((t) => (
+          <option key={t} value={t} />
+        ))}
+      </datalist>
+      <button onClick={() => setColumns((cols) => [...cols, { name: '', dataType: addColumnType }])}>
         ＋ Kolom
       </button>
       <div className="admin-actions">
@@ -332,7 +428,7 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
           disabled={!table || columns.some((c) => !c.name || !c.dataType)}
           onClick={() =>
             onRun(
-              (confirmed) => window.nvag.admin.createTable({ connectionId, database: '', schema: schema || undefined, table, columns }, confirmed),
+              (confirmed) => window.nvag.admin.createTable({ connectionId, database, schema: schema || undefined, table, columns }, confirmed),
               `CREATE TABLE ${table}`
             )
           }
@@ -342,7 +438,7 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
         <button
           className="danger"
           disabled={!table}
-          onClick={() => onRun((confirmed) => window.nvag.admin.dropTable(connectionId, '', schema || 'main', table, confirmed), `DROP TABLE ${table}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropTable(connectionId, database, schema || 'main', table, confirmed), `DROP TABLE ${table}`)}
         >
           Tabel verwijderen
         </button>
@@ -351,7 +447,7 @@ function TableAdminTab({ connectionId, onRun }: { connectionId: string | null; o
   )
 }
 
-function ViewAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
+function ViewAdminTab({ connectionId, database, onRun }: { connectionId: string | null; database: string; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
   const [name, setName] = useState('')
   const [schema, setSchema] = useState('')
   const [selectSql, setSelectSql] = useState('SELECT * FROM ')
@@ -378,14 +474,14 @@ function ViewAdminTab({ connectionId, onRun }: { connectionId: string | null; on
         <button
           className="primary"
           disabled={!name || !selectSql.trim()}
-          onClick={() => onRun((confirmed) => window.nvag.admin.createView(connectionId, '', schema || 'main', name, selectSql, confirmed), `CREATE VIEW ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.createView(connectionId, database, schema || 'main', name, selectSql, confirmed), `CREATE VIEW ${name}`)}
         >
           Creëren
         </button>
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun((confirmed) => window.nvag.admin.dropView(connectionId, '', schema || 'main', name, confirmed), `DROP VIEW ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropView(connectionId, database, schema || 'main', name, confirmed), `DROP VIEW ${name}`)}
         >
           Verwijderen
         </button>
@@ -394,7 +490,7 @@ function ViewAdminTab({ connectionId, onRun }: { connectionId: string | null; on
   )
 }
 
-function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
+function IndexAdminTab({ connectionId, database, onRun }: { connectionId: string | null; database: string; onRun: (fn: AdminActionFn, label: string) => Promise<void> }): React.JSX.Element {
   const [name, setName] = useState('')
   const [table, setTable] = useState('')
   const [schema, setSchema] = useState('')
@@ -431,7 +527,7 @@ function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; o
           disabled={!name || !table || cols.length === 0}
           onClick={() =>
             onRun(
-              (confirmed) => window.nvag.admin.createIndex({ connectionId, database: '', schema: schema || undefined, index: { name, table, schema: schema || undefined, columns: cols, unique } }, confirmed),
+              (confirmed) => window.nvag.admin.createIndex({ connectionId, database, schema: schema || undefined, index: { name, table, schema: schema || undefined, columns: cols, unique } }, confirmed),
               `CREATE INDEX ${name}`
             )
           }
@@ -441,7 +537,7 @@ function IndexAdminTab({ connectionId, onRun }: { connectionId: string | null; o
         <button
           className="danger"
           disabled={!name || !table}
-          onClick={() => onRun((confirmed) => window.nvag.admin.dropIndex(connectionId, '', schema || 'main', table, name, confirmed), `DROP INDEX ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropIndex(connectionId, database, schema || 'main', table, name, confirmed), `DROP INDEX ${name}`)}
         >
           Verwijderen
         </button>
@@ -477,7 +573,7 @@ function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | 
         <button
           className="danger"
           disabled={!name}
-          onClick={() => onRun((confirmed) => window.nvag.admin.dropUser(connectionId, name, confirmed), `DROP USER ${name}`)}
+          onClick={() => onRun((confirmed) => window.nvag.admin.dropUser(connectionId, '', name, confirmed), `DROP USER ${name}`)}
         >
           Verwijderen
         </button>
@@ -504,20 +600,27 @@ function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | 
  */
 function BackupAdminTab({
   connectionId,
+  database,
   onRun
 }: {
   connectionId: string | null
+  database: string
   onRun: (fn: BackupAdminActionFn, label: string, kind: 'backup') => Promise<void>
 }): React.JSX.Element {
-  const [database, setDatabase] = useState('')
+  const [databaseName, setDatabaseName] = useState(database ?? '')
   const [targetPath, setTargetPath] = useState('')
   const [sourcePath, setSourcePath] = useState('')
+  // SAL-51: database-context uit Object Explorer / dropdown doorgeven als de
+  // gebruiker de backup-database niet zelf heeft ingevuld.
+  useEffect(() => {
+    if (database) setDatabaseName((prev) => prev || database)
+  }, [database])
   if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
   return (
     <div className="admin-form">
       <label>
         Database{' '}
-        <input value={database} onChange={(e) => setDatabase(e.target.value)} placeholder="bijv. main / SalesDB" />
+        <input value={databaseName} onChange={(e) => setDatabaseName(e.target.value)} placeholder="bijv. main / SalesDB" />
       </label>
 
       <div className="f2-panel-row">
@@ -529,11 +632,11 @@ function BackupAdminTab({
       <div className="admin-actions">
         <button
           className="primary"
-          disabled={!database || !targetPath}
+          disabled={!databaseName || !targetPath}
           onClick={() =>
             onRun(
-              (confirmed) => window.nvag.admin.backupDatabase(connectionId, database, targetPath, confirmed),
-              `BACKUP ${database}`,
+              (confirmed) => window.nvag.admin.backupDatabase(connectionId, databaseName, targetPath, confirmed),
+              `BACKUP ${databaseName}`,
               'backup'
             )
           }
@@ -553,11 +656,11 @@ function BackupAdminTab({
       <div className="admin-actions">
         <button
           className="danger"
-          disabled={!database || !sourcePath}
+          disabled={!databaseName || !sourcePath}
           onClick={() =>
             onRun(
-              (confirmed) => window.nvag.admin.restoreDatabase(connectionId, database, sourcePath, confirmed),
-              `RESTORE ${database}`,
+              (confirmed) => window.nvag.admin.restoreDatabase(connectionId, databaseName, sourcePath, confirmed),
+              `RESTORE ${databaseName}`,
               'backup'
             )
           }

@@ -761,4 +761,28 @@ describe('app store', () => {
     expect(tab?.result?.error).toContain('USE mislukt')
     expect(tab?.running).toBe(false)
   })
+
+  // ------------------------------------------------------------------ SAL-51
+  it('openAdminDialog bewaart de database-context en sluiten wist die (SAL-51)', () => {
+    useAppStore.getState().openAdminDialog('conn-1', 'table', 'Factuur')
+    let state = useAppStore.getState()
+    expect(state.showAdminDialog).toBe(true)
+    expect(state.adminDialogConnectionId).toBe('conn-1')
+    expect(state.adminDialogTab).toBe('table')
+    expect(state.adminDialogDatabase).toBe('Factuur')
+
+    // Zonder database → null (sessie-database als default in de dialoog).
+    useAppStore.getState().openAdminDialog('conn-1', 'database')
+    state = useAppStore.getState()
+    expect(state.adminDialogDatabase).toBeNull()
+
+    // Sluiten wist alle admin-dialog-state.
+    useAppStore.getState().openAdminDialog('conn-1', 'table', 'Klanten')
+    useAppStore.getState().closeAdminDialog()
+    state = useAppStore.getState()
+    expect(state.showAdminDialog).toBe(false)
+    expect(state.adminDialogConnectionId).toBeNull()
+    expect(state.adminDialogTab).toBeNull()
+    expect(state.adminDialogDatabase).toBeNull()
+  })
 })
