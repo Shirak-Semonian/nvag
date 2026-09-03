@@ -3,7 +3,7 @@
  * (ADR: renderer is dom, alle logica in main process)
  */
 
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import type {
   AdminIndexCreateRequest,
   AdminTableCreateRequest,
@@ -571,4 +571,7 @@ export function registerIpcHandlers(): void {
 
   // ------------------------------------------------------------------ app
   ipcMain.handle('app:getVersion', () => process.env.npm_package_version ?? '0.1.0')
+  ipcMain.handle('app:quit', () => {
+    app.quit()
+  })
 }

@@ -1733,3 +1733,149 @@ describe('App (renderer-integratie)', () => {
     expect(within(tree()).queryByText('Users')).toBeNull()
   })
 })
+
+describe('SAL-52: professionele menubalk met Bestand-menu', () => {
+  async function openBestandMenu(): Promise<void> {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Bestand' }))
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Openen…' })).toBeTruthy())
+  }
+
+  function closeMenuWithEscape(): void {
+    const active = document.activeElement
+    const target =
+      active && active instanceof HTMLElement && active.closest('.menu-bar')
+        ? active
+        : screen.getByRole('menuitem', { name: 'Nieuwe query' })
+    fireEvent.keyDown(target, { key: 'Escape' })
+  }
+
+  it('toont een Bestand-menubalk en heeft geen bestandsknoppen meer in de query-toolbar', () => {
+    useAppStore.getState().addTab()
+    render(<App />)
+
+    // Menubalk zichtbaar (boven de toolbars).
+    expect(screen.getByRole('menuitem', { name: 'Bestand' })).toBeTruthy()
+
+    // De drie bestandsknoppen staan niet meer in de query-toolbar.
+    const toolbar = document.querySelector('.editor-toolbar')
+    expect(toolbar).not.toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText('📂 Openen')).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText('💾 Opslaan')).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText('Opslaan als…')).toBeNull()
+
+    // Menu is standaard gesloten: geen losse menu-items zichtbaar.
+    expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull()
+  })
+
+  it('opent Bestand en roept Openen… → openQueryFile → queryFiles.open aan (menu sluit na actie)', async () => {
+    const openSpy = vi.spyOn(window.nvag.queryFiles, 'open').mockResolvedValue({
+      canceled: false,
+      path: '/tmp/query.sql',
+      name: 'query.sql',
+      content: 'SELECT 1;'
+    })
+    useAppStore.getState().addTab()
+    render(<App />)
+
+    await openBestandMenu()
+    // Shortcut-toetscombinaties worden in het menu getoond.
+    expect(screen.getByText('Ctrl+O')).toBeTruthy()
+    expect(screen.getByText('Ctrl+S')).toBeTruthy()
+    expect(screen.getByText('Ctrl+Shift+S')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Openen…' }))
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      const active = useAppStore.getState().tabs.find((t) => t.id === useAppStore.getState().activeTabId)
+      expect(active?.filePath).toBe('/tmp/query.sql')
+    })
+    // Na een actie sluit het menu.
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull())
+  })
+
+  it('houdt de Ctrl+O-shortcut werkend (venster-niveau)', async () => {
+    const openSpy = vi.spyOn(window.nvag.queryFiles, 'open').mockResolvedValue({ canceled: true })
+    useAppStore.getState().addTab()
+    render(<App />)
+
+    fireEvent.keyDown(window, { key: 'o', ctrlKey: true })
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1))
+  })
+
+  it('disabled Opslaan zonder bestandsbinding en enabled na het openen van een bestand', async () => {
+    useAppStore.getState().addTab()
+    render(<App />)
+
+    await openBestandMenu()
+    const saveItem = screen.getByRole('menuitem', { name: 'Opslaan' }) as HTMLButtonElement
+    expect(saveItem.disabled).toBe(true)
+    closeMenuWithEscape()
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Opslaan' })).toBeNull())
+
+    // Een bestand aan de actieve tab koppelen (zelfde weg als Openen…).
+    vi.spyOn(window.nvag.queryFiles, 'open').mockResolvedValue({
+      canceled: false,
+      path: '/tmp/query.sql',
+      name: 'query.sql',
+      content: 'SELECT 1;'
+    })
+    await useAppStore.getState().openQueryFile()
+
+    await openBestandMenu()
+    const saveItemEnabled = screen.getByRole('menuitem', { name: 'Opslaan' }) as HTMLButtonElement
+    expect(saveItemEnabled.disabled).toBe(false)
+  })
+
+  it('Nieuwe query / Verbindingen beheren… / Afsluiten roepen de juiste acties aan', async () => {
+    const quitSpy = vi.spyOn(window.nvag.app, 'quit')
+    useAppStore.getState().addTab()
+    render(<App />)
+    const tabCount = useAppStore.getState().tabs.length
+
+    // Nieuwe query → extra tab.
+    await openBestandMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Nieuwe query' }))
+    await waitFor(() => expect(useAppStore.getState().tabs.length).toBe(tabCount + 1))
+
+    // Verbindingen beheren… → Connection Manager-dialoog (ConnectionDialog).
+    await openBestandMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Verbindingen beheren…' }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Nieuwe verbinding' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Nieuwe verbinding' })).toBeNull())
+
+    // Afsluiten → app.quit via IPC.
+    await openBestandMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Afsluiten' }))
+    await waitFor(() => expect(quitSpy).toHaveBeenCalledTimes(1))
+  })
+
+  it("toont 'Recente query's' als submenu en opent die in een nieuwe tab", async () => {
+    useAppStore.getState().useRecentQuery('SELECT 42;', 'conn-1')
+    useAppStore.getState().addTab()
+    render(<App />)
+    const tabCount = useAppStore.getState().tabs.length
+
+    await openBestandMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: "Recente query's" }))
+    const recentItem = await screen.findByRole('menuitem', { name: /SELECT 42/ })
+    fireEvent.click(recentItem)
+
+    await waitFor(() => expect(useAppStore.getState().tabs.length).toBe(tabCount + 1))
+    const tabs = useAppStore.getState().tabs
+    expect(tabs[tabs.length - 1]?.sql).toBe('SELECT 42;')
+  })
+
+  it('sluit het menu bij Escape en bij een buiten-klik', async () => {
+    useAppStore.getState().addTab()
+    render(<App />)
+
+    await openBestandMenu()
+    closeMenuWithEscape()
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull())
+
+    await openBestandMenu()
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull())
+  })
+})

@@ -188,7 +188,8 @@ const api: NvagIpcApi = {
     reload: handle<PluginInfo[]>('plugins:reload')
   },
   app: {
-    getVersion: handle<string>('app:getVersion')
+    getVersion: handle<string>('app:getVersion'),
+    quit: handle<void>('app:quit')
   }
 }
 

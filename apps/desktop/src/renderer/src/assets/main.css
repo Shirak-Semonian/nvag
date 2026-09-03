@@ -2074,3 +2074,122 @@ button.danger:hover:not(:disabled) {
   max-height: 300px;
   overflow: auto;
 }
+
+/* ---------------------------------------------------------------- menubalk (SAL-52) */
+.menu-bar {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  background: #2d2d30;
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+  user-select: none;
+  z-index: 900;
+}
+
+.menu-trigger-wrap {
+  position: relative;
+}
+
+.menu-trigger {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 10px;
+  margin: 2px 1px;
+  cursor: default;
+}
+
+.menu-trigger:hover,
+.menu-trigger-wrap.open .menu-trigger {
+  background: #094771;
+  color: #fff;
+}
+
+.menu-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 240px;
+  max-width: 420px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+  z-index: 1000;
+}
+
+/* Submenu verschijnt rechts naast de trigger-regel. */
+.menu-item-wrap {
+  position: relative;
+}
+
+.menu-item-wrap > .menu-panel {
+  top: -5px;
+  left: calc(100% - 2px);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 10px;
+  margin: 0;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  background: #094771;
+  color: #fff;
+  outline: none;
+}
+
+.menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.menu-item-label {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-shortcut {
+  color: var(--text-dim);
+  margin-left: 28px;
+  font-size: 12px;
+}
+
+.menu-item:hover:not(:disabled) .menu-shortcut,
+.menu-item:focus-visible .menu-shortcut {
+  color: #d7d7d7;
+}
+
+.menu-caret {
+  color: var(--text-dim);
+  margin-left: 16px;
+  font-size: 11px;
+}
+
+.menu-item:hover:not(:disabled) .menu-caret,
+.menu-item:focus-visible .menu-caret {
+  color: #fff;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
+}

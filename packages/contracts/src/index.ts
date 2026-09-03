@@ -769,6 +769,8 @@ export interface NvagIpcApi {
 
   app: {
     getVersion(): Promise<string>
+    /** Sluit de applicatie af (Bestand → Afsluiten, SAL-52). */
+    quit(): Promise<void>
   }
 }
 

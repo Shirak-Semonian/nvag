@@ -684,7 +684,8 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     },
 
     app: {
-      getVersion: async () => '0.1.0'
+      getVersion: async () => '0.1.0',
+      quit: async () => {}
     }
   }
 

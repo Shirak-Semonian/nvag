@@ -12,6 +12,7 @@ import { SearchPanel, SnippetsPanel, ImportPanel, AuditPanel, DashboardPanel, Pe
 import { ComparePanel, DependenciesPanel, ErdPanel, AiPanel, PluginsPanel } from './components/F3Panels'
 import { AdminDialog } from './components/AdminDialog'
 import { EnvBadge, StatusBar } from './components/StatusBar'
+import { MenuBar, type MenuDef } from './components/MenuBar'
 import { useAppStore, getDialectForProvider } from './state/store'
 
 type BottomTab = 'results' | 'messages' | 'history' | 'search' | 'snippets' | 'import' | 'audit' | 'dashboard' | 'performance' | 'monitoring' | 'compare' | 'dependencies' | 'erd' | 'ai' | 'plugins'
@@ -158,8 +159,62 @@ function App(): React.JSX.Element {
     return conn ? `${conn.name} · ${conn.database ?? '—'} · gebruiker: ${conn.username ?? '—'}` : 'Geen verbinding'
   }
 
+  // SAL-52: menubalk — Bestand-menu vervangt de bestandsknoppen in de
+  // query-toolbar. Bewust Nederlands ("Bestand" i.p.v. "File"): de rest van
+  // de UI is Nederlandstalig. De structuur is generiek/uitbreidbaar; later
+  // Bewerken/Beeld/Help = extra MenuDef in de array hieronder.
+  const fileMenu: MenuDef = {
+    id: 'file',
+    label: 'Bestand',
+    items: [
+      { type: 'action', label: 'Nieuwe query', onSelect: () => addTab() },
+      { type: 'separator' },
+      { type: 'action', label: 'Openen…', shortcut: 'Ctrl+O', onSelect: () => void openQueryFile() },
+      {
+        type: 'action',
+        label: 'Opslaan',
+        shortcut: 'Ctrl+S',
+        disabled: activeTab?.filePath === undefined,
+        onSelect: () => {
+          if (activeTab) void saveQueryFile(activeTab.id)
+        }
+      },
+      {
+        type: 'action',
+        label: 'Opslaan als…',
+        shortcut: 'Ctrl+Shift+S',
+        disabled: !activeTab,
+        onSelect: () => {
+          if (activeTab) void saveQueryFileAs(activeTab.id)
+        }
+      },
+      { type: 'separator' },
+      recentQueries.length > 0
+        ? {
+            type: 'submenu',
+            label: "Recente query's",
+            items: recentQueries.slice(0, 10).map((entry) => ({
+              type: 'action',
+              label: `${shortSql(entry.sql)} — ${
+                connections.find((c) => c.id === entry.connectionId)?.name ?? 'losse query'
+              }`,
+              onSelect: () => addTab({ sql: entry.sql, connectionId: entry.connectionId })
+            }))
+          }
+        : { type: 'action', label: "Recente query's", disabled: true, onSelect: () => {} },
+      { type: 'separator' },
+      {
+        type: 'action',
+        label: 'Verbindingen beheren…',
+        onSelect: () => openConnectionDialog('create')
+      },
+      { type: 'action', label: 'Afsluiten', onSelect: () => void window.nvag.app.quit() }
+    ]
+  }
+
   return (
     <div className="app-shell">
+      <MenuBar menus={[fileMenu]} />
       <div className="app-main-row">
         <div className="sidebar">
           <ObjectExplorer />
@@ -301,25 +356,6 @@ function App(): React.JSX.Element {
                     </button>
                   </>
                 )}
-                <button
-                  onClick={() => openQueryFile()}
-                  title="Querybestand openen (Ctrl+O)"
-                >
-                  📂 Openen
-                </button>
-                <button
-                  onClick={() => saveQueryFile(activeTab.id)}
-                  disabled={activeTab.filePath === undefined}
-                  title="Querybestand opslaan (Ctrl+S)"
-                >
-                  💾 Opslaan
-                </button>
-                <button
-                  onClick={() => saveQueryFileAs(activeTab.id)}
-                  title="Querybestand opslaan als (Ctrl+Shift+S)"
-                >
-                  Opslaan als…
-                </button>
                 <select
                   className="recent-queries"
                   defaultValue=""
