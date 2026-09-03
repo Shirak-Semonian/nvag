@@ -32,3 +32,4 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 docker-compose.dev.yml
+packaging/aur/nvag-bin/*.AppImage
