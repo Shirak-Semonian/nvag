@@ -1,6 +1,6 @@
 # Nvag
 
-One central Database Management Studio for multiple database platforms — a single tool for many servers, environments and databases.
+One central database tool for multiple database platforms — a single application for many servers, environments and databases.
 
 Supported platforms: **SQL Server, Azure SQL, PostgreSQL, MySQL, MariaDB, Db2, Oracle, Databricks, Snowflake, SQLite**.
 
