@@ -22,7 +22,7 @@ pnpm dev              # electron-vite met HMR
 
 ```bash
 pnpm build            # typecheck + electron-vite build
-pnpm build:linux      # + electron-builder AppImage (output: release/)
+pnpm build:linux      # + electron-builder: AppImage/tar.gz/deb/rpm (output: release/)
 ```
 
 ## Fase 0 functionaliteit

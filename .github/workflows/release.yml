@@ -1,0 +1,111 @@
+# Publiceert Nvag Linux-artefacten (AppImage/tar.gz/deb/rpm) als GitHub Release.
+#
+# Trigger:
+#   - push van een tag v* (bv. v1.0.4) -> release voor die tag
+#   - handmatige dispatch -> tag = input of v<versie> uit apps/desktop/package.json
+#
+# De stappen spieken op de bewezen release-route (docs/04-omarchy.md §7,
+# releases 1.0.0..1.0.4): pnpm install -> typecheck -> tests -> electron-builder
+# op ubuntu-latest met 'rpm' geïnstalleerd voor het rpm-target. De publish-
+# provider wordt dynamisch uit de Actions-context gezet (github.com/<owner>/<repo>),
+# zodat de gebouwde AppImage de juiste update-configuratie meekrijgt; geüpload
+# wordt er via action-gh-release (deterministisch, ook voor workflow_dispatch).
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: >-
+          Tag voor de release (alleen bij handmatige dispatch; leeg = v<versie>
+          uit apps/desktop/package.json). Bij een tag-push wordt de gepushte tag
+          gebruikt.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux:
+    name: Release Linux (AppImage / tar.gz / deb / rpm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Test
+        run: pnpm -r test
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.tag_name }}" ]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="v$(node -p "require('./apps/desktop/package.json').version")"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Install rpm tooling (fpm/rpmbuild)
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build
+        run: pnpm --filter desktop build
+
+      - name: Package (AppImage / tar.gz / deb / rpm)
+        run: >
+          pnpm --filter desktop exec electron-builder
+          --linux AppImage tar.gz deb rpm
+          --publish never
+          -c.publish.provider=github
+          -c.publish.owner=${{ github.repository_owner }}
+          -c.publish.repo=${{ github.event.repository.name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify artifacts
+        run: |
+          cd apps/desktop/release
+          ls -lh Nvag-*.AppImage Nvag-*.tar.gz Nvag-*.deb Nvag-*.rpm
+          [ "$(ls Nvag-*.AppImage | wc -l)" -eq 1 ]
+          [ "$(ls Nvag-*.tar.gz | wc -l)" -eq 1 ]
+          [ "$(ls Nvag-*.deb | wc -l)" -eq 1 ]
+          [ "$(ls Nvag-*.rpm | wc -l)" -eq 1 ]
+
+      - name: Generate latest-linux.yml (AppImageUpdate-kanaal)
+        run: node scripts/generate-latest-linux.mjs
+
+      - name: Upload artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            apps/desktop/release/Nvag-*.AppImage
+            apps/desktop/release/Nvag-*.tar.gz
+            apps/desktop/release/Nvag-*.deb
+            apps/desktop/release/Nvag-*.rpm
+            apps/desktop/release/latest-linux.yml
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

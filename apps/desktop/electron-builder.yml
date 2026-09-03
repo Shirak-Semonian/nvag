@@ -44,6 +44,7 @@ linux:
 appImage:
   artifactName: ${productName}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
+# Geen vaste publish-provider: lokale builds hoeven geen update-kanaal te
+# claimen (de app bevat nog geen electron-updater). De release-workflow
+# (.github/workflows/release.yml) injecteert de GitHub publish-provider via
+# -c.publish.*, zodat CI-artefacten wél een correct app-update.yml meekrijgen.

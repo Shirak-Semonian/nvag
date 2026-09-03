@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Nvag
+GenericName=Database Management Studio
+Comment=Database Management Studio voor meerdere databaseplatformen
+Exec=nvag --no-sandbox %U
+Icon=nvag
+Terminal=false
+Type=Application
+Categories=Development;Database;
+StartupWMClass=Nvag
+StartupNotify=true

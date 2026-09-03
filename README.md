@@ -92,6 +92,59 @@ lokale SQLite-connectie + Object Explorer werken (tabellen zichtbaar).
 **Doorlopende kwaliteit**: `pnpm dev` start de app; `pnpm -r typecheck` en
 `pnpm -r test` blijven groen (desktop-suite 223 tests).
 
+## Installatie & publicatie
+
+> **Let op**: Nvag is een **zelfstandige desktop-app**, geen Omarchy-shell-plugin.
+> Een eventuele Omarchy-plugin volgt apart (zie [docs/06-plugins.md](docs/06-plugins.md)).
+> Publicatie is voorbereid: GitHub-release-workflow
+> (`.github/workflows/release.yml`), AUR-package `nvag-bin`
+> (`packaging/aur/nvag-bin/`) en het stappenplan in
+> [docs/09-publicatie.md](docs/09-publicatie.md).
+
+[![GitHub Release](https://img.shields.io/github/v/release/OWNER/Nvag?label=Release&logo=github)](https://github.com/OWNER/Nvag/releases)
+[![AUR](https://img.shields.io/aur/version/nvag-bin?label=AUR&logo=archlinux)](https://aur.archlinux.org/packages/nvag-bin)
+
+> De repo is nog niet publiek: zolang dat niet zo is, vervang **`OWNER`** in
+> deze badges/links (en in `packaging/aur/nvag-bin/PKGBUILD` +
+> [docs/09-publicatie.md](docs/09-publicatie.md)) door de GitHub-eigenaar.
+
+### Opties
+
+1. **AUR — Arch/Omarchy** (aanbevolen):
+
+   ```bash
+   yay -S nvag-bin        # of: paru -S nvag-bin
+   ```
+
+2. **GitHub Releases** — download `Nvag-<versie>.AppImage`, `.tar.gz`, `.deb`
+   of `.rpm` van de [releases-pagina](https://github.com/OWNER/Nvag/releases).
+
+3. **AppImage direct** — de AppImage is draagbaar:
+
+   ```bash
+   chmod +x Nvag-*.AppImage
+   ./Nvag-1.0.4.AppImage            # vereist fuse2; zonder fuse2:
+   ./Nvag-1.0.4.AppImage --appimage-extract-and-run
+   ```
+
+4. **`.deb` / `.rpm`** — voor Debian/Ubuntu resp. Fedora/openSUSE-achtigen
+   (de rpm wordt in CI in de ubuntu-container gebouwd).
+
+### Systeemvereisten
+
+- Linux x86_64 (Omarchy/Arch getest; dezelfde artefacten draaien op
+  Debian/Ubuntu/Fedora via `.deb`/`.rpm`).
+- **Electron-runtime zit in het artefact** — voor eindgebruikers is geen Node
+  nodig. Node 24+ is alleen een dev-vereiste voor de monorepo.
+- AppImage: `fuse2` (optioneel; zonder FUSE2 via `--appimage-extract-and-run`).
+- Versleutelde credentials (safeStorage-vault): `gnome-keyring` + `libsecret`
+  (zie [docs/04-omarchy.md](docs/04-omarchy.md)).
+
+Releases worden gebouwd door de GitHub Actions-workflow op een `v*`-tag
+(artefacten + `latest-linux.yml` voor AppImageUpdate). Zie
+[docs/09-publicatie.md](docs/09-publicatie.md) voor het complete stappenplan
+van repo-aanmaken tot AUR-indiening.
+
 ## Doel
 
 Een moderne, uitbreidbare desktopapplicatie die de kernfunctionaliteit van
@@ -121,6 +174,7 @@ later ook op Windows/macOS kunnen draaien.
 | [docs/03-roadmap.md](docs/03-roadmap.md) | Ontwikkelroadmap: fases 0–3 met concrete stappen en done-criteria |
 | [docs/04-omarchy.md](docs/04-omarchy.md) | Omarchy-specifieke setup: toolchain, drivers, keyring, packaging |
 | [docs/05-beslissingen-en-risicos.md](docs/05-beslissingen-en-risicos.md) | ADR's (architectuurbeslissingen) en risicoregister |
+| [docs/09-publicatie.md](docs/09-publicatie.md) | Publicatie-runbook: GitHub-repo + release + AUR indienen |
 
 ## Voorgestelde stack (kort)
 
