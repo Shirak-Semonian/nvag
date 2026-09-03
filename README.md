@@ -31,6 +31,19 @@
   bevestigen), auditlogging en een capability-gated Backup-tab; daarnaast
   packaging (AppImage/tar.gz/deb/rpm) met CI-workflow.
 
+**Release 1.0.4 (2026-09-03, SAL-53)**: verse Linux-distributie in
+`apps/desktop/release/` (`Nvag-1.0.4.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
+met de Tester-gevalideerde SAL-50/51/52-features: database- en
+verbindingseigenschappen bekijken + wijzigen (SSMS-achtig overzicht +
+ALTER DATABASE via de eigenschappen-dialoog, 'Bewerken…' op de server-node,
+SAL-50), datatype-dropdown per provider met database-context in de
+Admin-dialoog en drop-flows (SAL-51) en een professionele menubalk met
+Bestand-menu (Openen/Opslaan/Opslaan als verhuizen uit de query-toolbar,
+SAL-52). Rooktest van de gebouwde AppImage geslaagd: app start,
+SQLite-connectie, Object Explorer, query finaliseert in de grid,
+menubalk Bestand-menu zichtbaar, tabelgegevens tonen rijen,
+eigenschappen-dialoog en datatype-dropdown werken.
+
 **Release 1.0.3 (2026-09-03, SAL-49)**: verse Linux-distributie in
 `apps/desktop/release/` (`Nvag-1.0.3.AppImage`, `.tar.gz`, `.deb`, `.rpm`)
 met de Tester-gevalideerde SAL-47/SAL-48-QA-fixes: query-resultaten
