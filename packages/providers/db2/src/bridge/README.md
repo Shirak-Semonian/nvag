@@ -50,7 +50,7 @@ curl -L -o ~/.nvag/db2jcc/jcc.jar \
 ## De bridge handmatig testen
 
 ```bash
-echo '{"id":1,"op":"connect","params":{"url":"jdbc:db2://localhost:50000/nvagdb","user":"db2inst1","password":"test-password","connectionTimeoutMs":5000}}' \
+echo '{"id":1,"op":"connect","params":{"url":"jdbc:db2://localhost:50000/nvagdb","user":"db2inst1","password":"<wachtwoord-uit-env>","connectionTimeoutMs":5000}}' \
   | java -cp ~/.nvag/db2jcc/jcc.jar src/bridge/Db2Bridge.java
 ```
 

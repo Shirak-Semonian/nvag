@@ -46,7 +46,7 @@ export function getDb2TestConfig(): Db2TestConfig | null {
     port: Number(process.env.NVAG_TEST_DB2_PORT || 50000),
     database: process.env.NVAG_TEST_DB2_DB || 'nvagdb',
     user: process.env.NVAG_TEST_DB2_USER || 'db2inst1',
-    password: process.env.NVAG_TEST_DB2_PASSWORD || 'test-password'
+    password: process.env.NVAG_TEST_DB2_PASSWORD || ''
   }
 }
 

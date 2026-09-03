@@ -41,7 +41,7 @@ export function getSqlServerTestConfig(): SqlServerTestConfig | null {
     port: Number(process.env.NVAG_TEST_MSSQL_PORT || 1433),
     database: process.env.NVAG_TEST_MSSQL_DB || 'nvag_test',
     user: process.env.NVAG_TEST_MSSQL_USER || 'sa',
-    password: process.env.NVAG_TEST_MSSQL_PASSWORD || 'test-password'
+    password: process.env.NVAG_TEST_MSSQL_PASSWORD || ''
   }
 }
 
