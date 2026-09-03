@@ -1,34 +1,38 @@
 # Nvag
 
-Eén centrale Database Management Studio voor meerdere databaseplatformen — geïnspireerd op SSMS, maar database-onafhankelijk.
+One central Database Management Studio for multiple database platforms — inspired by SSMS, but database-agnostic.
 
-Ondersteunde platformen: **SQL Server, Azure SQL, PostgreSQL, MySQL, MariaDB, Db2, Oracle, Databricks, Snowflake, SQLite**.
+Supported platforms: **SQL Server, Azure SQL, PostgreSQL, MySQL, MariaDB, Db2, Oracle, Databricks, Snowflake, SQLite**.
 
 ## Features
 
-- **Object Explorer** — databases, tabellen, views, procedures, functies, users, rollen, schema's en meer; contextmenu's op SSMS-niveau
-- **Query Editor** — SQL met autocomplete, meerdere tabs, uitvoeren/annuleren, resultaten in een grid (sorteren, filteren, kopiëren, exporteren naar CSV/Excel)
-- **Databasebeheer** — databases en objecten aanmaken, wijzigen, eigenschappen bekijken en verwijderen; backup/restore
-- **Tabelgegevens** — rijen bekijken en bewerken
-- **Veilig** — credentials worden versleuteld opgeslagen; omgevingsguard (DEV/TEST/ACC/PROD) tegen onbedoelde wijzigingen
+- **Object Explorer** — databases, tables, views, procedures, functions, users, roles, schemas and more; SSMS-level context menus
+- **Query Editor** — SQL with autocomplete, multiple tabs, run/cancel, results in a grid (sort, filter, copy, export to CSV/Excel)
+- **Database administration** — create, alter, view properties and drop databases and objects; backup/restore
+- **Table data** — view and edit rows
+- **Secure** — credentials are stored encrypted; environment guard (DEV/TEST/ACC/PROD) against unintended changes
 
-## Installatie
+## Installation
 
-Download de nieuwste release van de [releases-pagina](https://github.com/Shirak-Semonian/nvag/releases) en kies je formaat:
+Download the latest release from the [releases page](https://github.com/Shirak-Semonian/nvag/releases) and pick your format:
 
-- **AppImage** (alle distro's):
+- **AppImage** (any distro):
   ```bash
   chmod +x Nvag-*.AppImage
   ./Nvag-*.AppImage
   ```
-  Vereist `fuse2` (op Arch/Omarchy: `sudo pacman -S fuse2`); zonder FUSE2: `./Nvag-*.AppImage --appimage-extract-and-run`
+  Requires `fuse2` (on Arch/Omarchy: `sudo pacman -S fuse2`); without FUSE2: `./Nvag-*.AppImage --appimage-extract-and-run`
 - **Debian/Ubuntu**: `sudo apt install ./Nvag-*.deb`
 - **Fedora/RHEL**: `sudo dnf install ./Nvag-*.rpm`
-- **Overig**: pak `Nvag-*.tar.gz` uit en start Nvag vanuit `linux-unpacked/`
+- **Other**: extract `Nvag-*.tar.gz` and run Nvag from `linux-unpacked/`
 
-**Omarchy-gebruikers**: installeer ook de [Nvag shell-plugin](https://github.com/Shirak-Semonian/nvag-omarchy-plugin) voor een launcher-widget in de bar.
+**Omarchy users**: also install the [Nvag shell plugin](https://github.com/Shirak-Semonian/nvag-omarchy-plugin) for a launcher widget in your bar.
 
-## Systeemvereisten
+## System requirements
 
 - Linux x86_64
-- De Electron-runtime zit in het installatiepakket — aparte Node-installatie is niet nodig
+- The Electron runtime is bundled in the package — no separate Node installation needed
+
+## License
+
+[MIT](LICENSE)
