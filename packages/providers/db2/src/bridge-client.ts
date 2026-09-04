@@ -49,8 +49,8 @@ export class BridgeClient {
     const cmd = resolveBridgeCommand(jccJar)
     if (!cmd || cmd.length === 0) {
       throw new Error(
-        'Db2: JDBC-driver (jcc.jar) niet gevonden. Zet NVAG_DB2_JCC_JAR of kopieer de ' +
-          'driver naar ~/.nvag/db2jcc/jcc.jar — zie packages/providers/db2/src/bridge/README.md'
+        'Db2: JDBC driver (jcc.jar) not found. Set NVAG_DB2_JCC_JAR or copy the ' +
+          'driver to ~/.nvag/db2jcc/jcc.jar — see packages/providers/db2/src/bridge/README.md'
       )
     }
     let child: ChildProcessWithoutNullStreams
@@ -58,7 +58,7 @@ export class BridgeClient {
       child = spawn(cmd[0]!, cmd.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] })
     } catch (err) {
       throw new Error(
-        `Db2: bridge niet te starten (${cmd[0]}) — ${
+        `Db2: bridge could not be started (${cmd[0]}) — ${
           err instanceof Error ? err.message : String(err)
         }`
       )
@@ -70,14 +70,14 @@ export class BridgeClient {
     // spawn-fouten (ENOENT e.d.) komen als 'error'-event, niet als throw.
     child.on('error', (err) => {
       this.failAll(
-        `Db2: bridge niet te starten (${cmd[0]}) — ${err.message}` +
+        `Db2: bridge could not be started (${cmd[0]}) — ${err.message}` +
           (this.stderrTail ? ` — stderr: ${this.stderrTail.trim()}` : '')
       )
       this.proc = null
     })
     child.on('exit', (code, signal) => {
       this.failAll(
-        `Db2: JDBC-bridge gestopt (exit ${code ?? '?'}${signal ? `, ${signal}` : ''})` +
+        `Db2: JDBC bridge stopped (exit ${code ?? '?'}${signal ? `, ${signal}` : ''})` +
           (this.stderrTail ? ` — stderr: ${this.stderrTail.trim()}` : '')
       )
       this.proc = null
@@ -130,7 +130,7 @@ export class BridgeClient {
   }
 
   private send(p: PendingRequest, op: string, params: unknown): void {
-    if (!this.proc) throw new Error('Db2: bridge is niet gestart')
+    if (!this.proc) throw new Error('Db2: bridge is not started')
     this.proc.stdin.write(JSON.stringify({ id: p.id, op, params }) + '\n')
   }
 
@@ -149,7 +149,7 @@ export class BridgeClient {
     const line = await this.nextLine(p)
     this.pending.delete(p.id)
     if (isRecord(line) && line.ok === true) return (line.result ?? null) as T
-    const err = isRecord(line) && typeof line.error === 'string' ? line.error : 'onbekende bridge-fout'
+    const err = isRecord(line) && typeof line.error === 'string' ? line.error : 'unknown bridge error'
     throw new Error(`Db2: ${err}`)
   }
 
@@ -181,7 +181,7 @@ export class BridgeClient {
           }
           return
         } else if (line.ok === false) {
-          yield { kind: 'error', message: typeof line.error === 'string' ? line.error : 'onbekende bridge-fout' }
+          yield { kind: 'error', message: typeof line.error === 'string' ? line.error : 'unknown bridge error' }
           return
         } else {
           // Terminal zonder event (theoretisch niet voor query) — stoppen.

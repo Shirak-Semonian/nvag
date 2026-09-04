@@ -87,7 +87,7 @@ export function createSqliteProvider(): DatabaseProvider {
 
     async connect(config: ConnectionConfig): Promise<DbSession> {
       const path = resolvePath(config)
-      if (!path) throw new Error('SQLite: geen databasepad opgegeven (host)')
+      if (!path) throw new Error('SQLite: no database path provided (host)')
       // Alleen openen wanneer bestand bestaat (voorkomt per ongeluk lege db's aanmaken),
       // tenzij createIfMissing expliciet is aangevraagd (F0-6 verbindingsdialoog).
       if (!existsSync(path)) {
@@ -98,7 +98,7 @@ export function createSqliteProvider(): DatabaseProvider {
             mkdirSync(dir, { recursive: true })
           }
         } else {
-          throw new Error(`SQLite: bestand niet gevonden: ${path}`)
+          throw new Error(`SQLite: file not found: ${path}`)
         }
       }
       const db = openDb(path)
@@ -383,7 +383,7 @@ export function createSqliteProvider(): DatabaseProvider {
         )
         .get(obj.type === 'view' ? 'view' : 'table', obj.name) as { sql: string } | undefined
       if (!row?.sql) {
-        throw new Error(`SQLite: geen definitie gevonden voor ${obj.name}`)
+        throw new Error(`SQLite: no definition found for ${obj.name}`)
       }
       return `${row.sql};`
     },
@@ -411,7 +411,7 @@ export function createSqliteProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }
@@ -501,7 +501,7 @@ export function createSqliteProvider(): DatabaseProvider {
       // consumptie tussen rij-batches (batch-level). Dit is géén stille no-op:
       // de gebruiker krijgt een duidelijke melding.
       throw new Error(
-        'SQLite: annuleren werkt alleen tussen rij-batches; de lopende lokale query stopt zodra de huidige batch klaar is.'
+        'SQLite: cancel only works between row batches; the running local query stops once the current batch is done.'
       )
     },
 
@@ -532,7 +532,7 @@ export function createSqliteProvider(): DatabaseProvider {
                 ok: false,
                 targetPath,
                 durationMs: Math.round(performance.now() - start),
-                message: `Backupbestand bestaat al: ${targetPath} (gebruik overwrite om te vervangen)`
+                message: `Backup file already exists: ${targetPath} (use overwrite to replace)`
               }
             }
             rmSync(targetPath, { force: true })
@@ -564,7 +564,7 @@ export function createSqliteProvider(): DatabaseProvider {
               ok: false,
               sourcePath,
               durationMs: Math.round(performance.now() - start),
-              message: `Backupbestand niet gevonden: ${sourcePath}`
+              message: `Backup file not found: ${sourcePath}`
             }
           }
           // Bestand vervangen terwijl de database open is, is onveilig:

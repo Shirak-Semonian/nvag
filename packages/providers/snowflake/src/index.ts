@@ -148,7 +148,7 @@ export function createSnowflakeProvider(): DatabaseProvider {
     capabilities: CAPABILITIES,
 
     async connect(config: ConnectionConfig, secret?: ConnectionSecret): Promise<DbSession> {
-      if (!config.host) throw new Error('Snowflake: geen account opgegeven (host = account)')
+      if (!config.host) throw new Error('Snowflake: no account provided (host = account)')
       const conn = buildConnection(config, secret)
       await connectAsync(conn)
       const session: DbSession = {
@@ -319,7 +319,7 @@ export function createSnowflakeProvider(): DatabaseProvider {
         `SELECT GET_DDL('TABLE', '${schema.replace(/'/g, "''")}.${obj.name.replace(/'/g, "''")}') AS ddl`
       )
       const ddl = rows[0]?.[0]
-      if (ddl == null) throw new Error(`Snowflake: geen definitie gevonden voor ${schema}.${obj.name}`)
+      if (ddl == null) throw new Error(`Snowflake: no definition found for ${schema}.${obj.name}`)
       return `${String(ddl)};`
     },
 
@@ -340,7 +340,7 @@ export function createSnowflakeProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }
@@ -407,7 +407,7 @@ export function createSnowflakeProvider(): DatabaseProvider {
       // Snowflake-sdk biedt geen directe cancel-API voor een actieve query.
       // Dit is géén stille no-op: de gebruiker krijgt een duidelijke melding.
       throw new Error(
-        'Snowflake: annuleren van een actieve query wordt niet ondersteund door de driver. De query wordt lokaal gestopt; de server-side uitvoering kan nog doorlopen.'
+        'Snowflake: canceling an active query is not supported by the driver. The query is stopped locally; server-side execution may continue.'
       )
     },
 

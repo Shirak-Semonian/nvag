@@ -104,7 +104,7 @@ async function runFixture(
     const result = await collect(provider.executeQuery(session, stmt, {}))
     if (result.errors.length > 0) {
       throw new Error(
-        `Fixture-statement mislukt: ${stmt}\n  ${result.errors.map((e) => e.message).join('; ')}`
+        `Fixture statement failed: ${stmt}\n  ${result.errors.map((e) => e.message).join('; ')}`
       )
     }
   }

@@ -146,8 +146,8 @@ describe('scriptSelect / scriptInsert / scriptUpdate / scriptDelete', () => {
 
   it('UPDATE zonder PK geeft invulbare WHERE met waarschuwing', () => {
     const sql = scriptUpdate('sqlite', 'klanten', null, ['naam'], [])
-    expect(sql).toContain('WHERE <voorwaarde>;')
-    expect(sql).toContain('geen primary key gevonden')
+    expect(sql).toContain('WHERE <condition>;')
+    expect(sql).toContain('no primary key found')
   })
 
   it('DELETE op PK-basis', () => {
@@ -157,7 +157,7 @@ describe('scriptSelect / scriptInsert / scriptUpdate / scriptDelete', () => {
   })
 
   it('DELETE zonder PK geeft invulbare WHERE', () => {
-    expect(scriptDelete('postgres', 'klanten', 'public', [])).toContain('WHERE <voorwaarde>;')
+    expect(scriptDelete('postgres', 'klanten', 'public', [])).toContain('WHERE <condition>;')
   })
 })
 
@@ -196,6 +196,6 @@ describe('scriptObject (dispatch)', () => {
   it('gooit bij onbekende kind', () => {
     expect(() =>
       scriptObject('DROP' as never, 'sqlite', 'klanten', null, sampleMeta())
-    ).toThrow(/Onbekende ScriptKind/)
+    ).toThrow(/Unknown ScriptKind/)
   })
 })

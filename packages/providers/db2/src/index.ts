@@ -143,9 +143,9 @@ export function createDb2Provider(): DatabaseProvider {
     capabilities: CAPABILITIES,
 
     async connect(config: ConnectionConfig, secret?): Promise<DbSession> {
-      if (!config.host) throw new Error('Db2: geen host opgegeven')
+      if (!config.host) throw new Error('Db2: no host provided')
       if (!config.database) {
-        throw new Error('Db2: geen database opgegeven (Db2 vereist een database in de verbinding)')
+        throw new Error('Db2: no database provided (Db2 requires a database in the connection)')
       }
       await ensureBridge(bridge)
       const url = buildJdbcUrl(config)
@@ -192,7 +192,7 @@ export function createDb2Provider(): DatabaseProvider {
       return {
         providerId: 'db2',
         providerName: 'Db2',
-        serverVersion: info.dbmsVersion ?? 'onbekend',
+        serverVersion: info.dbmsVersion ?? 'unknown',
         productName: info.dbmsName,
         currentDatabase: info.database ?? session.database,
         currentUser: info.user ?? undefined
@@ -307,7 +307,7 @@ export function createDb2Provider(): DatabaseProvider {
         const q = await queryRows(handle, meta.viewDefinitionSql(schema, obj.name))
         const def = meta.rowsToObjects(q)[0]?.DEFINITION
         if (typeof def === 'string' && def.trim()) return def
-        throw new Error(`Db2: geen definitie gevonden voor ${schema}.${obj.name}`)
+        throw new Error(`Db2: no definition found for ${schema}.${obj.name}`)
       }
       if (obj.type === 'procedure' || obj.type === 'function') {
         const q = await queryRows(
@@ -316,7 +316,7 @@ export function createDb2Provider(): DatabaseProvider {
         )
         const def = meta.rowsToObjects(q)[0]?.DEFINITION
         if (typeof def === 'string' && def.trim()) return def
-        throw new Error(`Db2: geen definitie gevonden voor ${schema}.${obj.name}`)
+        throw new Error(`Db2: no definition found for ${schema}.${obj.name}`)
       }
       // Tabellen hebben geen catalogustekst; genereer CREATE TABLE uit metadata.
       const tableMeta = await this.getTableMetadata(session, obj.database, schema, obj.name)
@@ -340,7 +340,7 @@ export function createDb2Provider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }
@@ -413,7 +413,7 @@ export function createDb2Provider(): DatabaseProvider {
       // De JDBC-bridge biedt geen cancel-API voor een actieve query. Dit is
       // géén stille no-op: de gebruiker krijgt een duidelijke melding.
       throw new Error(
-        'Db2: annuleren van een actieve query wordt niet ondersteund door de JDBC-bridge. De query wordt lokaal gestopt; de server-side uitvoering kan nog doorlopen.'
+        'Db2: canceling an active query is not supported by the JDBC bridge. The query is stopped locally; server-side execution may continue.'
       )
     },
 

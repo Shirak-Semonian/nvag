@@ -461,7 +461,7 @@ export function createPostgresProvider(): DatabaseProvider {
           'SELECT pg_get_viewdef($1::regclass, true) AS def',
           [`${schema}.${obj.name}`]
         )
-        if (!r.rows[0]?.def) throw new Error(`PostgreSQL: view niet gevonden: ${schema}.${obj.name}`)
+        if (!r.rows[0]?.def) throw new Error(`PostgreSQL: view not found: ${schema}.${obj.name}`)
         return `CREATE VIEW ${quoteIdentifier('postgres', obj.name)} AS\n${r.rows[0].def};`
       }
       if (obj.type === 'function') {
@@ -469,7 +469,7 @@ export function createPostgresProvider(): DatabaseProvider {
           'SELECT pg_get_functiondef(p.oid) AS def FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.proname = $2',
           [schema, obj.name]
         )
-        if (!r.rows[0]?.def) throw new Error(`PostgreSQL: functie niet gevonden: ${schema}.${obj.name}`)
+        if (!r.rows[0]?.def) throw new Error(`PostgreSQL: function not found: ${schema}.${obj.name}`)
         return `${r.rows[0].def};`
       }
       // Tabel: genereer CREATE TABLE uit metadata (basis; F1-5 breidt uit)
@@ -503,7 +503,7 @@ export function createPostgresProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }

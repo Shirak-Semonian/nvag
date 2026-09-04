@@ -132,18 +132,18 @@ describe('Admin-DDL (F2-3)', () => {
   })
 
   it('vereist een ON-tabel voor DROP INDEX op tsql/mysql (SAL-45)', () => {
-    expect(() => buildDrop('tsql', 'INDEX', 'idx_naam')).toThrow(/tabelnaam/)
+    expect(() => buildDrop('tsql', 'INDEX', 'idx_naam')).toThrow(/table name/i)
   })
 
   it('bouwt postgres DROP TRIGGER met ON-tabel; vereist tabelnaam (SAL-45)', () => {
     expect(buildDrop('postgres', 'TRIGGER', 'trg_ins', { schema: 'public', table: 'klanten' })).toBe('DROP TRIGGER "trg_ins" ON "public"."klanten";')
-    expect(() => buildDrop('postgres', 'TRIGGER', 'trg_ins', { schema: 'public' })).toThrow(/tabel/)
+    expect(() => buildDrop('postgres', 'TRIGGER', 'trg_ins', { schema: 'public' })).toThrow(/table/i)
   })
 
   it('bouwt ALTER TABLE … DROP CONSTRAINT op tsql/postgres (SAL-45)', () => {
     expect(buildDropConstraint('tsql', 'dbo', 'klanten', 'CK_leeftijd')).toBe('ALTER TABLE [dbo].[klanten] DROP CONSTRAINT [CK_leeftijd];')
     expect(buildDropConstraint('postgres', 'public', 'klanten', 'klanten_pkey')).toBe('ALTER TABLE "public"."klanten" DROP CONSTRAINT "klanten_pkey";')
-    expect(() => buildDropConstraint('mysql', 'app', 'klanten', 'CK_x')).toThrow(/niet ondersteund/)
+    expect(() => buildDropConstraint('mysql', 'app', 'klanten', 'CK_x')).toThrow(/not supported/)
   })
 
   it('bouwt CREATE INDEX met UNIQUE-optie', () => {
@@ -203,12 +203,12 @@ describe('buildAlterDatabaseStatements (SAL-50)', () => {
     expect(() =>
       buildAlterDatabaseStatements('tsql', 'Klanten', { compatibility_level: '999' })
     ).toThrow(/compatibility/i)
-    expect(() => buildAlterDatabaseStatements('tsql', 'Klanten', { owner: 'sa' })).toThrow(/kan voor dit dialect/)
+    expect(() => buildAlterDatabaseStatements('tsql', 'Klanten', { owner: 'sa' })).toThrow(/cannot be changed for this dialect/)
   })
 
   it('weigert niet-tsql-dialecten (ALTER DATABASE niet ondersteund)', () => {
     expect(() => buildAlterDatabaseStatements('postgres', 'Klanten', { recovery: 'SIMPLE' })).toThrow(
-      /niet ondersteund/
+      /not supported/
     )
   })
 })

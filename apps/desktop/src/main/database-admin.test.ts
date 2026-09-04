@@ -202,7 +202,7 @@ describe('F4 backup/restore guard-flow', () => {
   it('meldt een ontbrekend backupbestand bij restore', async () => {
     const r = await restoreDatabase('adm-1', 'main', join(dir, 'bestaand-niet.db'), true)
     expect(r.ok).toBe(false)
-    expect(r.message).toMatch(/niet gevonden/)
+    expect(r.message).toMatch(/not found/)
   })
 })
 
@@ -571,7 +571,7 @@ describe('SAL-50 database-eigenschappen (tsql dialect, fake provider)', () => {
 
   it('weigert een onbekende eigenschap en een niet-tsql-dialect', async () => {
     await expect(alterDatabase('adm-s50', 'Klanten', { owner: 'sa' }, true)).rejects.toThrow(
-      /kan voor dit dialect/
+      /cannot be changed for this dialect/
     )
   })
 })
@@ -613,7 +613,7 @@ describe('SAL-50 database-eigenschappen op niet-tsql-providers (sqlite)', () => 
     // De UI-gating voorkomt alterDatabase-aanroepen; mocht het toch gebeuren
     // dan gooit de builder een duidelijke fout.
     await expect(alterDatabase('adm-s50-sqlite', 'main', { name: 'x' }, true)).rejects.toThrow(
-      /niet ondersteund/
+      /not supported/
     )
   })
 })

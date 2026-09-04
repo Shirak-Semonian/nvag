@@ -449,10 +449,10 @@ describe('App (renderer-integratie)', () => {
 
     render(<App />)
     await expandDatabasesFolder()
-    mockOpts.metadataErrors = { listDatabases: 'Kan databases niet bereiken' }
+    mockOpts.metadataErrors = { listDatabases: 'Could not reach databases' }
     fireEvent.click(screen.getByRole('button', { name: 'Refresh databases' }))
     await waitFor(() =>
-      expect(screen.getByText(/Failed to load data: Kan databases niet bereiken/)).toBeTruthy()
+      expect(screen.getByText(/Failed to load data: Could not reach databases/)).toBeTruthy()
     )
     // De boom blijft bruikbaar: header + folder bestaan nog
     expect(screen.getByText('Object Explorer')).toBeTruthy()

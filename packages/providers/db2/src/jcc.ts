@@ -47,8 +47,8 @@ export function buildJdbcUrl(config: ConnectionConfig): string {
   const host = config.host
   const port = config.port ?? DB2_DEFAULT_PORT
   const database = config.database ?? ''
-  if (!host) throw new Error('Db2: geen host opgegeven')
-  if (!database) throw new Error('Db2: geen database opgegeven (Db2 vereist een database in de verbinding)')
+  if (!host) throw new Error('Db2: no host provided')
+  if (!database) throw new Error('Db2: no database provided (Db2 requires a database in the connection)')
   const timeout = config.connectionTimeoutMs ?? 15000
   // jcc-URL-eigenschappen zijn `key=value;`-gescheiden achter een `:`.
   return `jdbc:db2://${host}:${port}/${database}:loginTimeout=${Math.max(1, Math.round(timeout / 1000))};`

@@ -128,7 +128,7 @@ export function createOracleProvider(): DatabaseProvider {
     capabilities: CAPABILITIES,
 
     async connect(config: ConnectionConfig, secret?: ConnectionSecret): Promise<DbSession> {
-      if (!config.host) throw new Error('Oracle: geen host opgegeven')
+      if (!config.host) throw new Error('Oracle: no host provided')
       const conn = await oracledb.getConnection({
         user: config.username,
         password: secret?.password,
@@ -468,7 +468,7 @@ export function createOracleProvider(): DatabaseProvider {
       // (stream) terug; lees die expliciet uit als string (SAL-36).
       const raw = r.rows?.[0]?.text
       const text = raw == null ? null : typeof raw === 'string' ? raw : await (raw as unknown as oracledb.Lob).getData()
-      if (!text) throw new Error(`Oracle: geen definitie gevonden voor ${owner}.${obj.name}`)
+      if (!text) throw new Error(`Oracle: no definition found for ${owner}.${obj.name}`)
       return `${text};`
     },
 
@@ -489,7 +489,7 @@ export function createOracleProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }
@@ -567,7 +567,7 @@ export function createOracleProvider(): DatabaseProvider {
       // oracledb.break vereist een eigen break-handler (F2-4); tot die tijd is
       // dit géén stille no-op: de gebruiker krijgt een duidelijke melding.
       throw new Error(
-        'Oracle: annuleren van een actieve query wordt (nog) niet ondersteund. De query wordt lokaal gestopt; de server-side uitvoering kan nog doorlopen.'
+        'Oracle: canceling an active query is not supported (yet). The query is stopped locally; server-side execution may continue.'
       )
     },
 

@@ -142,7 +142,7 @@ public class Db2Bridge {
   private static Connection requireConn(Map<String, Object> params) throws SQLException {
     String connId = Json.asString(params.get("connId"), "");
     Connection conn = CONNS.get(connId);
-    if (conn == null) throw new SQLException("onbekende connId: " + connId);
+    if (conn == null) throw new SQLException("unknown connId: " + connId);
     return conn;
   }
 
@@ -337,7 +337,7 @@ public class Db2Bridge {
     static Map<String, Object> parseObject(String text) {
       Parser p = new Parser(text);
       Object v = p.parseValue();
-      if (!(v instanceof Map)) throw new IllegalArgumentException("verwacht JSON-object");
+      if (!(v instanceof Map)) throw new IllegalArgumentException("expected JSON object");
       return asObject(v);
     }
 
@@ -366,7 +366,7 @@ public class Db2Bridge {
 
       Object parseValue() {
         skipWs();
-        if (i >= s.length()) throw new IllegalArgumentException("lege JSON");
+        if (i >= s.length()) throw new IllegalArgumentException("empty JSON");
         char c = s.charAt(i);
         switch (c) {
           case '{': return parseObject();
@@ -384,7 +384,7 @@ public class Db2Bridge {
       }
 
       private void expect(String word) {
-        if (!s.startsWith(word, i)) throw new IllegalArgumentException("verwacht " + word);
+        if (!s.startsWith(word, i)) throw new IllegalArgumentException("expected " + word);
         i += word.length();
       }
 
@@ -397,15 +397,15 @@ public class Db2Bridge {
           skipWs();
           String key = parseString();
           skipWs();
-          if (i >= s.length() || s.charAt(i) != ':') throw new IllegalArgumentException("verwacht ':'");
+          if (i >= s.length() || s.charAt(i) != ':') throw new IllegalArgumentException("expected ':'");
           i++;
           map.put(key, parseValue());
           skipWs();
-          if (i >= s.length()) throw new IllegalArgumentException("verwacht ',' of '}'");
+          if (i >= s.length()) throw new IllegalArgumentException("expected ',' or '}'");
           char c = s.charAt(i);
           if (c == '}') { i++; return map; }
           if (c == ',') { i++; continue; }
-          throw new IllegalArgumentException("verwacht ',' of '}'");
+          throw new IllegalArgumentException("expected ',' or '}'");
         }
       }
 
@@ -417,16 +417,16 @@ public class Db2Bridge {
         while (true) {
           list.add(parseValue());
           skipWs();
-          if (i >= s.length()) throw new IllegalArgumentException("verwacht ',' of ']'");
+          if (i >= s.length()) throw new IllegalArgumentException("expected ',' or ']'");
           char c = s.charAt(i);
           if (c == ']') { i++; return list; }
           if (c == ',') { i++; continue; }
-          throw new IllegalArgumentException("verwacht ',' of ']'");
+          throw new IllegalArgumentException("expected ',' or ']'");
         }
       }
 
       private String parseString() {
-        if (i >= s.length() || s.charAt(i) != '"') throw new IllegalArgumentException("verwacht string");
+        if (i >= s.length() || s.charAt(i) != '"') throw new IllegalArgumentException("expected string");
         i++;
         StringBuilder sb = new StringBuilder();
         while (i < s.length()) {
@@ -434,7 +434,7 @@ public class Db2Bridge {
           if (c == '"') { i++; return sb.toString(); }
           if (c == '\\') {
             i++;
-            if (i >= s.length()) throw new IllegalArgumentException("ongeldige escape");
+            if (i >= s.length()) throw new IllegalArgumentException("invalid escape");
             char e = s.charAt(i);
             switch (e) {
               case '"': sb.append('"'); break;
@@ -446,11 +446,11 @@ public class Db2Bridge {
               case 'b': sb.append('\b'); break;
               case 'f': sb.append('\f'); break;
               case 'u':
-                if (i + 4 >= s.length()) throw new IllegalArgumentException("ongeldige \\u escape");
+                if (i + 4 >= s.length()) throw new IllegalArgumentException("invalid \\u escape");
                 sb.append((char) Integer.parseInt(s.substring(i + 1, i + 5), 16));
                 i += 4;
                 break;
-              default: throw new IllegalArgumentException("ongeldige escape: \\" + e);
+              default: throw new IllegalArgumentException("invalid escape: \\" + e);
             }
             i++;
           } else {
@@ -458,7 +458,7 @@ public class Db2Bridge {
             i++;
           }
         }
-        throw new IllegalArgumentException("string niet afgesloten");
+        throw new IllegalArgumentException("unterminated string");
       }
 
       private Object parseNumber() {
@@ -474,7 +474,7 @@ public class Db2Bridge {
           }
         }
         String num = s.substring(start, i);
-        if (num.isEmpty()) throw new IllegalArgumentException("ongeldig getal");
+        if (num.isEmpty()) throw new IllegalArgumentException("invalid number");
         try {
           if (isDouble) return Double.parseDouble(num);
           long l = Long.parseLong(num);
@@ -483,7 +483,7 @@ public class Db2Bridge {
           try {
             return new BigInteger(num).doubleValue();
           } catch (NumberFormatException e2) {
-            throw new IllegalArgumentException("ongeldig getal: " + num);
+            throw new IllegalArgumentException("invalid number: " + num);
           }
         }
       }

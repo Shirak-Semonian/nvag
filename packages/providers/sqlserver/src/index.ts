@@ -189,9 +189,9 @@ export function createSqlServerProvider(): DatabaseProvider {
     capabilities: CAPABILITIES,
 
     async connect(config: ConnectionConfig, secret?): Promise<DbSession> {
-      if (!config.host) throw new Error('SQL Server: geen host opgegeven')
+      if (!config.host) throw new Error('SQL Server: no host provided')
       if (config.auth === 'windows') {
-        throw new Error('SQL Server: Windows-authenticatie wordt op Linux niet ondersteund (gebruik username-password)')
+        throw new Error('SQL Server: Windows authentication is not supported on Linux (use username-password)')
       }
       const password = secret?.password
       const pool = new sql.ConnectionPool(toMssqlConfig(config, password))
@@ -199,7 +199,7 @@ export function createSqlServerProvider(): DatabaseProvider {
         await pool.connect()
       } catch (err) {
         throw new Error(
-          `SQL Server: verbinding mislukt (${config.host}:${config.port ?? 1433}) — ${
+          `SQL Server: connection failed (${config.host}:${config.port ?? 1433}) — ${
             err instanceof Error ? err.message : String(err)
           }`
         )
@@ -246,7 +246,7 @@ export function createSqlServerProvider(): DatabaseProvider {
       return {
         providerId: 'sqlserver',
         providerName: 'SQL Server',
-        serverVersion: row?.version ?? 'onbekend',
+        serverVersion: row?.version ?? 'unknown',
         productName: row?.product,
         currentDatabase: row?.db ?? session.database,
         currentUser: row?.user
@@ -674,7 +674,7 @@ export function createSqlServerProvider(): DatabaseProvider {
           const meta = await this.getTableMetadata(session, obj.database, schema, obj.name)
           return buildCreateTable(schema, obj.name, meta)
         }
-        throw new Error(`SQL Server: geen definitie gevonden voor ${schema}.${obj.name}`)
+        throw new Error(`SQL Server: no definition found for ${schema}.${obj.name}`)
       }
       return def
     },
@@ -698,7 +698,7 @@ export function createSqlServerProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }

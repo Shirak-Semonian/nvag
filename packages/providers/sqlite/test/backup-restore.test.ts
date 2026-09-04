@@ -71,7 +71,7 @@ describe('sqlite backup/restore (F4-4)', () => {
   it('weigert een backup over een bestaand bestand zonder overwrite', async () => {
     const r = await provider.backupRestore!.backupDatabase!(session, 'main', backupPath)
     expect(r.ok).toBe(false)
-    expect(r.message).toMatch(/bestaat al/)
+    expect(r.message).toMatch(/already exists/)
   })
 
   it('overschrijft een bestaand bestand met overwrite', async () => {
@@ -97,6 +97,6 @@ describe('sqlite backup/restore (F4-4)', () => {
   it('meldt een ontbrekend backupbestand bij restore', async () => {
     const r = await provider.backupRestore!.restoreDatabase!(session, 'main', join(dir, 'nope.db'))
     expect(r.ok).toBe(false)
-    expect(r.message).toMatch(/niet gevonden/)
+    expect(r.message).toMatch(/not found/)
   })
 })

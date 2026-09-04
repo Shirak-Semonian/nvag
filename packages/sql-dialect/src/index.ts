@@ -37,10 +37,10 @@ export interface SqlDialect {
 
 function assertValidIdentifier(identifier: string): void {
   if (identifier.length === 0) {
-    throw new Error('Identifier mag niet leeg zijn.')
+    throw new Error('Identifier must not be empty.')
   }
   if (/[\u0000-\u001f]/.test(identifier)) {
-    throw new Error('Identifier bevat controle-tekens.')
+    throw new Error('Identifier contains control characters.')
   }
 }
 
@@ -63,10 +63,10 @@ function normalizeLimit(
   const m = maxRows === undefined || maxRows === null ? null : maxRows
   const o = offset === undefined || offset === null ? null : offset
   if (m !== null && (!Number.isInteger(m) || m < 0)) {
-    throw new Error(`maxRows moet een niet-negatief geheel getal zijn, kreeg: ${m}`)
+    throw new Error(`maxRows must be a non-negative integer, got: ${m}`)
   }
   if (o !== null && (!Number.isInteger(o) || o < 0)) {
-    throw new Error(`offset moet een niet-negatief geheel getal zijn, kreeg: ${o}`)
+    throw new Error(`offset must be a non-negative integer, got: ${o}`)
   }
   return { maxRows: m, offset: o }
 }
@@ -544,7 +544,7 @@ const DIALECTS: Record<SqlDialectId, SqlDialect> = {
 
 export function getDialect(id: SqlDialectId): SqlDialect {
   const d = DIALECTS[id]
-  if (!d) throw new Error(`Onbekend dialect: ${String(id)}`)
+  if (!d) throw new Error(`Unknown dialect: ${String(id)}`)
   return d
 }
 
@@ -1224,7 +1224,7 @@ export function scriptUpdate(
     const where = pkColumns.map((c) => `${d.quoteIdentifier(c)} = ?`).join(' AND ')
     return `UPDATE ${name}\nSET ${setClause}\nWHERE ${where};`
   }
-  return `UPDATE ${name}\nSET ${setClause}\n-- Let op: geen primary key gevonden; vul zelf een WHERE in\nWHERE <voorwaarde>;`
+  return `UPDATE ${name}\nSET ${setClause}\n-- Note: no primary key found; add your own WHERE clause\nWHERE <condition>;`
 }
 
 /** DELETE op basis van de primary key; zonder PK een invulbare WHERE. */
@@ -1240,7 +1240,7 @@ export function scriptDelete(
     const where = pkColumns.map((c) => `${d.quoteIdentifier(c)} = ?`).join(' AND ')
     return `DELETE FROM ${name}\nWHERE ${where};`
   }
-  return `DELETE FROM ${name}\n-- Let op: geen primary key gevonden; vul zelf een WHERE in\nWHERE <voorwaarde>;`
+  return `DELETE FROM ${name}\n-- Note: no primary key found; add your own WHERE clause\nWHERE <condition>;`
 }
 
 // ---------------------------------------------------------------------------
@@ -1286,7 +1286,7 @@ export function buildUpdateByPk(
   const where =
     pkColumns.length > 0
       ? pkColumns.map((c) => `${d.quoteIdentifier(c)} = ${quoteValue(dialect, pkValues[c])}`).join(' AND ')
-      : '<voorwaarde>'
+      : '<condition>'
   return `UPDATE ${name}\nSET ${setClause}\nWHERE ${where};`
 }
 
@@ -1321,7 +1321,7 @@ export function buildDeleteByPk(
   const where =
     pkColumns.length > 0
       ? pkColumns.map((c) => `${d.quoteIdentifier(c)} = ${quoteValue(dialect, pkValues[c])}`).join(' AND ')
-      : '<voorwaarde>'
+      : '<condition>'
   return `DELETE FROM ${name}\nWHERE ${where};`
 }
 
@@ -1395,7 +1395,7 @@ export function buildDrop(
   if (objectType === 'INDEX') {
     if (dialect === 'tsql' || dialect === 'mysql') {
       if (!options?.table) {
-        throw new Error('DROP INDEX vereist een tabelnaam (ON <tabel>) voor dit dialect.')
+        throw new Error('DROP INDEX requires a table name (ON <table>) for this dialect.')
       }
       return `DROP INDEX ${d.quoteIdentifier(name)} ON ${d.quoteQualifiedName(options.schema, options.table)};`
     }
@@ -1403,7 +1403,7 @@ export function buildDrop(
   }
   if (objectType === 'TRIGGER' && dialect === 'postgres') {
     if (!options?.table) {
-      throw new Error('DROP TRIGGER op PostgreSQL vereist de naam van de tabel (ON <tabel>).')
+      throw new Error('DROP TRIGGER on PostgreSQL requires the table name (ON <table>).')
     }
     return `DROP TRIGGER ${d.quoteIdentifier(name)} ON ${d.quoteQualifiedName(options.schema, options.table)};`
   }
@@ -1427,7 +1427,7 @@ export function buildDropConstraint(
 ): string {
   const d = DIALECTS[dialect]
   if (dialect !== 'tsql' && dialect !== 'postgres') {
-    throw new Error(`DROP CONSTRAINT wordt voor dialect ${dialect} niet ondersteund.`)
+    throw new Error(`DROP CONSTRAINT is not supported for dialect ${dialect}.`)
   }
   return `ALTER TABLE ${d.quoteQualifiedName(schema, table)} DROP CONSTRAINT ${d.quoteIdentifier(name)};`
 }
@@ -1536,7 +1536,7 @@ export function buildAlterDatabaseStatements(
   changes: Record<string, string>
 ): string[] {
   if (dialect !== 'tsql') {
-    throw new Error(`ALTER DATABASE wordt voor dialect ${dialect} niet ondersteund.`)
+    throw new Error(`ALTER DATABASE is not supported for dialect ${dialect}.`)
   }
   const d = DIALECTS[dialect]
   const dbQ = d.quoteIdentifier(database)
@@ -1545,14 +1545,14 @@ export function buildAlterDatabaseStatements(
     const value = rawValue.trim()
     switch (key) {
       case 'name': {
-        if (!value) throw new Error('De nieuwe databasenaam mag niet leeg zijn.')
+        if (!value) throw new Error('The new database name must not be empty.')
         statements.push(`ALTER DATABASE ${dbQ} MODIFY NAME = ${d.quoteIdentifier(value)};`)
         break
       }
       case 'recovery': {
         const recovery = value.toUpperCase()
         if (!['FULL', 'SIMPLE', 'BULK_LOGGED'].includes(recovery)) {
-          throw new Error(`Ongeldig recovery model: ${rawValue}`)
+          throw new Error(`Invalid recovery model: ${rawValue}`)
         }
         statements.push(`ALTER DATABASE ${dbQ} SET RECOVERY ${recovery};`)
         break
@@ -1560,7 +1560,7 @@ export function buildAlterDatabaseStatements(
       case 'containment': {
         const containment = value.toUpperCase()
         if (!['NONE', 'PARTIAL'].includes(containment)) {
-          throw new Error(`Ongeldige containment-instelling: ${rawValue}`)
+          throw new Error(`Invalid containment setting: ${rawValue}`)
         }
         statements.push(`ALTER DATABASE ${dbQ} SET CONTAINMENT = ${containment};`)
         break
@@ -1568,7 +1568,7 @@ export function buildAlterDatabaseStatements(
       case 'compatibility_level': {
         const level = Number(value)
         if (!Number.isInteger(level) || level < 100 || level > 160) {
-          throw new Error(`Ongeldig compatibility level: ${rawValue}`)
+          throw new Error(`Invalid compatibility level: ${rawValue}`)
         }
         statements.push(`ALTER DATABASE ${dbQ} SET COMPATIBILITY_LEVEL = ${level};`)
         break
@@ -1580,12 +1580,12 @@ export function buildAlterDatabaseStatements(
         } else if (mode === 'READ_WRITE' || mode === 'FALSE') {
           statements.push(`ALTER DATABASE ${dbQ} SET READ_WRITE;`)
         } else {
-          throw new Error(`Ongeldige toegangsmodus: ${rawValue}`)
+          throw new Error(`Invalid access mode: ${rawValue}`)
         }
         break
       }
       default:
-        throw new Error(`Eigenschap '${key}' kan voor dit dialect niet worden gewijzigd.`)
+        throw new Error(`Property '${key}' cannot be changed for this dialect.`)
     }
   }
   return statements
@@ -1627,7 +1627,7 @@ export function scriptObject(
       return scriptDelete(dialect, table, schema, meta.primaryKey)
     default: {
       const exhaustive: never = kind
-      throw new Error(`Onbekende ScriptKind: ${String(exhaustive)}`)
+      throw new Error(`Unknown ScriptKind: ${String(exhaustive)}`)
     }
   }
 }

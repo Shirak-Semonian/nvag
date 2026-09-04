@@ -417,7 +417,7 @@ export function createMySqlProvider(): DatabaseProvider {
       )
       const key = obj.type === 'view' ? 'Create View' : 'Create Table'
       const def = rows[0]?.[key]
-      if (!def) throw new Error(`MySQL: geen definitie gevonden voor ${obj.name}`)
+      if (!def) throw new Error(`MySQL: no definition found for ${obj.name}`)
       return `${def};`
     },
 
@@ -440,7 +440,7 @@ export function createMySqlProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }

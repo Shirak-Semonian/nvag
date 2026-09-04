@@ -105,7 +105,7 @@ export function createDatabricksProvider(): DatabaseProvider {
     capabilities: CAPABILITIES,
 
     async connect(config: ConnectionConfig, secret?: ConnectionSecret): Promise<DbSession> {
-      if (!config.host) throw new Error('Databricks: geen host opgegeven')
+      if (!config.host) throw new Error('Databricks: no host provided')
       const client = new DBSQLClient()
       const port = config.port ?? 443
       const path = config.extraParams?.['httpPath'] ?? config.extraParams?.['path'] ?? '/sql/1.0/warehouses/default'
@@ -345,7 +345,7 @@ export function createDatabricksProvider(): DatabaseProvider {
       const rows = await stmt.fetchAll()
       await stmt.close()
       const ddl = rows[0] ? Object.values(rows[0])[0] : undefined
-      if (ddl == null) throw new Error(`Databricks: geen definitie gevonden voor ${schema}.${obj.name}`)
+      if (ddl == null) throw new Error(`Databricks: no definition found for ${schema}.${obj.name}`)
       return `${String(ddl)};`
     },
 
@@ -366,7 +366,7 @@ export function createDatabricksProvider(): DatabaseProvider {
         yield {
           kind: 'error',
           message:
-            'Meerdere SQL-statements in één uitvoering worden niet ondersteund (MULTIPLE_STATEMENTS). Voer één statement tegelijk uit.'
+            'Multiple SQL statements in one execution are not supported (MULTIPLE_STATEMENTS). Execute one statement at a time.'
         }
         return
       }
@@ -440,7 +440,7 @@ export function createDatabricksProvider(): DatabaseProvider {
       // @databricks/sql biedt geen directe cancel-API voor een actieve query.
       // Dit is géén stille no-op: de gebruiker krijgt een duidelijke melding.
       throw new Error(
-        'Databricks: annuleren van een actieve query wordt niet ondersteund door de driver. De query wordt lokaal gestopt; de server-side uitvoering kan nog doorlopen.'
+        'Databricks: canceling an active query is not supported by the driver. The query is stopped locally; server-side execution may continue.'
       )
     },
 

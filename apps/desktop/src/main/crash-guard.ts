@@ -52,7 +52,7 @@ export function handleStreamError(streamName: 'stdout' | 'stderr', err: unknown)
     // Verbruikte pipe (ouderproces gestopt) — geen crash, niets te melden.
     return
   }
-  safeLog('error', `[nvag] Fout bij schrijven naar ${streamName}:`, err)
+  safeLog('error', `[nvag] Error writing to ${streamName}:`, err)
 }
 
 /** Laatste vangnet: uncaught exception mag de app niet laten crashen. */
