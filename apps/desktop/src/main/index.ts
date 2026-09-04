@@ -12,6 +12,27 @@ import { installCrashGuards } from './crash-guard'
 // in het main process veroorzaken.
 installCrashGuards()
 
+// SAL-81: single-instance lock. Vóór app.whenReady() aanvragen zodat een
+// tweede launch nooit een tweede main-process/venster opstart.
+const gotTheLock = app.requestSingleInstanceLock()
+
+// Wordt true zodra de initiële startup zelf een venster heeft aangemaakt.
+let startupFinished = false
+
+function focusMainWindow(): void {
+  const mainWindow = BrowserWindow.getAllWindows()[0]
+  if (!mainWindow) {
+    // macOS: app draait zonder vensters (window-all-closed quit niet) —
+    // tweede start maakt dan een nieuw venster aan. Alleen ná de initiële
+    // startup; tijdens het opstarten zorgt de eigen createWindow daarvoor.
+    if (startupFinished) createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  if (!mainWindow.isVisible()) mainWindow.show()
+  mainWindow.focus()
+}
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1440,
@@ -44,25 +65,36 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.nvag.desktop')
-
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+if (!gotTheLock) {
+  // Tweede instantie: geen eigen venster/lifecycle starten; de actieve
+  // instantie wordt via 'second-instance' gefocust.
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    focusMainWindow()
   })
 
-  await registerBuiltinProviders()
-  bootstrapApp()
-  createWindow()
+  app.whenReady().then(async () => {
+    electronApp.setAppUserModelId('com.nvag.desktop')
 
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
+    })
+
+    await registerBuiltinProviders()
+    bootstrapApp()
+    createWindow()
+    startupFinished = true
+
+    app.on('activate', function () {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
   })
-})
 
-app.on('window-all-closed', () => {
-  sessionManager.closeAll()
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
+  app.on('window-all-closed', () => {
+    sessionManager.closeAll()
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+}
