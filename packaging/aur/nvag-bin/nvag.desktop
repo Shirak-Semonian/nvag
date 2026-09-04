@@ -2,7 +2,7 @@
 Name=Nvag
 GenericName=Database Management Studio
 Comment=Database Management Studio voor meerdere databaseplatformen
-Exec=nvag --no-sandbox %U
+Exec=nvag %U
 Icon=nvag
 Terminal=false
 Type=Application
