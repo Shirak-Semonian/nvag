@@ -75,7 +75,7 @@ export class Vault {
   private decrypt(payload: string): string {
     if (payload.startsWith('ss:')) {
       if (!safeStorage.isEncryptionAvailable()) {
-        throw new Error('Vault: safeStorage niet beschikbaar, kan secret niet ontsleutelen')
+        throw new Error('Vault: safeStorage unavailable, cannot decrypt secret')
       }
       return safeStorage.decryptString(Buffer.from(payload.slice(3), 'base64'))
     }
@@ -88,7 +88,7 @@ export class Vault {
         decipher.final()
       ]).toString('utf8')
     }
-    throw new Error('Vault: onbekend payload-formaat')
+    throw new Error('Vault: unknown payload format')
   }
 
   /** Versleutelde blob wegschrijven (chmod 600). */
@@ -153,5 +153,5 @@ export class Vault {
 /** Waarschuwing tonen wanneer fallback actief is (R3). */
 export function vaultWarning(vault: Vault): string | null {
   if (vault.isEncrypted) return null
-  return 'Let op: OS-keyring niet beschikbaar; credentials worden versleuteld met een lokale fallback-sleutel.'
+  return 'Note: OS keyring unavailable; credentials are encrypted with a local fallback key.'
 }

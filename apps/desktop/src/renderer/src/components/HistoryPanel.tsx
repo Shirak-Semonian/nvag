@@ -57,7 +57,7 @@ export function HistoryPanel(): React.JSX.Element {
   }
 
   const handleClear = async (): Promise<void> => {
-    if (!window.confirm('SQL-geschiedenis volledig wissen?')) return
+    if (!window.confirm('Clear entire SQL history?')) return
     await clearHistory()
   }
 
@@ -67,30 +67,30 @@ export function HistoryPanel(): React.JSX.Element {
         <input
           className="history-search"
           type="search"
-          placeholder="Zoeken in SQL, server of database…"
-          aria-label="Zoek in geschiedenis"
+          placeholder="Search in SQL, server or database…"
+          aria-label="Search history"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') search()
           }}
         />
-        <button onClick={search} disabled={busy} title="Zoeken">
-          🔍 Zoeken
+        <button onClick={search} disabled={busy} title="Search">
+          🔍 Search
         </button>
-        <button onClick={() => void refresh()} disabled={busy} title="Verversen">
+        <button onClick={() => void refresh()} disabled={busy} title="Refresh">
           ↻
         </button>
-        <button onClick={() => void handleClear()} title="Geschiedenis wissen">
-          🗑 Wissen
+        <button onClick={() => void handleClear()} title="Clear history">
+          🗑 Clear
         </button>
       </div>
 
       {busy && entries.length === 0 ? (
-        <div className="history-empty">Bezig met laden…</div>
+        <div className="history-empty">Loading…</div>
       ) : entries.length === 0 ? (
         <div className="history-empty">
-          {query.trim() ? 'Geen uitvoeringen gevonden voor deze zoekopdracht.' : 'Nog geen SQL-uitvoeringen.'}
+          {query.trim() ? 'No executions found for this search query.' : 'No SQL executions yet.'}
         </div>
       ) : (
         <div className="history-list">
@@ -104,15 +104,15 @@ export function HistoryPanel(): React.JSX.Element {
                 <span className="history-server">{entry.server}</span>
                 {entry.database && <span className="history-db muted">· {entry.database}</span>}
                 <span className="history-stats muted">
-                  · {entry.durationMs} ms · {entry.rowCount} rij(en)
+                  · {entry.durationMs} ms · {entry.rowCount} row(s)
                 </span>
                 <span className="history-spacer" />
                 <button
                   className="history-rerun"
-                  title="Opnieuw uitvoeren in een nieuwe query-tab"
+                  title="Run again in a new query tab"
                   onClick={() => void rerunHistoryEntry(entry)}
                 >
-                  ▶ Heruitvoeren
+                  ▶ Rerun
                 </button>
               </div>
               <div className="history-sql" title={entry.sql}>

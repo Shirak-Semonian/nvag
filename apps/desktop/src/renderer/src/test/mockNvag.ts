@@ -117,7 +117,7 @@ function defaultDatabaseProperties(database: string): DatabasePropertiesResult {
     database,
     dialect: 'sqlite',
     supportsAlter: false,
-    message: 'SQLite-databases zijn bestanden; ALTER DATABASE wordt niet ondersteund.',
+    message: 'SQLite databases are files; ALTER DATABASE is not supported.',
     properties: []
   }
 }
@@ -209,7 +209,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
     sessions: {
       open: async (config: ConnectionConfig, _secret?: ConnectionSecret) => {
         if (options.failOpenConnectionIds?.includes(config.id) === true) {
-          throw new Error(`SQLite: bestand niet gevonden: ${config.host}`)
+          throw new Error(`SQLite: file not found: ${config.host}`)
         }
         openedSessions.push(config.id)
         sessionSeq += 1
@@ -224,9 +224,9 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       openSaved: async (connectionId: string) => {
         openSavedCalls.push(connectionId)
         const config = savedConfigs.find((c) => c.id === connectionId)
-        if (!config) throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+        if (!config) throw new Error('Connection not found. Save the connection first in the Connection Manager.')
         if (options.failOpenConnectionIds?.includes(connectionId) === true) {
-          throw new Error(`SQLite: bestand niet gevonden: ${config.host}`)
+          throw new Error(`SQLite: file not found: ${config.host}`)
         }
         openedSessions.push(connectionId)
         sessionSeq += 1
@@ -424,7 +424,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropDatabase: async (connId: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropDatabase', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP DATABASE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP DATABASE ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.databases) {
           const i = options.databases.findIndex((d) => d.name === name)
@@ -436,7 +436,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropSchema: async (connId: string, _db: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropSchema', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP SCHEMA ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP SCHEMA ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         return { ok: true, sql: '' }
       },
@@ -451,7 +451,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropTable: async (connId: string, _db: string, _schema: string, table: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropTable', args: [connId, table], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP TABLE ${table};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP TABLE ${table};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.tables) {
           const i = options.tables.indexOf(table)
@@ -468,7 +468,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropView: async (connId: string, _db: string, _schema: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropView', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP VIEW ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP VIEW ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.views) {
           const i = options.views.indexOf(name)
@@ -480,7 +480,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropIndex: async (connId: string, _db: string, _schema: string, table: string, index: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropIndex', args: [connId, table, index], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP INDEX ${index};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP INDEX ${index};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         const meta = options.tableMetadata?.[table]
         if (meta) meta.indexes = meta.indexes.filter((i) => i.name !== index)
@@ -491,7 +491,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropUser: async (connId: string, _db: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropUser', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP USER ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP USER ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.users) {
           const i = options.users.indexOf(name)
@@ -505,7 +505,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropProcedure: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropProcedure', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP PROCEDURE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP PROCEDURE ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.procedures) {
           const i = options.procedures.indexOf(name)
@@ -516,7 +516,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropFunction: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropFunction', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP FUNCTION ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP FUNCTION ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.functions) {
           const i = options.functions.indexOf(name)
@@ -527,7 +527,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropTrigger: async (connId: string, _db: string, _schema: string | undefined, name: string, table?: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropTrigger', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP TRIGGER ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP TRIGGER ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         // Zowel folder-level (Database Triggers) als tabel-level triggers.
         if (options.triggers) {
@@ -543,7 +543,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropSequence: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropSequence', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP SEQUENCE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP SEQUENCE ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.sequences) {
           const i = options.sequences.indexOf(name)
@@ -554,7 +554,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropSynonym: async (connId: string, _db: string, _schema: string | undefined, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropSynonym', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP SYNONYM ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP SYNONYM ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.synonyms) {
           const i = options.synonyms.indexOf(name)
@@ -565,7 +565,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropRole: async (connId: string, _db: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropRole', args: [connId, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `DROP ROLE ${name};`, blocked: ['DROP op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `DROP ROLE ${name};`, blocked: ['DROP on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         if (options.roles) {
           const i = options.roles.indexOf(name)
@@ -576,7 +576,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
       dropConstraint: async (connId: string, _db: string, _schema: string | undefined, table: string, name: string, confirmed?: boolean) => {
         adminRequests.push({ action: 'dropConstraint', args: [connId, table, name], confirmed })
         if (options.adminDropBlocked && !confirmed) {
-          return { ok: false, sql: `ALTER TABLE ${table} DROP CONSTRAINT ${name};`, blocked: ['ALTER op PROD-omgeving vereist bevestiging'], guardSeverity: 'confirm' }
+          return { ok: false, sql: `ALTER TABLE ${table} DROP CONSTRAINT ${name};`, blocked: ['ALTER on PROD environment requires confirmation'], guardSeverity: 'confirm' }
         }
         const meta = options.tableMetadata?.[table]
         if (meta) meta.constraints = meta.constraints.filter((c) => c.name !== name)
@@ -613,7 +613,7 @@ export function createMockNvag(options: MockNvagOptions = {}): NvagIpcApi & {
           return {
             ok: false,
             sql: alterSqlPreview(database, changes),
-            blocked: ['ALTER op PROD-omgeving vereist bevestiging'],
+            blocked: ['ALTER on PROD environment requires confirmation'],
             guardSeverity: 'confirm' as const
           }
         }

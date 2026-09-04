@@ -28,15 +28,15 @@ interface GuardPattern {
 
 const DANGEROUS_PATTERNS: GuardPattern[] = [
   // Destructief DDL — overal bevestiging.
-  { pattern: /\bDROP\s+(TABLE|VIEW|DATABASE|SCHEMA|INDEX|TRIGGER|PROCEDURE|FUNCTION|SEQUENCE|SYNONYM|USER|ROLE)\b/i, reason: 'DROP-statement', severity: 'confirm' },
-  { pattern: /\bTRUNCATE\b/i, reason: 'TRUNCATE-statement', severity: 'confirm' },
-  { pattern: /\bALTER\s+(TABLE|DATABASE|SCHEMA|VIEW)\b/i, reason: 'ALTER-statement', severity: 'confirm' },
+  { pattern: /\bDROP\s+(TABLE|VIEW|DATABASE|SCHEMA|INDEX|TRIGGER|PROCEDURE|FUNCTION|SEQUENCE|SYNONYM|USER|ROLE)\b/i, reason: 'DROP statement', severity: 'confirm' },
+  { pattern: /\bTRUNCATE\b/i, reason: 'TRUNCATE statement', severity: 'confirm' },
+  { pattern: /\bALTER\s+(TABLE|DATABASE|SCHEMA|VIEW)\b/i, reason: 'ALTER statement', severity: 'confirm' },
   // F4: RESTORE overschrijft een database → destructief, altijd bevestigen.
-  { pattern: /\bRESTORE\s+(DATABASE|DB)\b/i, reason: 'RESTORE-statement', severity: 'confirm' },
+  { pattern: /\bRESTORE\s+(DATABASE|DB)\b/i, reason: 'RESTORE statement', severity: 'confirm' },
   // CREATE is niet destructief: buiten PROD een waarschuwing, op PROD bevestigen.
-  { pattern: /\bCREATE\s+(DATABASE|TABLE|VIEW|INDEX|TRIGGER)\b/i, reason: 'CREATE-statement', severity: 'warn' },
+  { pattern: /\bCREATE\s+(DATABASE|TABLE|VIEW|INDEX|TRIGGER)\b/i, reason: 'CREATE statement', severity: 'warn' },
   // F4: BACKUP schrijft een bestand maar wijzigt de database niet → warn.
-  { pattern: /\bBACKUP\s+(DATABASE|DB)\b/i, reason: 'BACKUP-statement', severity: 'warn' }
+  { pattern: /\bBACKUP\s+(DATABASE|DB)\b/i, reason: 'BACKUP statement', severity: 'warn' }
 ]
 
 /** Schrijvende statement-typen voor de grote-operatie-detectie. */
@@ -71,11 +71,11 @@ function detectLargeOperations(sql: string): string[] {
     .filter((s) => s.length > 0)
   const writeCount = statements.filter((s) => WRITE_STATEMENT.test(s)).length
   if (writeCount >= 2) {
-    reasons.push(`grote operatie: ${writeCount} schrijvende statements in één uitvoering`)
+    reasons.push(`large operation: ${writeCount} write statements in one execution`)
   }
 
   if (/\bINSERT\s+INTO\b[\s\S]*\bSELECT\b/i.test(stripped) && !/\b(LIMIT|TOP\s+\d+)\b/i.test(stripped)) {
-    reasons.push('grote operatie: bulk INSERT … SELECT zonder begrenzing')
+    reasons.push('large operation: bulk INSERT … SELECT without limit')
   }
 
   return reasons
@@ -98,7 +98,7 @@ export function checkQuery(sql: string, environment: Environment): GuardResult {
     }
   }
   if (hasUnsafeUpdateDelete(sql)) {
-    reasons.push('DELETE/UPDATE zonder WHERE')
+    reasons.push('DELETE/UPDATE without WHERE')
   }
   reasons.push(...detectLargeOperations(sql))
 

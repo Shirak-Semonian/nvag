@@ -35,7 +35,7 @@ describe('F3 ComparePanel', () => {
     useAppStore.setState({ connections: [conn] })
 
     const html = renderToStaticMarkup(<ComparePanel activeConnectionId="conn-1" />)
-    expect(html).toContain('Vergelijk')
+    expect(html).toContain('Compare')
   })
 })
 
@@ -46,7 +46,7 @@ describe('F3 ErdPanel', () => {
     ;(window as unknown as { nvag: unknown }).nvag = api
     useAppStore.setState({ connections: [conn] })
     const html = renderToStaticMarkup(<ErdPanel connectionId="conn-1" />)
-    expect(html).toContain('ER-diagram')
+    expect(html).toContain('ER diagram')
   })
 })
 
@@ -55,9 +55,9 @@ describe('F3 AiPanel', () => {
     ;(window as unknown as { nvag: unknown }).nvag = createMockNvag({ connections: [conn] })
     useAppStore.setState({ connections: [conn], tabs: [], activeTabId: null })
     const html = renderToStaticMarkup(<AiPanel connectionId={null} activeTabId={null} activeSql="" />)
-    expect(html).toContain('Genereer')
-    expect(html).toContain('Optimaliseer')
-    expect(html).toContain('Instellingen')
+    expect(html).toContain('Generate')
+    expect(html).toContain('Optimize')
+    expect(html).toContain('Settings')
   })
 })
 

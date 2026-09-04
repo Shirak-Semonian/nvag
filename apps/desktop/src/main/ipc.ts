@@ -64,7 +64,7 @@ export function registerIpcHandlers(): void {
     (_e, config: ConnectionConfig, secret?: ConnectionSecret) => {
       const isNew = !connectionStore.get(config.id)
       const saved = connectionStore.save(config, secret)
-      audit(isNew ? 'connection.created' : 'admin.ddl', `${isNew ? 'Verbinding aangemaakt' : 'Verbinding bijgewerkt'}: ${config.name} (${config.providerId})`, { server: config.name })
+      audit(isNew ? 'connection.created' : 'admin.ddl', `${isNew ? 'Connection created' : 'Connection updated'}: ${config.name} (${config.providerId})`, { server: config.name })
       return saved
     }
   )
@@ -72,7 +72,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('connections:remove', (_e, id: string) => {
     const conn = connectionStore.get(id)
     connectionStore.remove(id)
-    audit('connection.removed', `Verbinding verwijderd: ${conn?.name ?? id}`, { server: conn?.name })
+    audit('connection.removed', `Connection removed: ${conn?.name ?? id}`, { server: conn?.name })
     return { ok: true }
   })
 
@@ -90,7 +90,7 @@ export function registerIpcHandlers(): void {
     'sessions:open',
     async (_e, config: ConnectionConfig, secret?: ConnectionSecret) => {
       const result = await sessionManager.open(config, secret)
-      audit('session.opened', `Sessie geopend: ${config.name}`, { server: config.name, database: config.database })
+      audit('session.opened', `Session opened: ${config.name}`, { server: config.name, database: config.database })
       return result
     }
   )
@@ -103,7 +103,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sessions:openSaved', async (_e, connectionId: string) => {
     const result = await sessionManager.openSaved(connectionId)
     const conn = connectionStore.get(connectionId)
-    audit('session.opened', `Sessie geopend (saved): ${conn?.name ?? connectionId}`, { server: conn?.name })
+    audit('session.opened', `Session opened (saved): ${conn?.name ?? connectionId}`, { server: conn?.name })
     return result
   })
 
@@ -160,7 +160,7 @@ export function registerIpcHandlers(): void {
     async (event, req: ExportRequest) => {
       const result = await exportResults(req, event.sender)
       if (!result.canceled && result.rowCount !== undefined) {
-        audit('query.exported', `Export ${req.format.toUpperCase()} (${req.target}): ${result.rowCount} rijen — ${req.fileName}`, { server: undefined })
+        audit('query.exported', `Export ${req.format.toUpperCase()} (${req.target}): ${result.rowCount} rows — ${req.fileName}`, { server: undefined })
       }
       return result
     }
@@ -272,7 +272,7 @@ export function registerIpcHandlers(): void {
       }
     }
     if (!result.blocked || result.blocked.length === 0) {
-      audit('table.edit', `Tabelbewerking ${req.kind} op ${req.schema ? req.schema + '.' : ''}${req.table}: ${result.rowCount} rij(en)`, { server: conn?.name, database: req.database })
+      audit('table.edit', `Table edit ${req.kind} on ${req.schema ? req.schema + '.' : ''}${req.table}: ${result.rowCount} row(s)`, { server: conn?.name, database: req.database })
     }
     return result
   })
@@ -280,17 +280,17 @@ export function registerIpcHandlers(): void {
   // ------------------------------------------------------------------ F2-2: transactions (eis 23)
   ipcMain.handle('transactions:begin', async (_e, connectionId: string) => {
     const conn = connectionStore.get(connectionId)
-    audit('admin.ddl', 'Transactie gestart (BEGIN)', { server: conn?.name })
+    audit('admin.ddl', 'Transaction started (BEGIN)', { server: conn?.name })
     return transactionManager.begin(connectionId)
   })
   ipcMain.handle('transactions:commit', async (_e, connectionId: string) => {
     const conn = connectionStore.get(connectionId)
-    audit('transaction.commit', 'Transactie gecommit (COMMIT)', { server: conn?.name })
+    audit('transaction.commit', 'Transaction committed (COMMIT)', { server: conn?.name })
     return transactionManager.commit(connectionId)
   })
   ipcMain.handle('transactions:rollback', async (_e, connectionId: string) => {
     const conn = connectionStore.get(connectionId)
-    audit('transaction.rollback', 'Transactie teruggedraaid (ROLLBACK)', { server: conn?.name })
+    audit('transaction.rollback', 'Transaction rolled back (ROLLBACK)', { server: conn?.name })
     return transactionManager.rollback(connectionId)
   })
   ipcMain.handle('transactions:status', (_e, connectionId: string) =>
@@ -447,7 +447,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('snippets:list', (_e, folder?: string) => snippetStore.list(folder))
   ipcMain.handle('snippets:save', (_e, entry: { folder: string; title: string; sql: string }) => {
     const saved = snippetStore.save(entry)
-    audit('admin.ddl', `Snippet opgeslagen: ${saved.title}`, {})
+    audit('admin.ddl', `Snippet saved: ${saved.title}`, {})
     return saved
   })
   ipcMain.handle('snippets:remove', (_e, id: number) => {
@@ -460,10 +460,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('import:pickFile', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showOpenDialog(win!, {
-      title: 'Importbestand kiezen',
+      title: 'Choose import file',
       properties: ['openFile'],
       filters: [
-        { name: 'Data-bestanden', extensions: ['csv', 'json', 'xlsx', 'xml'] },
+        { name: 'Data files', extensions: ['csv', 'json', 'xlsx', 'xml'] },
         { name: 'CSV', extensions: ['csv'] },
         { name: 'Excel', extensions: ['xlsx'] },
         { name: 'JSON', extensions: ['json'] },
@@ -492,7 +492,7 @@ export function registerIpcHandlers(): void {
       connectionId: string
     }) => {
       const session = sessionManager.getByConnectionId(req.connectionId)
-      if (!session) throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+      if (!session) throw new Error('No active session for this connection. Open the connection first.')
       const { registry: reg } = await import('./registry')
       const dialect = reg.get(session.providerId).capabilities.dialect
       return importer.generateImport({ ...req, dialect })
@@ -504,7 +504,7 @@ export function registerIpcHandlers(): void {
       const result = await importer.executeImport(connectionId, sql, confirmed)
       if (result.ok) {
         const conn = connectionStore.get(connectionId)
-        audit('import.executed', `Import uitgevoerd: ${result.rowCount} rij(en)`, { server: conn?.name })
+        audit('import.executed', `Import executed: ${result.rowCount} row(s)`, { server: conn?.name })
       }
       return result
     }
@@ -552,7 +552,7 @@ export function registerIpcHandlers(): void {
   // ------------------------------------------------------------------ F3-6: AI assistant (eis 27)
   ipcMain.handle('ai:saveConfig', (_e, config: { baseUrl?: string; model?: string; apiKey?: string }) => {
     aiAssistant.saveAiConfig(config)
-    audit('admin.ddl', 'AI-configuratie opgeslagen (apiKey versleuteld in vault)', {})
+    audit('admin.ddl', 'AI configuration saved (apiKey encrypted in vault)', {})
     return { ok: true }
   })
   ipcMain.handle('ai:chat', async (_e, req: Parameters<typeof aiAssistant.aiChat>[0]) => {

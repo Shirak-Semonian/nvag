@@ -85,24 +85,24 @@ async function buildSchemaContext(connectionId?: string): Promise<string> {
 
 function systemPrompt(mode: AiRequest['mode'], context: string): string {
   const base = [
-    'Je bent een ervaren database-SQL-assistent (Nvag).',
-    'Antwoord in het Nederlands, technisch en beknopt.',
-    'Geef ALLEEN SQL terug waar gevraagd (geen uitleg eromheen), tenzij de uitleg expliciet gevraagd is.',
-    'Nooit directe writes uitvoeren; voorstellen zijn altijd bedoeld om door de gebruiker te worden beoordeeld.',
-    'Gebruik de volgende schemacontext als die aanwezig is:',
+    'You are an experienced database SQL assistant (Nvag).',
+    'Answer in English, technically and concisely.',
+    'Return ONLY SQL when asked (no surrounding explanation), unless explanation is explicitly requested.',
+    'Never execute direct writes; suggestions are always meant to be reviewed by the user.',
+    'Use the following schema context when present:',
     '---SCHEMA---',
-    context || '(geen context)',
-    '---EINDE SCHEMA---'
+    context || '(no context)',
+    '---END SCHEMA---'
   ].join('\n')
   switch (mode) {
     case 'generate':
-      return `${base}\nOpdracht: genereer SQL op basis van de beschrijving van de gebruiker.`
+      return `${base}\nTask: generate SQL based on the user's description.`
     case 'explain':
-      return `${base}\nOpdracht: verklaar de opgegeven SQL stap voor stap (wat doet elke clausule, eventuele valkuilen).`
+      return `${base}\nTask: explain the given SQL step by step (what each clause does, potential pitfalls).`
     case 'optimize':
-      return `${base}\nOpdracht: optimaliseer de opgegeven SQL (prestaties, indexen, leesbaarheid) en geef de verbeterde SQL plus een korte toelichting.`
+      return `${base}\nTask: optimize the given SQL (performance, indexes, readability) and provide the improved SQL plus a brief explanation.`
     case 'convert':
-      return `${base}\nOpdracht: converteer de opgegeven SQL naar het gevraagde doeldialect.`
+      return `${base}\nTask: convert the given SQL to the requested target dialect.`
     default:
       return base
   }
@@ -112,10 +112,10 @@ function systemPrompt(mode: AiRequest['mode'], context: string): string {
 export async function aiChat(req: AiRequest): Promise<{ text: string }> {
   const config = getAiConfig()
   if (!config.apiKey) {
-    throw new Error('Geen AI API-key geconfigureerd. Stel die in via de AI-tab (Instellingen).')
+    throw new Error('No AI API key configured. Set it in the AI tab (Settings).')
   }
   const context = await buildSchemaContext(req.connectionId)
-  const targetNote = req.targetDialect ? `\nDoeldialect: ${req.targetDialect}` : ''
+  const targetNote = req.targetDialect ? `\nTarget dialect: ${req.targetDialect}` : ''
   const userContent = `${req.input}${targetNote}`
 
   const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`
@@ -136,12 +136,12 @@ export async function aiChat(req: AiRequest): Promise<{ text: string }> {
   })
   if (!response.ok) {
     const body = await response.text().catch(() => '')
-    throw new Error(`AI-fout (${response.status}): ${body.slice(0, 300)}`)
+    throw new Error(`AI error (${response.status}): ${body.slice(0, 300)}`)
   }
   const data = (await response.json()) as {
     choices?: { message?: { content?: string } }[]
   }
   const text = data.choices?.[0]?.message?.content?.trim()
-  if (!text) throw new Error('AI gaf geen antwoord terug.')
+  if (!text) throw new Error('AI returned no response.')
   return { text }
 }

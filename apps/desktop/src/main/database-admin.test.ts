@@ -165,7 +165,7 @@ describe('F4 backup/restore guard-flow', () => {
   it('backup voert uit op DEV (warn-niveau) met waarschuwing', async () => {
     const r = await backupDatabase('adm-1', 'main', backupFile)
     expect(r.ok).toBe(true)
-    expect(r.message).toMatch(/BACKUP-statement/)
+    expect(r.message).toMatch(/BACKUP statement/)
   })
 
   it('backup op PROD vraagt bevestiging (confirm)', async () => {
@@ -400,7 +400,7 @@ describe('SAL-45 DROP-methods (tsql dialect, fake provider)', () => {
 
   it('weigert dropRole op providers zonder supportsUsersAndRoles', async () => {
     // de sqlite-provider uit de eerste suite ondersteunt geen users/roles.
-    await expect(dropRole('adm-1', '', 'x', true)).rejects.toThrow(/geen users\/roles/)
+    await expect(dropRole('adm-1', '', 'x', true)).rejects.toThrow(/does not support users\/roles/)
   })
 })
 
@@ -517,15 +517,15 @@ describe('SAL-50 database-eigenschappen (tsql dialect, fake provider)', () => {
     // Opties-sectie (SSMS-achtig overzicht: auto close/shrink, paginaverificatie).
     const autoClose = props.properties.find((p) => p.key === 'auto_close')
     expect(autoClose?.section).toBe('opties')
-    expect(autoClose?.value).toBe('Nee')
+    expect(autoClose?.value).toBe('No')
     const autoShrink = props.properties.find((p) => p.key === 'auto_shrink')
-    expect(autoShrink?.value).toBe('Nee')
+    expect(autoShrink?.value).toBe('No')
     const pageVerify = props.properties.find((p) => p.key === 'page_verify')
     expect(pageVerify?.value).toBe('CHECKSUM')
     const encrypted = props.properties.find((p) => p.key === 'encrypted')
-    expect(encrypted?.value).toBe('Nee')
+    expect(encrypted?.value).toBe('No')
     const trustworthy = props.properties.find((p) => p.key === 'trustworthy')
-    expect(trustworthy?.value).toBe('Ja')
+    expect(trustworthy?.value).toBe('Yes')
 
     // Bestanden uit sys.master_files (paden, grootte, groei).
     expect(props.files).toHaveLength(2)
@@ -607,7 +607,7 @@ describe('SAL-50 database-eigenschappen op niet-tsql-providers (sqlite)', () => 
     const props = await getDatabaseProperties('adm-s50-sqlite', 'main')
     expect(props.supportsAlter).toBe(false)
     expect(props.dialect).toBe('sqlite')
-    expect(props.message).toMatch(/SQLite-databases zijn bestanden/)
+    expect(props.message).toMatch(/SQLite databases are files/)
     expect(props.properties).toEqual([])
 
     // De UI-gating voorkomt alterDatabase-aanroepen; mocht het toch gebeuren

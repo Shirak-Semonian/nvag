@@ -12,14 +12,14 @@ describe('query-guard (ADR-009, F1-8)', () => {
     const r = checkQuery('DELETE FROM klanten;', 'DEV')
     expect(r.allowed).toBe(false)
     expect(r.severity).toBe('confirm')
-    expect(r.reasons).toContain('DELETE/UPDATE zonder WHERE')
+    expect(r.reasons).toContain('DELETE/UPDATE without WHERE')
   })
 
   it('blokkeert UPDATE zonder WHERE met confirm', () => {
     const r = checkQuery('UPDATE klanten SET naam = \'x\';', 'TEST')
     expect(r.allowed).toBe(false)
     expect(r.severity).toBe('confirm')
-    expect(r.reasons).toContain('DELETE/UPDATE zonder WHERE')
+    expect(r.reasons).toContain('DELETE/UPDATE without WHERE')
   })
 
   it('blokkeert DROP, TRUNCATE en ALTER met confirm', () => {
@@ -33,7 +33,7 @@ describe('query-guard (ADR-009, F1-8)', () => {
   it('stript commentaar vóór detectie', () => {
     const r = checkQuery('-- veilige query?\nDELETE FROM klanten;', 'DEV')
     expect(r.allowed).toBe(false)
-    expect(r.reasons).toContain('DELETE/UPDATE zonder WHERE')
+    expect(r.reasons).toContain('DELETE/UPDATE without WHERE')
   })
 
   it('UPDATE met WHERE in een later statement telt als veilig', () => {
@@ -45,7 +45,7 @@ describe('query-guard (ADR-009, F1-8)', () => {
     const dev = checkQuery('CREATE TABLE nieuw (id INTEGER);', 'DEV')
     expect(dev.allowed).toBe(false)
     expect(dev.severity).toBe('warn')
-    expect(dev.reasons).toContain('CREATE-statement')
+    expect(dev.reasons).toContain('CREATE statement')
 
     const prod = checkQuery('CREATE TABLE nieuw (id INTEGER);', 'PROD')
     expect(prod.allowed).toBe(false)
@@ -57,7 +57,7 @@ describe('query-guard (ADR-009, F1-8)', () => {
       const r = checkQuery('RESTORE DATABASE prod FROM DISK = N\'/tmp/x.bak\' WITH REPLACE;', env)
       expect(r.allowed).toBe(false)
       expect(r.severity).toBe('confirm')
-      expect(r.reasons).toContain('RESTORE-statement')
+      expect(r.reasons).toContain('RESTORE statement')
     }
   })
 
@@ -65,7 +65,7 @@ describe('query-guard (ADR-009, F1-8)', () => {
     const dev = checkQuery('BACKUP DATABASE [Sales] TO DISK = N\'/tmp/s.bak\';', 'DEV')
     expect(dev.allowed).toBe(false)
     expect(dev.severity).toBe('warn')
-    expect(dev.reasons).toContain('BACKUP-statement')
+    expect(dev.reasons).toContain('BACKUP statement')
 
     const prod = checkQuery('BACKUP DATABASE [Sales] TO DISK = N\'/tmp/s.bak\';', 'PROD')
     expect(prod.allowed).toBe(false)
@@ -78,7 +78,7 @@ describe('query-guard (ADR-009, F1-8)', () => {
     const dev = checkQuery(sql, 'DEV')
     expect(dev.allowed).toBe(false)
     expect(dev.severity).toBe('warn')
-    expect(dev.reasons.some((r) => r.startsWith('grote operatie'))).toBe(true)
+    expect(dev.reasons.some((r) => r.startsWith('large operation'))).toBe(true)
 
     const prod = checkQuery(sql, 'PROD')
     expect(prod.severity).toBe('confirm')
@@ -89,11 +89,11 @@ describe('query-guard (ADR-009, F1-8)', () => {
     const dev = checkQuery(sql, 'DEV')
     expect(dev.allowed).toBe(false)
     expect(dev.severity).toBe('warn')
-    expect(dev.reasons.some((r) => r.startsWith('grote operatie'))).toBe(true)
+    expect(dev.reasons.some((r) => r.startsWith('large operation'))).toBe(true)
 
     // Met begrenzing (TOP/LIMIT) geen grote operatie.
     const bounded = checkQuery('INSERT INTO archief SELECT TOP 100 * FROM klanten;', 'DEV')
-    expect(bounded.reasons.some((r) => r.startsWith('grote operatie'))).toBe(false)
+    expect(bounded.reasons.some((r) => r.startsWith('large operation'))).toBe(false)
   })
 
   it('meerdere SELECTs in één batch zijn geen grote operatie', () => {

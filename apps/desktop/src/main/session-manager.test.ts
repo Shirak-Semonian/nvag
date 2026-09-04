@@ -128,7 +128,7 @@ function makeProvider(
     ): AsyncIterable<QueryChunk> {
       state.executed.push(sql)
       if (sql.includes('FORCE_ERROR')) {
-        yield { kind: 'error', message: 'USE mislukt' }
+        yield { kind: 'error', message: 'USE failed' }
         return
       }
       // USE-wissel: sessie-database bijwerken (zoals een echte provider doet).
@@ -202,11 +202,11 @@ describe('SessionManager (F1-10)', () => {
   })
 
   it('gooit wanneer de verbinding niet bekend is', async () => {
-    await expect(manager.openSaved('conn-onbekend')).rejects.toThrow('Verbinding niet gevonden')
+    await expect(manager.openSaved('conn-onbekend')).rejects.toThrow('Connection not found')
   })
 
   it('gooit wanneer er geen sessie is voor switchDatabase', async () => {
-    await expect(manager.switchDatabase('conn-1', 'dbB')).rejects.toThrow('Geen actieve sessie')
+    await expect(manager.switchDatabase('conn-1', 'dbB')).rejects.toThrow('No active session')
   })
 
   it('voert USE uit bij tsql en werkt de sessie-database bij', async () => {
@@ -256,7 +256,7 @@ describe('SessionManager (F1-10)', () => {
     const cfg = { ...CONFIG, providerId: 'test-tsql', database: 'dbA' }
     manager.configProvider = () => ({ config: cfg, secret: {} })
     await manager.openSaved('conn-1')
-    await expect(manager.switchDatabase('conn-1', 'FORCE_ERROR')).rejects.toThrow('USE mislukt')
+    await expect(manager.switchDatabase('conn-1', 'FORCE_ERROR')).rejects.toThrow('USE failed')
   })
 
   it('sluit sessies en ruimt de connectionId-index op', async () => {

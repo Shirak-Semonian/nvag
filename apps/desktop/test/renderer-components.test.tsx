@@ -5,14 +5,14 @@ import { ResultsGrid, MessagesPanel, rowsToTsv, rowsToCsv, toDisplayValue } from
 describe('ResultsGrid', () => {
   it('toont lege staat zonder resultaat', () => {
     const html = renderToStaticMarkup(<ResultsGrid result={null} />)
-    expect(html).toContain('Voer een query uit om resultaten te zien.')
+    expect(html).toContain('Run a query to see results.')
   })
 
   it('toont lege staat bij een foutresultaat zonder kolommen (fout zit in Messages)', () => {
     const html = renderToStaticMarkup(
       <ResultsGrid result={{ executionId: 'e', columns: [], rows: [], truncated: false, rowCount: 0, durationMs: 0, error: 'near "LIMIT": syntax error' }} />
     )
-    expect(html).toContain('Query uitgevoerd. 0 rij(en) beïnvloed.')
+    expect(html).toContain('Query executed. 0 row(s) affected.')
   })
 
   it('toont kolommen en rijen inclusief NULL', () => {
@@ -47,7 +47,7 @@ describe('ResultsGrid', () => {
         }}
       />
     )
-    expect(html).toContain('afgekapt')
+    expect(html).toContain('truncated')
   })
 })
 
@@ -56,8 +56,8 @@ describe('MessagesPanel', () => {
     const html = renderToStaticMarkup(
       <MessagesPanel result={{ executionId: 'e', columns: [], rows: [], truncated: false, rowCount: 2, durationMs: 4 }} />
     )
-    expect(html).toContain('Query voltooid')
-    expect(html).toContain('2 rij(en) in 4 ms')
+    expect(html).toContain('Query completed')
+    expect(html).toContain('2 row(s) in 4 ms')
   })
 
   it('toont fout in berichtenpaneel', () => {
@@ -65,7 +65,7 @@ describe('MessagesPanel', () => {
       <MessagesPanel result={{ executionId: 'e', columns: [], rows: [], truncated: false, rowCount: 0, durationMs: 0, error: 'kapot' }} />
     )
     expect(html).toContain('msg-error')
-    expect(html).toContain('Fout:')
+    expect(html).toContain('Error:')
     expect(html).toContain('kapot')
   })
 
@@ -80,17 +80,17 @@ describe('MessagesPanel', () => {
           rowCount: 1000,
           durationMs: 3,
           messages: [
-            { severity: 'warning', text: 'Resultaat afgekapt op de max-rij-cap.' },
-            { severity: 'info', text: 'Leeswijzer: NULL is leeg.' }
+            { severity: 'warning', text: 'Result truncated at the maximum row cap.' },
+            { severity: 'info', text: 'Guide: NULL is empty.' }
           ]
         }}
       />
     )
-    expect(html).toContain('Waarschuwing:')
-    expect(html).toContain('Resultaat afgekapt op de max-rij-cap.')
+    expect(html).toContain('Warning:')
+    expect(html).toContain('Result truncated at the maximum row cap.')
     expect(html).toContain('Info:')
-    expect(html).toContain('Leeswijzer: NULL is leeg.')
-    expect(html).toContain('1000 rij(en) in 3 ms')
+    expect(html).toContain('Guide: NULL is empty.')
+    expect(html).toContain('1000 row(s) in 3 ms')
   })
 
   it('toont een geannuleerde query (SAL-17)', () => {
@@ -107,8 +107,8 @@ describe('MessagesPanel', () => {
         }}
       />
     )
-    expect(html).toContain('Geannuleerd:')
-    expect(html).toContain('Query geannuleerd door gebruiker.')
+    expect(html).toContain('Cancelled:')
+    expect(html).toContain('Query cancelled by user.')
   })
 
   it('toont de positie van een fout in het berichtenpaneel (SAL-17)', () => {
@@ -127,7 +127,7 @@ describe('MessagesPanel', () => {
         }}
       />
     )
-    expect(html).toContain('regel 3, kolom 7')
+    expect(html).toContain('line 3, column 7')
   })
 })
 
@@ -149,8 +149,8 @@ describe('ResultsGrid — meerdere resultsets (SAL-17)', () => {
         }}
       />
     )
-    expect(html).toContain('Resultaat 1')
-    expect(html).toContain('Resultaat 2')
+    expect(html).toContain('Result 1')
+    expect(html).toContain('Result 2')
     // Alleen de actieve set wordt gerenderd; set 2 zit in de tab-knop.
     expect(html).toContain('>a<')
     expect(html).not.toContain('>b<')
@@ -162,7 +162,7 @@ describe('ResultsGrid — meerdere resultsets (SAL-17)', () => {
         result={{ executionId: 'e', columns: [], rows: [], truncated: false, rowCount: 3, durationMs: 4 }}
       />
     )
-    expect(html).toContain('3 rij(en) beïnvloed in 4 ms.')
+    expect(html).toContain('3 row(s) affected in 4 ms.')
   })
 })
 

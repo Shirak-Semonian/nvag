@@ -43,9 +43,9 @@ export function bootstrapApp(): void {
     const plugins = await loadPlugins(registry)
     for (const plugin of plugins) {
       if (plugin.ok) {
-        console.log(`[nvag] Plugin geladen: ${plugin.name} (provider ${plugin.providerId})`)
+        console.log(`[nvag] Plugin loaded: ${plugin.name} (provider ${plugin.providerId})`)
       } else {
-        console.warn(`[nvag] Plugin overgeslagen: ${plugin.name} — ${plugin.error ?? 'onbekende fout'}`)
+        console.warn(`[nvag] Plugin skipped: ${plugin.name} — ${plugin.error ?? 'unknown error'}`)
       }
     }
   })

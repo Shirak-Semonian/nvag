@@ -18,7 +18,7 @@ export function TableEditConfirmDialog(): React.JSX.Element | null {
     <div className="modal-backdrop" onClick={cancel}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>Tabelbewerking bevestigen</span>
+          <span>Confirm table edit</span>
           <EnvBadge environment={pending.environment} />
         </div>
         <div className="guard-reasons">
@@ -28,14 +28,14 @@ export function TableEditConfirmDialog(): React.JSX.Element | null {
             </div>
           ))}
         </div>
-        <p>De volgende SQL wordt uitgevoerd:</p>
+        <p>The following SQL will be executed:</p>
         <pre className="guard-sql">{pending.sql}</pre>
         <div className="modal-actions">
           <button type="button" onClick={cancel}>
-            Annuleren
+            Cancel
           </button>
           <button type="button" className="danger" onClick={() => void confirm()}>
-            Toch uitvoeren
+            Run anyway
           </button>
         </div>
       </div>

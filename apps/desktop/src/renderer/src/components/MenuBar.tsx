@@ -54,7 +54,7 @@ const isActionable = (entry: MenuEntry): entry is MenuActionEntry | MenuSubmenuE
 const isDisabled = (entry: MenuEntry): boolean =>
   (entry.type === 'action' || entry.type === 'submenu') && entry.disabled === true
 
-export function MenuBar({ menus, ariaLabel = 'Hoofdmenu' }: MenuBarProps): React.JSX.Element {
+export function MenuBar({ menus, ariaLabel = 'Main menu' }: MenuBarProps): React.JSX.Element {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 

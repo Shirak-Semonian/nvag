@@ -131,7 +131,7 @@ describe('buildXlsxBuffer (exceljs)', () => {
     ])
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buf as unknown as ArrayBuffer)
-    const ws = wb.getWorksheet('Resultaat')
+    const ws = wb.getWorksheet('Result')
     expect(ws).toBeDefined()
     expect(ws!.getRow(1).getCell(1).value).toBe('id')
     expect(ws!.getRow(1).getCell(2).value).toBe('naam')
@@ -165,7 +165,7 @@ describe('exportResults (electron-integratie)', () => {
     const res = await exportResults(baseReq(), sender)
     expect(res).toEqual({ canceled: false, filePath: file, rowCount: 4 })
     expect(dialog.showSaveDialog).toHaveBeenCalledWith(
-      expect.objectContaining({ defaultPath: 'resultaat-test.csv', filters: [{ name: 'CSV-bestand', extensions: ['csv'] }] })
+      expect.objectContaining({ defaultPath: 'resultaat-test.csv', filters: [{ name: 'CSV file', extensions: ['csv'] }] })
     )
     expect(readFileSync(file, 'utf8').startsWith('\uFEFFid;naam\r\n')).toBe(true)
   })
@@ -190,15 +190,15 @@ describe('exportResults (electron-integratie)', () => {
     const res = await exportResults(baseReq({ format: 'xlsx' }), sender)
     expect(res).toEqual({ canceled: false, filePath: file, rowCount: 4 })
     expect(dialog.showSaveDialog).toHaveBeenCalledWith(
-      expect.objectContaining({ defaultPath: 'resultaat-test.xlsx', filters: [{ name: 'Excel-werkmap', extensions: ['xlsx'] }] })
+      expect.objectContaining({ defaultPath: 'resultaat-test.xlsx', filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] })
     )
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(readFileSync(file) as unknown as ArrayBuffer)
-    expect(wb.getWorksheet('Resultaat')?.getRow(1).getCell(1).value).toBe('id')
+    expect(wb.getWorksheet('Result')?.getRow(1).getCell(1).value).toBe('id')
   })
 
   it('xlsx → klembord: niet ondersteund, geeft een fout terug', async () => {
     const res = await exportResults(baseReq({ format: 'xlsx', target: 'clipboard' }), sender)
-    expect(res.error).toContain('niet ondersteund')
+    expect(res.error).toContain('not supported')
   })
 })

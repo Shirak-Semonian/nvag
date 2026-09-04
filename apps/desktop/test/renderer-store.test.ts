@@ -276,7 +276,7 @@ describe('renderer store — query-uitvoering (streaming)', () => {
     const tab = useAppStore.getState().tabs[0]
     expect(tab.result?.truncated).toBe(true)
     expect(tab.result?.results?.[0]?.truncated).toBe(true)
-    expect(tab.result?.messages?.some((m) => m.severity === 'warning' && /afgekapt/i.test(m.text))).toBe(true)
+    expect(tab.result?.messages?.some((m) => m.severity === 'warning' && /truncated/i.test(m.text))).toBe(true)
   })
 
   it('slaat DML-rowcount op via het done-chunk (SAL-17)', async () => {

@@ -66,9 +66,9 @@ describe('HistoryPanel (eis 19)', () => {
     render(<HistoryPanel />)
     await waitFor(() => expect(screen.getByText('SELECT * FROM users')).toBeTruthy())
     expect(screen.getAllByText('SQL-DEV').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/12 ms · 3 rij\(en\)/)).toBeTruthy()
+    expect(screen.getByText(/12 ms · 3 row\(s\)/)).toBeTruthy()
     expect(screen.getByText('UPDATE logs SET seen=1')).toBeTruthy()
-    expect(screen.getByText(/45 ms · 0 rij\(en\)/)).toBeTruthy()
+    expect(screen.getByText(/45 ms · 0 row\(s\)/)).toBeTruthy()
   })
 
   it('toont de foutmelding van een mislukte uitvoering', async () => {
@@ -80,7 +80,7 @@ describe('HistoryPanel (eis 19)', () => {
   it('toont lege staat wanneer er geen uitvoeringen zijn', async () => {
     mockHistoryNvag([])
     render(<HistoryPanel />)
-    await waitFor(() => expect(screen.getByText(/Nog geen SQL-uitvoeringen/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/No SQL executions yet/)).toBeTruthy())
   })
 
   it('zoekt op zoektekst via Enter', async () => {
@@ -88,10 +88,10 @@ describe('HistoryPanel (eis 19)', () => {
     render(<HistoryPanel />)
     await waitFor(() => expect(screen.getByText('SELECT * FROM users')).toBeTruthy())
 
-    fireEvent.change(screen.getByLabelText('Zoek in geschiedenis'), {
+    fireEvent.change(screen.getByLabelText('Search history'), {
       target: { value: 'users' }
     })
-    fireEvent.keyDown(screen.getByLabelText('Zoek in geschiedenis'), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByLabelText('Search history'), { key: 'Enter' })
     await waitFor(() => expect(list).toHaveBeenCalledWith('users', 100))
   })
 
@@ -99,11 +99,11 @@ describe('HistoryPanel (eis 19)', () => {
     mockHistoryNvag(entries)
     render(<HistoryPanel />)
     await waitFor(() => expect(screen.getByText('SELECT * FROM users')).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Zoek in geschiedenis'), {
+    fireEvent.change(screen.getByLabelText('Search history'), {
       target: { value: 'bestaat-niet' }
     })
-    fireEvent.keyDown(screen.getByLabelText('Zoek in geschiedenis'), { key: 'Enter' })
-    await waitFor(() => expect(screen.getByText(/Geen uitvoeringen gevonden/)).toBeTruthy())
+    fireEvent.keyDown(screen.getByLabelText('Search history'), { key: 'Enter' })
+    await waitFor(() => expect(screen.getByText(/No executions found/)).toBeTruthy())
   })
 
   it('wist de geschiedenis via de wissen-knop', async () => {
@@ -111,7 +111,7 @@ describe('HistoryPanel (eis 19)', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<HistoryPanel />)
     await waitFor(() => expect(screen.getByText('SELECT * FROM users')).toBeTruthy())
-    fireEvent.click(screen.getByTitle('Geschiedenis wissen'))
+    fireEvent.click(screen.getByTitle('Clear history'))
     await waitFor(() => expect(clear).toHaveBeenCalled())
   })
 })

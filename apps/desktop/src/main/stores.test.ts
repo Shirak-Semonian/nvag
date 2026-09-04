@@ -38,8 +38,8 @@ describe('F2-6 SnippetStore', () => {
   })
 
   it('weigert een lege titel of lege SQL', () => {
-    expect(() => store.save({ folder: 'x', title: '', sql: 'SELECT 1' })).toThrow('titel')
-    expect(() => store.save({ folder: 'x', title: 'y', sql: '  ' })).toThrow('leeg')
+    expect(() => store.save({ folder: 'x', title: '', sql: 'SELECT 1' })).toThrow('title')
+    expect(() => store.save({ folder: 'x', title: 'y', sql: '  ' })).toThrow('empty')
   })
 
   it('geeft folders terug met default-folder', () => {
@@ -75,7 +75,7 @@ describe('F2-8 AuditStore + redactie', () => {
     const entry = store.add({
       action: 'connection.created',
       server: 'PROD-DB',
-      detail: 'Verbinding aangemaakt: PROD-DB',
+      detail: 'Connection created: PROD-DB',
       success: true
     })
     expect(entry.id).toBeGreaterThan(0)
@@ -89,7 +89,7 @@ describe('F2-8 AuditStore + redactie', () => {
       server: 'TEST',
       detail: 'password=supersecret en token=abc123',
       success: false,
-      error: 'Login mislukt voor user=dba password=geheim'
+      error: 'Login failed for user=dba password=geheim'
     })
     expect(entry.detail).toContain('[REDACTED]')
     expect(entry.detail).not.toContain('supersecret')

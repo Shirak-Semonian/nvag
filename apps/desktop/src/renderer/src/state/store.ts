@@ -487,7 +487,7 @@ export const useAppStore = create<AppState>((set, get) => {
     const sessionInfo = await window.nvag.sessions.openSaved(connectionId)
     const config = get().connections.find((c) => c.id === connectionId)
     if (!config) {
-      throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+      throw new Error('Connection not found. Save the connection first in the Connection Manager.')
     }
     set((s) => ({
       openSessions: {
@@ -697,7 +697,7 @@ export const useAppStore = create<AppState>((set, get) => {
     if (!session) {
       // SAL-43: geen stille no-op meer wanneer een tab op een gesloten
       // verbinding draait (Ctrl+Enter/F5 omzeilt de disabled Uitvoeren-knop).
-      const text = 'Geen actieve verbinding voor deze query. Open eerst de verbinding (dubbelklik op de server in de Object Explorer) en voer de query opnieuw uit.'
+      const text = 'No active connection for this query. Open the connection first (double-click the server in Object Explorer), then run the query again.'
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.id === tabId
@@ -805,7 +805,7 @@ export const useAppStore = create<AppState>((set, get) => {
           const rs = acc.results[idx]
           if (rs) acc.results[idx] = { ...rs, truncated: true }
           if (!acc.messages.some((m) => m.severity === 'warning' && /afgekapt/i.test(m.text))) {
-            acc.messages.push({ severity: 'warning', text: 'Resultaat afgekapt op de max-rij-cap.' })
+            acc.messages.push({ severity: 'warning', text: 'Result truncated at the maximum row cap.' })
           }
         }
         patchTab({ result: buildResult(acc, executionId), running: false, executionId: null, startedAt: null, cancelling: false })
@@ -830,7 +830,7 @@ export const useAppStore = create<AppState>((set, get) => {
           // en alsnog uitvoeren — de guard wordt met `confirmed` gepasseerd.
           acc.messages.push({
             severity: 'warning',
-            text: `Environment safety: ${start.blocked.join(', ')} — uitgevoerd met waarschuwing.`
+            text: `Environment safety: ${start.blocked.join(', ')} — executed with a warning.`
           })
           start = await window.nvag.query.run({
             connectionId: tab.connectionId,
@@ -853,7 +853,7 @@ export const useAppStore = create<AppState>((set, get) => {
       }
 
       if (start.blocked && start.blocked.length > 0) {
-        const text = `Query geblokkeerd door environment safety (${start.blocked.join(', ')}).`
+        const text = `Query blocked by environment safety (${start.blocked.join(', ')}).`
         patchTab({
           result: {
             executionId: '',
@@ -951,10 +951,10 @@ export const useAppStore = create<AppState>((set, get) => {
           truncated: current?.result?.truncated ?? false,
           rowCount: current?.result?.rowCount ?? 0,
           durationMs: current?.result?.durationMs ?? 0,
-          error: `Annuleren mislukt: ${text}`,
+          error: `Cancel failed: ${text}`,
           messages: [
             ...(current?.result?.messages ?? []),
-            { severity: 'error', text: `Annuleren mislukt: ${text}` }
+            { severity: 'error', text: `Cancel failed: ${text}` }
           ]
         }
       })
@@ -1091,7 +1091,7 @@ export const useAppStore = create<AppState>((set, get) => {
     const id = nextTabId()
     const tab: QueryTabState = {
       id,
-      title: `${table} — gegevens`,
+      title: `${table} — data`,
       sql: '',
       connectionId,
       database,
@@ -1137,7 +1137,7 @@ export const useAppStore = create<AppState>((set, get) => {
     }
     if (!get().openSessions[tab.connectionId]) {
       // SAL-42: zonder sessie geen stille "Laden…" maar een duidelijke fout.
-      patchTableData({ error: 'Geen actieve sessie voor deze verbinding. Open eerst de verbinding.' })
+      patchTableData({ error: 'No active session for this connection. Open the connection first.' })
       return
     }
     // SAL-42: vorige fout wissen zodra een nieuwe poging begint.
@@ -1192,7 +1192,7 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.id === tabId && t.tableData
-            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `✅ ${result.rowCount} rij(en) ${kind === 'insert' ? 'toegevoegd' : kind === 'delete' ? 'verwijderd' : 'bijgewerkt'}.`, lastSql: result.sql } }
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `✅ ${result.rowCount} row(s) ${kind === 'insert' ? 'added' : kind === 'delete' ? 'removed' : 'updated'}.`, lastSql: result.sql } }
             : t
         )
       }))
@@ -1202,7 +1202,7 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.id === tabId && t.tableData
-            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Fout: ${text}` } }
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Error: ${text}` } }
             : t
         )
       }))
@@ -1230,7 +1230,7 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.id === pending.tabId && t.tableData
-            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `✅ ${result.rowCount} rij(en) ${pending.kind === 'insert' ? 'toegevoegd' : pending.kind === 'delete' ? 'verwijderd' : 'bijgewerkt'}.`, lastSql: result.sql } }
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `✅ ${result.rowCount} row(s) ${pending.kind === 'insert' ? 'added' : pending.kind === 'delete' ? 'removed' : 'updated'}.`, lastSql: result.sql } }
             : t
         )
       }))
@@ -1240,7 +1240,7 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({
         tabs: s.tabs.map((t) =>
           t.id === pending.tabId && t.tableData
-            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Fout: ${text}` } }
+            ? { ...t, tableData: { ...t.tableData, lastEditMessage: `Error: ${text}` } }
             : t
         )
       }))

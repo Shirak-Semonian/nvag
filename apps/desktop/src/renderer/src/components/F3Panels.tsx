@@ -77,21 +77,21 @@ export function ComparePanel({ activeConnectionId }: { activeConnectionId: strin
     <div className="f2-panel">
       <div className="f2-panel-row">
         <label>
-          Bron{' '}
+          Source{' '}
           <select value={source} onChange={(e) => setSource(e.target.value)}>
-            <option value="">— kies —</option>
+            <option value="">— choose —</option>
             {connOptions}
           </select>
         </label>
         <label>
-          Doel{' '}
+          Target{' '}
           <select value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">— kies —</option>
+            <option value="">— choose —</option>
             {connOptions}
           </select>
         </label>
         <button className="primary" onClick={() => void runCompare()} disabled={!source || !target || busy}>
-          {busy ? 'Bezig…' : 'Vergelijk'}
+          {busy ? 'Working…' : 'Compare'}
         </button>
       </div>
       {error && <div className="msg-error">{error}</div>}
@@ -99,31 +99,31 @@ export function ComparePanel({ activeConnectionId }: { activeConnectionId: strin
         <>
           <div className="compare-summary">
             <span className="result-meta">
-              {diff.missingTables} ontbrekende tabel(len) · {diff.missingColumns} ontbrekende kolom(men) in doel
+              {diff.missingTables} missing table(s) · {diff.missingColumns} missing column(s) in target
             </span>
             <button onClick={() => void makeScript()} disabled={busy}>
-              Deployment-script genereren
+              Generate deployment script
             </button>
           </div>
           {diff.tablesOnlyInSource.length > 0 && (
             <details className="table-data-sql" open>
-              <summary>Alleen in bron ({diff.tablesOnlyInSource.length})</summary>
+              <summary>Only in source ({diff.tablesOnlyInSource.length})</summary>
               <pre>{diff.tablesOnlyInSource.join('\n')}</pre>
             </details>
           )}
           {diff.columnDiffs.length > 0 && (
             <details className="table-data-sql" open>
-              <summary>Kolomverschillen ({diff.columnDiffs.length})</summary>
+              <summary>Column differences ({diff.columnDiffs.length})</summary>
               <div className="audit-list">
                 {diff.columnDiffs.map((d) => (
                   <div key={d.table} className="audit-row">
                     <span className="audit-action">{d.table}</span>
                     <span className="audit-detail">
                       {d.missingInTarget.length > 0 && (
-                        <>→ doel mist: {d.missingInTarget.join(', ')} </>
+                        <>→ missing in target: {d.missingInTarget.join(', ')} </>
                       )}
                       {d.missingInSource.length > 0 && (
-                        <>→ bron mist: {d.missingInSource.join(', ')}</>
+                        <>→ missing in source: {d.missingInSource.join(', ')}</>
                       )}
                     </span>
                   </div>
@@ -133,13 +133,13 @@ export function ComparePanel({ activeConnectionId }: { activeConnectionId: strin
           )}
           {dataResults.length > 0 && (
             <details className="table-data-sql" open>
-              <summary>Data-vergelijking (rijtellingen)</summary>
+              <summary>Data comparison (row counts)</summary>
               <div className="audit-list">
                 {dataResults.map((r) => (
                   <div key={r.table} className="audit-row">
                     <span className="audit-action">{r.table}</span>
                     <span className="audit-detail">
-                      bron: {r.source} · doel: {r.target} {r.differs ? '⚠ verschilt' : '✓ gelijk'}
+                      source: {r.source} · target: {r.target} {r.differs ? '⚠ differs' : '✓ equal'}
                     </span>
                   </div>
                 ))}
@@ -148,7 +148,7 @@ export function ComparePanel({ activeConnectionId }: { activeConnectionId: strin
           )}
           {script !== null && (
             <details className="table-data-sql" open>
-              <summary>Deployment-script</summary>
+              <summary>Deployment script</summary>
               <pre>{script}</pre>
             </details>
           )}
@@ -188,13 +188,13 @@ export function DependenciesPanel({ connectionId }: { connectionId: string | nul
     <div className="f2-panel">
       <div className="f2-panel-row">
         <input
-          placeholder="Tabelnaam (bijv. users)"
+          placeholder="Table name (e.g. users)"
           value={table}
           onChange={(e) => setTable(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && void load()}
         />
         <button className="primary" onClick={() => void load()} disabled={busy || !connectionId || !table.trim()}>
-          Afhankelijkheden laden
+          Load dependencies
         </button>
       </div>
       {meta && (
@@ -211,7 +211,7 @@ export function DependenciesPanel({ connectionId }: { connectionId: string | nul
                   </span>
                 </div>
               ))}
-              {dependsOn.length === 0 && <div className="results-empty">Geen.</div>}
+              {dependsOn.length === 0 && <div className="results-empty">None.</div>}
             </div>
           </div>
           <div className="dashboard-card">
@@ -226,7 +226,7 @@ export function DependenciesPanel({ connectionId }: { connectionId: string | nul
                   </span>
                 </div>
               ))}
-              {usedBy.length === 0 && <div className="results-empty">Geen.</div>}
+              {usedBy.length === 0 && <div className="results-empty">None.</div>}
             </div>
           </div>
         </div>
@@ -313,10 +313,10 @@ export function ErdPanel({ connectionId }: { connectionId: string | null }): Rea
   return (
     <div className="f2-panel">
       <div className="f2-panel-row">
-        <span className="result-meta">ER-diagram — {tables.length} tabel(len)</span>
+        <span className="result-meta">ER diagram — {tables.length} table(s)</span>
         <span className="f2-panel-spacer" />
         <button onClick={() => void load()} disabled={busy || !connectionId}>
-          ⟳ Laden
+          ⟳ Load
         </button>
       </div>
       {error && <div className="msg-error">{error}</div>}
@@ -392,9 +392,9 @@ export function AiPanel({ connectionId, activeTabId, activeSql }: { connectionId
   return (
     <div className="f2-panel">
       <div className="f2-panel-row">
-        <span className="result-meta">AI Assistant (eis 27) — eigen API-key, nooit directe writes</span>
+        <span className="result-meta">AI Assistant (req 27) — your own API key, never direct writes</span>
         <span className="f2-panel-spacer" />
-        <button onClick={() => setShowConfig((v) => !v)}>⚙ Instellingen</button>
+        <button onClick={() => setShowConfig((v) => !v)}>⚙ Settings</button>
       </div>
       {showConfig && (
         <div className="snippet-form">
@@ -405,9 +405,9 @@ export function AiPanel({ connectionId, activeTabId, activeSql }: { connectionId
             Model <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="gpt-4o-mini" />
           </label>
           <label>
-            API-key <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="wordt versleuteld opgeslagen" />
+            API-key <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="is stored encrypted" />
           </label>
-          <button className="primary" onClick={() => void saveConfig()}>Opslaan</button>
+          <button className="primary" onClick={() => void saveConfig()}>Save</button>
         </div>
       )}
       <div className="f2-panel-row">
@@ -417,7 +417,7 @@ export function AiPanel({ connectionId, activeTabId, activeSql }: { connectionId
             className={mode === m ? 'admin-tab active' : 'admin-tab'}
             onClick={() => setMode(m)}
           >
-            {m === 'generate' ? 'Genereer' : m === 'explain' ? 'Verklaar' : m === 'optimize' ? 'Optimaliseer' : m === 'convert' ? 'Converteer' : 'Vrij'}
+            {m === 'generate' ? 'Generate' : m === 'explain' ? 'Explain' : m === 'optimize' ? 'Optimize' : m === 'convert' ? 'Convert' : 'Free'}
           </button>
         ))}
         {mode === 'convert' && (
@@ -432,10 +432,10 @@ export function AiPanel({ connectionId, activeTabId, activeSql }: { connectionId
         className="ai-input"
         placeholder={
           mode === 'generate'
-            ? 'Beschrijf wat je wilt (bijv. "alle klanten met meer dan 3 bestellingen")…'
+            ? 'Describe what you want (e.g. "all customers with more than 3 orders")…'
             : mode === 'convert'
-              ? 'SQL die geconverteerd moet worden (leeg = SQL van actieve tab)…'
-              : 'SQL (leeg = SQL van actieve tab)…'
+              ? 'SQL to convert (empty = SQL of active tab)…'
+              : 'SQL (empty = SQL of active tab)…'
         }
         value={input}
         onChange={(e) => setInput(e.target.value)}
@@ -443,11 +443,11 @@ export function AiPanel({ connectionId, activeTabId, activeSql }: { connectionId
       />
       <div className="f2-panel-row">
         <button className="primary" onClick={() => void run()} disabled={busy}>
-          {busy ? 'Bezig…' : '▶ Uitvoeren'}
+          {busy ? 'Working…' : '▶ Run'}
         </button>
         {output && (
           <button onClick={() => activeTabId && insertSnippet(activeTabId, output)}>
-            Invoegen in editor
+            Insert into editor
           </button>
         )}
       </div>
@@ -484,17 +484,17 @@ export function PluginsPanel(): React.JSX.Element {
   return (
     <div className="f2-panel">
       <div className="f2-panel-row">
-        <span className="result-meta">Plugins ({plugins.length}) — map: plugins/ onder de gebruikersmap</span>
+        <span className="result-meta">Plugins ({plugins.length}) — folder: plugins/ under the user folder</span>
         <span className="f2-panel-spacer" />
-        <button onClick={() => void load()} disabled={busy}>⟳ Herladen</button>
+        <button onClick={() => void load()} disabled={busy}>⟳ Reload</button>
       </div>
       <div className="audit-list">
-        {plugins.length === 0 && <div className="results-empty">Geen plugins gevonden. Zie docs/06-plugins.md voor de template.</div>}
+        {plugins.length === 0 && <div className="results-empty">No plugins found. See docs/06-plugins.md for the template.</div>}
         {plugins.map((p, i) => (
           <div key={i} className={`audit-row ${p.ok ? '' : 'audit-error'}`}>
             <span className="audit-action">{p.name}</span>
             {p.providerName && <span className="audit-server">{p.providerName}</span>}
-            <span className="audit-detail">{p.ok ? '✓ geladen' : `✗ ${p.error ?? ''}`}</span>
+            <span className="audit-detail">{p.ok ? '✓ loaded' : `✗ ${p.error ?? ''}`}</span>
           </div>
         ))}
       </div>

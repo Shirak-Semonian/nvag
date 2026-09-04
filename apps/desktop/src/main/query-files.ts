@@ -9,8 +9,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 
 const SQL_FILTERS = [
-  { name: 'SQL-bestanden', extensions: ['sql'] },
-  { name: 'Alle bestanden', extensions: ['*'] }
+  { name: 'SQL files', extensions: ['sql'] },
+  { name: 'All files', extensions: ['*'] }
 ]
 
 function parentWindow(webContents: Electron.WebContents | null): BrowserWindow | null {

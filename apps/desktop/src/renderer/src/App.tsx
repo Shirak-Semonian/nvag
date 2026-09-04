@@ -156,7 +156,7 @@ function App(): React.JSX.Element {
 
   const statusTitle = (tabId: string): string => {
     const conn = connections.find((c) => c.id === tabId)
-    return conn ? `${conn.name} · ${conn.database ?? '—'} · gebruiker: ${conn.username ?? '—'}` : 'Geen verbinding'
+    return conn ? `${conn.name} · ${conn.database ?? '—'} · user: ${conn.username ?? '—'}` : 'No connection'
   }
 
   // SAL-52: menubalk — Bestand-menu vervangt de bestandsknoppen in de
@@ -165,14 +165,14 @@ function App(): React.JSX.Element {
   // Bewerken/Beeld/Help = extra MenuDef in de array hieronder.
   const fileMenu: MenuDef = {
     id: 'file',
-    label: 'Bestand',
+    label: 'File',
     items: [
-      { type: 'action', label: 'Nieuwe query', onSelect: () => addTab() },
+      { type: 'action', label: 'New query', onSelect: () => addTab() },
       { type: 'separator' },
-      { type: 'action', label: 'Openen…', shortcut: 'Ctrl+O', onSelect: () => void openQueryFile() },
+      { type: 'action', label: 'Open…', shortcut: 'Ctrl+O', onSelect: () => void openQueryFile() },
       {
         type: 'action',
-        label: 'Opslaan',
+        label: 'Save',
         shortcut: 'Ctrl+S',
         disabled: activeTab?.filePath === undefined,
         onSelect: () => {
@@ -181,7 +181,7 @@ function App(): React.JSX.Element {
       },
       {
         type: 'action',
-        label: 'Opslaan als…',
+        label: 'Save As…',
         shortcut: 'Ctrl+Shift+S',
         disabled: !activeTab,
         onSelect: () => {
@@ -192,23 +192,23 @@ function App(): React.JSX.Element {
       recentQueries.length > 0
         ? {
             type: 'submenu',
-            label: "Recente query's",
+            label: "Recent queries",
             items: recentQueries.slice(0, 10).map((entry) => ({
               type: 'action',
               label: `${shortSql(entry.sql)} — ${
-                connections.find((c) => c.id === entry.connectionId)?.name ?? 'losse query'
+                connections.find((c) => c.id === entry.connectionId)?.name ?? 'standalone query'
               }`,
               onSelect: () => addTab({ sql: entry.sql, connectionId: entry.connectionId })
             }))
           }
-        : { type: 'action', label: "Recente query's", disabled: true, onSelect: () => {} },
+        : { type: 'action', label: "Recent queries", disabled: true, onSelect: () => {} },
       { type: 'separator' },
       {
         type: 'action',
-        label: 'Verbindingen beheren…',
+        label: 'Manage connections…',
         onSelect: () => openConnectionDialog('create')
       },
-      { type: 'action', label: 'Afsluiten', onSelect: () => void window.nvag.app.quit() }
+      { type: 'action', label: 'Quit', onSelect: () => void window.nvag.app.quit() }
     ]
   }
 
@@ -237,7 +237,7 @@ function App(): React.JSX.Element {
                 )}
                 <button
                   className="tab-action"
-                  title="Tab dupliceren"
+                  title="Duplicate tab"
                   onClick={(e) => {
                     e.stopPropagation()
                     duplicateTab(tab.id)
@@ -256,7 +256,7 @@ function App(): React.JSX.Element {
                 </button>
               </div>
             ))}
-            <button className="tab-add" onClick={() => addTab()} title="Nieuwe query-tab">
+            <button className="tab-add" onClick={() => addTab()} title="New query tab">
               +
             </button>
           </div>
@@ -266,7 +266,7 @@ function App(): React.JSX.Element {
               {/* Statusindicatie per tab: server · database · schema · gebruiker + env-kleurbadge */}
               <div className="tab-context">
                 <span className="tab-context-item">
-                  {activeConn ? activeConn.name : 'geen server'}
+                  {activeConn ? activeConn.name : 'no server'}
                 </span>
                 <span className="tab-context-sep">·</span>
                 <span className="tab-context-item">
@@ -276,7 +276,7 @@ function App(): React.JSX.Element {
                 <span className="tab-context-item">schema: {schema ?? '—'}</span>
                 <span className="tab-context-sep">·</span>
                 <span className="tab-context-item">
-                  gebruiker: {activeSession?.serverInfo.currentUser ?? activeConn?.username ?? '—'}
+                  user: {activeSession?.serverInfo.currentUser ?? activeConn?.username ?? '—'}
                 </span>
                 {activeConn && <EnvBadge environment={activeConn.environment} />}
                 {activeTab.dbSwitchError && (
@@ -296,9 +296,9 @@ function App(): React.JSX.Element {
                 <select
                   value={activeTab.connectionId ?? ''}
                   onChange={(e) => void switchTabConnection(activeTab.id, e.target.value || null)}
-                  title="Verbonden server van deze tab (kiezen opent de sessie)"
+                  title="Connected server of this tab (selecting opens the session)"
                 >
-                  <option value="">— geen verbinding —</option>
+                  <option value="">— no connection —</option>
                   {connections.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -310,7 +310,7 @@ function App(): React.JSX.Element {
                   value={activeTab.database ?? ''}
                   onChange={(e) => void setTabDatabase(activeTab.id, e.target.value)}
                   disabled={!activeTab.connectionId || !openSessions[activeTab.connectionId]}
-                  title="Database van deze tab"
+                  title="Database of this tab"
                 >
                   <option value="">— database —</option>
                   {databases.map((d) => (
@@ -323,36 +323,36 @@ function App(): React.JSX.Element {
                   <>
                     <span
                       className={`exec-status ${activeTab.cancelling ? 'cancelling' : 'running'}`}
-                      title={activeTab.cancelling ? 'Annuleren wordt verwerkt…' : 'Query wordt uitgevoerd'}
+                      title={activeTab.cancelling ? 'Cancelling…' : 'Query is running'}
                     >
-                      ◉ {activeTab.cancelling ? 'Annuleren…' : 'Bezig…'}
+                      ◉ {activeTab.cancelling ? 'Cancelling…' : 'Running…'}
                     </span>
                     <button
                       className="danger"
                       onClick={() => cancelQuery(activeTab.id)}
                       disabled={activeTab.cancelling}
-                      title={activeTab.cancelling ? 'Annuleren wordt verwerkt…' : 'Query annuleren'}
+                      title={activeTab.cancelling ? 'Cancelling…' : 'Cancel query'}
                     >
-                      ■ {activeTab.cancelling ? 'Annuleren…' : 'Annuleren'}
+                      ■ {activeTab.cancelling ? 'Cancelling…' : 'Cancel'}
                     </button>
-                    <span className="exec-timer" title="Verstreken tijd">
+                    <span className="exec-timer" title="Elapsed time">
                       ⏱ {formatElapsed(elapsedMs)}
                     </span>
                   </>
                 ) : (
                   <>
                     {activeTab.result?.cancelled && (
-                      <span className="exec-status cancelled" title="Query geannuleerd door gebruiker">
-                        ✕ Geannuleerd
+                      <span className="exec-status cancelled" title="Query cancelled by user">
+                        ✕ Cancelled
                       </span>
                     )}
                     <button
                       className="primary"
                       onClick={() => runQuery(activeTab.id)}
                       disabled={!activeTab.connectionId || !openSessions[activeTab.connectionId]}
-                      title="Uitvoeren (F5 / Ctrl+Enter)"
+                      title="Run (F5 / Ctrl+Enter)"
                     >
-                      ▶ Uitvoeren
+                      ▶ Run
                     </button>
                   </>
                 )}
@@ -367,17 +367,17 @@ function App(): React.JSX.Element {
                     }
                     e.target.value = ''
                   }}
-                  title="Recente query's"
+                  title="Recent queries"
                 >
-                  <option value="">🕘 Recente query's</option>
+                  <option value="">🕘 Recent queries</option>
                   {recentQueries.slice(0, 10).map((entry, i) => (
                     <option key={`${entry.at}-${i}`} value={i}>
                       {shortSql(entry.sql)} —{' '}
-                      {connections.find((c) => c.id === entry.connectionId)?.name ?? 'losse query'}
+                      {connections.find((c) => c.id === entry.connectionId)?.name ?? 'standalone query'}
                     </option>
                   ))}
                 </select>
-                <button onClick={() => openConnectionDialog('create')}>＋ Verbinding</button>
+                <button onClick={() => openConnectionDialog('create')}>＋ Connection</button>
                 {activeTab.connectionId && openSessions[activeTab.connectionId] && (
                   <>
                     <button
@@ -388,8 +388,8 @@ function App(): React.JSX.Element {
                     </button>
                     {transactionState[activeTab.connectionId] === 'active' ? (
                       <>
-                        <span className="tx-indicator active" title="Actieve transactie">
-                          ⟳ TX actief
+                        <span className="tx-indicator active" title="Active transaction">
+                          ⟳ TX active
                         </span>
                         <button onClick={() => void commitTransaction(activeTab.connectionId!)} title="COMMIT">
                           ✔ Commit
@@ -405,12 +405,12 @@ function App(): React.JSX.Element {
                     ) : (
                       <button
                         onClick={() => void beginTransaction(activeTab.connectionId!)}
-                        title="Transactie starten (F2-2, eis 23)"
+                        title="Start transaction (F2-2, req 23)"
                       >
-                        ⟳ Begin TX
+                        ⟳ Start TX
                       </button>
                     )}
-                    <button onClick={() => closeSession(activeTab.connectionId!)}>Verbinding sluiten</button>
+                    <button onClick={() => closeSession(activeTab.connectionId!)}>Close connection</button>
                   </>
                 )}
               </div>
@@ -437,7 +437,7 @@ function App(): React.JSX.Element {
                 )}
               </div>
               <div className="results-pane">
-                <div className="results-tabs" role="tablist" aria-label="Resultaatpaneel">
+                <div className="results-tabs" role="tablist" aria-label="Results pane">
                   <button
                     type="button"
                     role="tab"
@@ -445,7 +445,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'results' ? 'active' : ''}`}
                     onClick={() => setBottomTab('results')}
                   >
-                    Resultaten
+                    Results
                   </button>
                   <button
                     type="button"
@@ -454,7 +454,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'messages' ? 'active' : ''}`}
                     onClick={() => setBottomTab('messages')}
                   >
-                    Berichten
+                    Messages
                   </button>
                   <button
                     type="button"
@@ -463,7 +463,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'history' ? 'active' : ''}`}
                     onClick={() => setBottomTab('history')}
                   >
-                    Geschiedenis
+                    History
                   </button>
                   <button
                     type="button"
@@ -472,7 +472,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'search' ? 'active' : ''}`}
                     onClick={() => setBottomTab('search')}
                   >
-                    Zoeken
+                    Search
                   </button>
                   <button
                     type="button"
@@ -517,7 +517,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'performance' ? 'active' : ''}`}
                     onClick={() => setBottomTab('performance')}
                   >
-                    Prestaties
+                    Performance
                   </button>
                   <button
                     type="button"
@@ -535,7 +535,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'compare' ? 'active' : ''}`}
                     onClick={() => setBottomTab('compare')}
                   >
-                    Vergelijk
+                    Compare
                   </button>
                   <button
                     type="button"
@@ -544,7 +544,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'dependencies' ? 'active' : ''}`}
                     onClick={() => setBottomTab('dependencies')}
                   >
-                    Afhankelijkh.
+                    Dependencies
                   </button>
                   <button
                     type="button"
@@ -553,7 +553,7 @@ function App(): React.JSX.Element {
                     className={`results-tab ${bottomTab === 'erd' ? 'active' : ''}`}
                     onClick={() => setBottomTab('erd')}
                   >
-                    ER-diagram
+                    ER diagram
                   </button>
                   <button
                     type="button"

@@ -20,14 +20,14 @@ type SectionId =
   | 'definitie'
 
 const SECTIONS: { id: SectionId; label: string }[] = [
-  { id: 'algemeen', label: 'Algemeen' },
-  { id: 'kolommen', label: 'Kolommen' },
-  { id: 'indexen', label: 'Indexen' },
+  { id: 'algemeen', label: 'General' },
+  { id: 'kolommen', label: 'Columns' },
+  { id: 'indexen', label: 'Indexes' },
   { id: 'foreignkeys', label: 'FKs' },
   { id: 'constraints', label: 'Constraints' },
   { id: 'triggers', label: 'Triggers' },
-  { id: 'afhankelijkheden', label: 'Afhankelijkheden' },
-  { id: 'definitie', label: 'Definitie' }
+  { id: 'afhankelijkheden', label: 'Dependencies' },
+  { id: 'definitie', label: 'Definition' }
 ]
 
 export interface ObjectViewerProps {
@@ -88,7 +88,7 @@ export function ObjectViewer({
     selection.kind === 'view' ? ['CREATE', 'SELECT'] : ['CREATE', 'SELECT', 'INSERT', 'UPDATE', 'DELETE']
 
   const metaSection = (): React.JSX.Element => {
-    if (!meta) return <div className="tree-details-loading">Geen metadata beschikbaar.</div>
+    if (!meta) return <div className="tree-details-loading">No metadata available.</div>
 
     switch (section) {
       case 'algemeen':
@@ -97,7 +97,7 @@ export function ObjectViewer({
             <tbody>
               <tr>
                 <th>Type</th>
-                <td>{selection.kind === 'view' ? 'View' : 'Tabel'}</td>
+                <td>{selection.kind === 'view' ? 'View' : 'Table'}</td>
               </tr>
               <tr>
                 <th>Database</th>
@@ -108,15 +108,15 @@ export function ObjectViewer({
                 <td>{selection.schema ?? '—'}</td>
               </tr>
               <tr>
-                <th>Rijen</th>
+                <th>Rows</th>
                 <td>{meta.rowCount ?? '—'}</td>
               </tr>
               <tr>
-                <th>Kolommen</th>
+                <th>Columns</th>
                 <td>{meta.columns.length}</td>
               </tr>
               <tr>
-                <th>Indexen</th>
+                <th>Indexes</th>
                 <td>{meta.indexes.length}</td>
               </tr>
               <tr>
@@ -135,7 +135,7 @@ export function ObjectViewer({
           <table className="details-table">
             <thead>
               <tr>
-                <th>Kolom</th>
+                <th>Column</th>
                 <th>Type</th>
                 <th>Nullable</th>
                 <th>Default</th>
@@ -148,10 +148,10 @@ export function ObjectViewer({
                     {c.name}
                     {c.isPrimaryKey ? ' 🔑' : ''}
                     {c.isIdentity ? ' (identity)' : ''}
-                    {c.isComputed ? ' (berekend)' : ''}
+                    {c.isComputed ? ' (computed)' : ''}
                   </td>
                   <td>{c.dataType}</td>
-                  <td>{c.nullable ? 'ja' : 'nee'}</td>
+                  <td>{c.nullable ? 'yes' : 'no'}</td>
                   <td className={c.defaultValue == null ? 'cell-null' : ''}>
                     {c.defaultValue == null ? 'NULL' : String(c.defaultValue)}
                   </td>
@@ -165,9 +165,9 @@ export function ObjectViewer({
           <table className="details-table">
             <thead>
               <tr>
-                <th>Naam</th>
-                <th>Kolommen</th>
-                <th>Uniek</th>
+                <th>Name</th>
+                <th>Columns</th>
+                <th>Unique</th>
                 <th>PK</th>
               </tr>
             </thead>
@@ -176,8 +176,8 @@ export function ObjectViewer({
                 <tr key={i.name}>
                   <td className="detail-col-name">{i.name}</td>
                   <td>{i.columns.join(', ')}</td>
-                  <td>{i.isUnique ? 'ja' : 'nee'}</td>
-                  <td>{i.isPrimaryKey ? 'ja' : 'nee'}</td>
+                  <td>{i.isUnique ? 'yes' : 'no'}</td>
+                  <td>{i.isPrimaryKey ? 'yes' : 'no'}</td>
                 </tr>
               ))}
             </tbody>
@@ -188,9 +188,9 @@ export function ObjectViewer({
           <table className="details-table">
             <thead>
               <tr>
-                <th>Naam</th>
-                <th>Kolommen</th>
-                <th>Referentie</th>
+                <th>Name</th>
+                <th>Columns</th>
+                <th>Reference</th>
                 <th>On Delete</th>
                 <th>On Update</th>
               </tr>
@@ -216,9 +216,9 @@ export function ObjectViewer({
           <table className="details-table">
             <thead>
               <tr>
-                <th>Naam</th>
+                <th>Name</th>
                 <th>Type</th>
-                <th>Definitie</th>
+                <th>Definition</th>
               </tr>
             </thead>
             <tbody>
@@ -234,7 +234,7 @@ export function ObjectViewer({
         )
       case 'triggers':
         return meta.triggers.length === 0 ? (
-          <div className="tree-details-loading">Geen triggers.</div>
+          <div className="tree-details-loading">No triggers.</div>
         ) : (
           <ul className="object-viewer-list">
             {meta.triggers.map((t) => (
@@ -244,7 +244,7 @@ export function ObjectViewer({
         )
       case 'afhankelijkheden':
         return meta.dependencies.length === 0 ? (
-          <div className="tree-details-loading">Geen afhankelijkheden.</div>
+          <div className="tree-details-loading">No dependencies.</div>
         ) : (
           <ul className="object-viewer-list">
             {meta.dependencies.map((d, i) => (
@@ -260,7 +260,7 @@ export function ObjectViewer({
         return definition ? (
           <pre className="object-viewer-definition">{definition}</pre>
         ) : (
-          <div className="tree-details-loading">Geen definitie beschikbaar.</div>
+          <div className="tree-details-loading">No definition available.</div>
         )
     }
   }
@@ -269,19 +269,19 @@ export function ObjectViewer({
     <div className="object-viewer" data-testid="object-viewer">
       <div className="tree-details-header">
         <span className="table-detail-title">
-          {selection.kind === 'view' ? 'View' : 'Tabel'}: {selection.name}
+          {selection.kind === 'view' ? 'View' : 'Table'}: {selection.name}
         </span>
-        <button className="icon-btn" title="Sluiten" onClick={onClose}>
+        <button className="icon-btn" title="Close" onClick={onClose}>
           ✕
         </button>
       </div>
 
-      <div className="object-viewer-scriptbar" aria-label="Script als">
+      <div className="object-viewer-scriptbar" aria-label="Script as">
         {scriptKinds.map((kind) => (
           <button
             key={kind}
             className="script-btn"
-            title={`Script als ${kind} → nieuwe querytab`}
+            title={`Script as ${kind} → new query tab`}
             onClick={() => onScript(obj, kind)}
           >
             {kind}
@@ -289,7 +289,7 @@ export function ObjectViewer({
         ))}
       </div>
 
-      <div className="object-viewer-tabs" role="tablist" aria-label="Objecteigenschappen">
+      <div className="object-viewer-tabs" role="tablist" aria-label="Object properties">
         {SECTIONS.map((s) => (
           <button
             key={s.id}
@@ -306,7 +306,7 @@ export function ObjectViewer({
 
       <div className="tree-details-body">
         {error && <div className="tree-details-error">⚠️ {error}</div>}
-        {loading ? <div className="tree-details-loading">Bezig met laden…</div> : metaSection()}
+        {loading ? <div className="tree-details-loading">Loading…</div> : metaSection()}
       </div>
     </div>
   )

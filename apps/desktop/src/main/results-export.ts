@@ -110,12 +110,12 @@ export async function buildXlsxBuffer(
   rows: unknown[][]
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet('Resultaat', { views: [{ state: 'frozen', ySplit: 1 }] })
+  const ws = wb.addWorksheet('Result', { views: [{ state: 'frozen', ySplit: 1 }] })
 
   ws.columns = columns.map((c, i) => ({
-    header: c.name || `kolom ${i + 1}`,
+    header: c.name || `column ${i + 1}`,
     key: `c${i}`,
-    width: Math.min(40, Math.max(10, (c.name || `kolom ${i + 1}`).length + 2))
+    width: Math.min(40, Math.max(10, (c.name || `column ${i + 1}`).length + 2))
   }))
 
   // Header vet (zichtbaar onderscheid t.o.v. data).
@@ -145,7 +145,7 @@ function showSaveDialog(
 ): Promise<{ canceled: boolean; filePath?: string }> {
   const win = BrowserWindow.fromWebContents(sender)
   const options = {
-    title: 'Resultaten exporteren',
+    title: 'Export results',
     defaultPath: req.defaultFileName,
     filters: [{ name: req.filterName, extensions: [req.extension] }]
   }
@@ -160,11 +160,11 @@ function showSaveDialog(
  * - xlsx + clipboard→ niet ondersteund (Excel plakt geen ruwe xlsx-bytes)
  */
 export async function exportResults(req: ExportRequest, sender: WebContents): Promise<ExportResult> {
-  const fileName = req.fileName || 'resultaat'
+  const fileName = req.fileName || 'result'
   const rowCount = req.rows.length
 
   if (req.format === 'xlsx' && req.target === 'clipboard') {
-    return { error: 'XLSX naar klembord wordt niet ondersteund; exporteer naar bestand of gebruik CSV.' }
+    return { error: 'XLSX to clipboard is not supported; export to a file or use CSV.' }
   }
 
   try {
@@ -179,7 +179,7 @@ export async function exportResults(req: ExportRequest, sender: WebContents): Pr
     const extension = isCsv ? 'csv' : 'xlsx'
     const result = await showSaveDialog(sender, {
       defaultFileName: `${fileName}.${extension}`,
-      filterName: isCsv ? 'CSV-bestand' : 'Excel-werkmap',
+      filterName: isCsv ? 'CSV file' : 'Excel workbook',
       extension
     })
     if (result.canceled || !result.filePath) return { canceled: true }
@@ -211,9 +211,9 @@ export async function saveCsv(
 ): Promise<{ canceled: boolean; filePath?: string }> {
   const win = BrowserWindow.fromWebContents(sender)
   const options = {
-    title: 'Resultaten opslaan als CSV',
+    title: 'Save results as CSV',
     defaultPath: req.defaultFileName,
-    filters: [{ name: 'CSV-bestand', extensions: ['csv'] }]
+    filters: [{ name: 'CSV file', extensions: ['csv'] }]
   }
   const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
   if (result.canceled || !result.filePath) return { canceled: true }

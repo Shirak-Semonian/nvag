@@ -188,10 +188,10 @@ describe('F2-1 tableData service', () => {
 
     await expect(
       getTableRows('conn-hang', config.host, 'main', 'users', 10, 60)
-    ).rejects.toThrow(/langer dan 1 seconde/)
+    ).rejects.toThrow(/longer than 1 second/)
     // SAL-33-infra: provider.cancel is aangeroepen voor de afgebroken query.
     expect(cancelExecutionIds).toHaveLength(1)
-    expect(tableQueryTimeoutMessage(60_000)).toContain('60 seconden')
+    expect(tableQueryTimeoutMessage(60_000)).toContain('60 seconds')
   })
 
   it('laat metadata-fouten gewoon door (geen timeout-vermomming, SAL-42)', async () => {

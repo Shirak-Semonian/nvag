@@ -66,8 +66,8 @@ export class SnippetStore {
     const db = this.requireDb()
     const folder = entry.folder.trim() || DEFAULT_FOLDER
     const title = entry.title.trim()
-    if (!title) throw new Error('Geef een titel op voor de snippet.')
-    if (!entry.sql.trim()) throw new Error('De snippet is leeg.')
+    if (!title) throw new Error('Provide a title for the snippet.')
+    if (!entry.sql.trim()) throw new Error('The snippet is empty.')
     const updatedAt = new Date().toISOString()
     const result = db
       .prepare('INSERT INTO snippets (folder, title, sql, updated_at) VALUES (?, ?, ?, ?)')

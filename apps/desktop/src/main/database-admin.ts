@@ -47,7 +47,7 @@ import { connectionStore } from './ipc-bootstrap'
 function requireSession(connectionId: string) {
   const session = sessionManager.getByConnectionId(connectionId)
   if (!session) {
-    throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+    throw new Error('No active session for this connection. Open the connection first.')
   }
   return { session, provider: registry.get(session.providerId) }
 }
@@ -95,7 +95,7 @@ async function resolveSession(connectionId: string, database?: string | null): P
   }
   const source = sessionManager.configProvider?.(connectionId)
   if (!source) {
-    throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+    throw new Error('Connection not found. Save the connection first in the Connection Manager.')
   }
   // Eigen connectionId (… #dbctx) zodat de provider-sessie-administratie die
   // op connectionId keyed (sqlserver e.d.) de oorspronkelijke sessie niet
@@ -183,7 +183,7 @@ export async function dropDatabase(connectionId: string, name: string, confirmed
 export async function createSchema(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsSchemas && provider.capabilities.dialect !== 'mysql') {
-    throw new Error('Deze provider ondersteunt geen aparte schemas.')
+    throw new Error('This provider does not support separate schemas.')
   }
   const sql = buildCreateSchema(provider.capabilities.dialect, name)
   return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
@@ -192,7 +192,7 @@ export async function createSchema(connectionId: string, database: string, name:
 export async function dropSchema(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsSchemas) {
-    throw new Error('Deze provider ondersteunt geen aparte schemas.')
+    throw new Error('This provider does not support separate schemas.')
   }
   // MySQL: database = schema.
   const sql =
@@ -212,7 +212,7 @@ export async function createTable(
 ) {
   const { provider } = requireSession(connectionId)
   if (columns.length === 0) {
-    throw new Error('Geef minimaal één kolom op.')
+    throw new Error('Specify at least one column.')
   }
   const sql = buildCreateTableFromColumns(
     provider.capabilities.dialect,
@@ -416,7 +416,7 @@ export async function listUsers(connectionId: string): Promise<AdminUserInfo[]> 
 export async function createUser(connectionId: string, name: string, password?: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsUsersAndRoles) {
-    throw new Error('Deze provider ondersteunt geen users/roles.')
+    throw new Error('This provider does not support users/roles.')
   }
   const dialect = provider.capabilities.dialect
   if (dialect === 'postgres') {
@@ -424,13 +424,13 @@ export async function createUser(connectionId: string, name: string, password?: 
     const sql = `CREATE USER ${quoteIdentifier('postgres', name)}${pwd};`
     return runDdl(connectionId, sql, 'admin.ddl', confirmed)
   }
-  throw new Error(`Users aanmaken is niet geïmplementeerd voor dialect ${dialect}.`)
+  throw new Error(`Creating users is not implemented for dialect ${dialect}.`)
 }
 
 export async function dropUser(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsUsersAndRoles) {
-    throw new Error('Deze provider ondersteunt geen users/roles.')
+    throw new Error('This provider does not support users/roles.')
   }
   const dialect = provider.capabilities.dialect
   if (dialect === 'postgres' || dialect === 'tsql') {
@@ -440,20 +440,20 @@ export async function dropUser(connectionId: string, database: string, name: str
     // niets uit, maar een gelijke doeldatabase is een no-op).
     return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
   }
-  throw new Error(`Users verwijderen is niet geïmplementeerd voor dialect ${dialect}.`)
+  throw new Error(`Dropping users is not implemented for dialect ${dialect}.`)
 }
 
 export async function dropRole(connectionId: string, database: string, name: string, confirmed?: boolean) {
   const { provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsUsersAndRoles) {
-    throw new Error('Deze provider ondersteunt geen users/roles.')
+    throw new Error('This provider does not support users/roles.')
   }
   const dialect = provider.capabilities.dialect
   if (dialect === 'postgres' || dialect === 'tsql') {
     const sql = buildDrop(dialect, 'ROLE', name)
     return runDdl(connectionId, sql, 'admin.ddl', confirmed, database)
   }
-  throw new Error(`Roles verwijderen is niet geïmplementeerd voor dialect ${dialect}.`)
+  throw new Error(`Dropping roles is not implemented for dialect ${dialect}.`)
 }
 
 function quoteLiteralPg(value: string): string {
@@ -477,7 +477,7 @@ export async function backupDatabase(
 ): Promise<BackupResult> {
   const { session, provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsBackupRestore || !provider.backupRestore?.backupDatabase) {
-    throw new Error('Deze provider ondersteunt geen backup/restore.')
+    throw new Error('This provider does not support backup/restore.')
   }
   const conn = connectionStore.get(connectionId)
   if (conn && !confirmed) {
@@ -508,7 +508,7 @@ export async function restoreDatabase(
 ): Promise<RestoreResult> {
   const { session, provider } = requireSession(connectionId)
   if (!provider.capabilities.supportsBackupRestore || !provider.backupRestore?.restoreDatabase) {
-    throw new Error('Deze provider ondersteunt geen backup/restore.')
+    throw new Error('This provider does not support backup/restore.')
   }
   const conn = connectionStore.get(connectionId)
   if (conn && !confirmed) {
@@ -591,7 +591,7 @@ function compatOptions(major: number, currentLevel: number): { value: string; la
   const upper = Math.max(maxLevel, currentLevel)
   const list = COMPAT_OPTIONS.filter((o) => o.level <= upper)
   if (!list.some((o) => o.level === currentLevel)) {
-    list.push({ level: currentLevel, label: `Onbekend (${currentLevel})` })
+    list.push({ level: currentLevel, label: `Unknown (${currentLevel})` })
   }
   return list.map((o) => ({ value: String(o.level), label: o.label }))
 }
@@ -604,8 +604,8 @@ function formatBytes(bytes: number): string {
 
 /** Bool-waarde → Nederlands 'Ja'/'Nee' (— voor null/onbekend). */
 function boolJa(value: unknown): string {
-  if (value === true) return 'Ja'
-  if (value === false) return 'Nee'
+  if (value === true) return 'Yes'
+  if (value === false) return 'No'
   return '—'
 }
 
@@ -655,7 +655,7 @@ async function getTsqlDatabaseProperties(
   )
   const row = dbRows[0]?.values
   if (!row) {
-    throw new Error(`Database '${database}' bestaat niet of is niet bereikbaar.`)
+    throw new Error(`Database '${database}' does not exist or is not reachable.`)
   }
 
   const serverRows = await collectRows(
@@ -677,15 +677,15 @@ async function getTsqlDatabaseProperties(
   const properties: DatabasePropertiesResult['properties'] = [
     {
       key: 'name',
-      label: 'Naam',
+      label: 'Name',
       kind: 'text',
       value: database,
       editable: true,
       renamesDatabase: true,
-      note: 'Naamswijziging wordt doorgevoerd met ALTER DATABASE … MODIFY NAME.'
+      note: 'The rename is applied using ALTER DATABASE … MODIFY NAME.'
     },
     { key: 'state', label: 'Status', kind: 'info', value: cellStr(row[7]), editable: false, section: 'algemeen' },
-    { key: 'owner', label: 'Eigenaar', kind: 'info', value: cellStr(row[5]), editable: false, section: 'algemeen' },
+    { key: 'owner', label: 'Owner', kind: 'info', value: cellStr(row[5]), editable: false, section: 'algemeen' },
     { key: 'collation', label: 'Collation', kind: 'info', value: cellStr(row[1]), editable: false, section: 'algemeen' },
     {
       key: 'compatibility_level',
@@ -702,9 +702,9 @@ async function getTsqlDatabaseProperties(
       value: recoveryModel,
       editable: true,
       options: [
-        { value: 'FULL', label: 'Volledig (FULL)' },
-        { value: 'SIMPLE', label: 'Eenvoudig (SIMPLE)' },
-        { value: 'BULK_LOGGED', label: 'Bulk-logboek (BULK_LOGGED)' }
+        { value: 'FULL', label: 'Full (FULL)' },
+        { value: 'SIMPLE', label: 'Simple (SIMPLE)' },
+        { value: 'BULK_LOGGED', label: 'Bulk-logged (BULK_LOGGED)' }
       ]
     },
     {
@@ -714,39 +714,39 @@ async function getTsqlDatabaseProperties(
       value: containment,
       editable: containedAuth === 1,
       options: [
-        { value: 'NONE', label: 'Geen (NONE)' },
-        { value: 'PARTIAL', label: 'Gedeeltelijk (PARTIAL)' }
+        { value: 'NONE', label: 'None (NONE)' },
+        { value: 'PARTIAL', label: 'Partial (PARTIAL)' }
       ],
       ...(containedAuth !== 1
-        ? { note: 'Contained database authentication is uitgeschakeld op de server.' }
+        ? { note: 'Contained database authentication is disabled on the server.' }
         : {})
     },
     {
       key: 'read_only',
-      label: 'Toegangsmodus',
+      label: 'Access mode',
       kind: 'select',
       value: isReadOnly ? 'READ_ONLY' : 'READ_WRITE',
       editable: true,
       options: [
-        { value: 'READ_WRITE', label: 'Lezen/schrijven (READ_WRITE)' },
-        { value: 'READ_ONLY', label: 'Alleen-lezen (READ_ONLY)' }
+        { value: 'READ_WRITE', label: 'Read/write (READ_WRITE)' },
+        { value: 'READ_ONLY', label: 'Read-only (READ_ONLY)' }
       ]
     },
-    { key: 'create_date', label: 'Aangemaakt op', kind: 'info', value: cellStr(row[6]), editable: false, section: 'algemeen' },
+    { key: 'create_date', label: 'Created on', kind: 'info', value: cellStr(row[6]), editable: false, section: 'algemeen' },
     {
       key: 'size',
-      label: 'Grootte',
+      label: 'Size',
       kind: 'info',
       value: row[8] == null ? '—' : formatBytes(Number(row[8])),
       editable: false,
       section: 'algemeen'
     },
     // Opties (read-only; SSMS-achtig overzicht van database-opties).
-    { key: 'user_access', label: 'Gebruikerstoegang', kind: 'info', value: cellStr(row[9]), editable: false, section: 'opties' },
+    { key: 'user_access', label: 'User access', kind: 'info', value: cellStr(row[9]), editable: false, section: 'opties' },
     { key: 'auto_close', label: 'Auto close', kind: 'info', value: boolJa(row[10]), editable: false, section: 'opties' },
     { key: 'auto_shrink', label: 'Auto shrink', kind: 'info', value: boolJa(row[11]), editable: false, section: 'opties' },
-    { key: 'page_verify', label: 'Paginaverificatie', kind: 'info', value: cellStr(row[13]), editable: false, section: 'opties' },
-    { key: 'encrypted', label: 'Versleuteld', kind: 'info', value: boolJa(row[14]), editable: false, section: 'opties' },
+    { key: 'page_verify', label: 'Page verification', kind: 'info', value: cellStr(row[13]), editable: false, section: 'opties' },
+    { key: 'encrypted', label: 'Encrypted', kind: 'info', value: boolJa(row[14]), editable: false, section: 'opties' },
     { key: 'trustworthy', label: 'Trustworthy', kind: 'info', value: boolJa(row[15]), editable: false, section: 'opties' }
   ]
 
@@ -810,8 +810,8 @@ export async function getDatabaseProperties(
     supportsAlter: false,
     message:
       dialect === 'sqlite'
-        ? 'SQLite-databases zijn bestanden; ALTER DATABASE wordt niet ondersteund.'
-        : `Het wijzigen van database-eigenschappen wordt voor ${provider.displayName} nog niet ondersteund.`,
+        ? 'SQLite databases are files; ALTER DATABASE is not supported.'
+        : `Changing database properties is not yet supported for ${provider.displayName}.`,
     properties: []
   }
 }
@@ -838,7 +838,7 @@ export async function alterDatabase(
   const { session, provider } = requireSession(connectionId)
   const statements = buildAlterDatabaseStatements(provider.capabilities.dialect, database, changes)
   if (statements.length === 0) {
-    throw new Error('Geen eigenschappen gewijzigd.')
+    throw new Error('No properties changed.')
   }
   const sql = statements.join('\n')
 

@@ -44,7 +44,7 @@ export interface DataDiff {
 function requireSession(connectionId: string) {
   const session = sessionManager.getByConnectionId(connectionId)
   if (!session) {
-    throw new Error(`Geen actieve sessie voor verbinding ${connectionId}. Open eerst de verbinding.`)
+    throw new Error(`No active session for connection ${connectionId}. Open the connection first.`)
   }
   return { session, provider: registry.get(session.providerId) }
 }
@@ -178,5 +178,5 @@ export async function buildDeployScript(
     }
   }
 
-  return stmts.length > 0 ? stmts.join('\n\n') : '-- Geen wijzigingen gevonden.'
+  return stmts.length > 0 ? stmts.join('\n\n') : '-- No changes found.'
 }

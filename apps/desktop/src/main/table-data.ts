@@ -29,7 +29,7 @@ import { sessionManager } from './session-manager'
 function requireSession(connectionId: string): { session: DbSession; provider: DatabaseProvider } {
   const session = sessionManager.getByConnectionId(connectionId)
   if (!session) {
-    throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+    throw new Error('No active session for this connection. Open the connection first.')
   }
   return { session, provider: registry.get(session.providerId) }
 }
@@ -44,7 +44,7 @@ export const DEFAULT_TABLE_QUERY_TIMEOUT_MS = 30_000
 /** Fouttekst bij een tabeldata-timeout (SAL-42; ook in tests gebruikt). */
 export function tableQueryTimeoutMessage(timeoutMs: number): string {
   const seconds = Math.max(1, Math.round(timeoutMs / 1000))
-  return `Tabeldata-query duurde langer dan ${seconds} seconde${seconds === 1 ? '' : 'n'} en is gestopt. Controleer de verbinding en probeer opnieuw.`
+  return `Table data query took longer than ${seconds} second${seconds === 1 ? '' : 's'} and was stopped. Check the connection and try again.`
 }
 
 /** SELECT Top N voor een tabel (F2-1). */
@@ -153,7 +153,7 @@ export async function editTableRow(req: TableEditRequest): Promise<
       break
     default: {
       const exhaustive: never = req.kind
-      throw new Error(`Onbekende bewerkingssoort: ${String(exhaustive)}`)
+      throw new Error(`Unknown edit type: ${String(exhaustive)}`)
     }
   }
 

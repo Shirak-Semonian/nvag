@@ -31,7 +31,7 @@ export function ConfirmDialog({
   message,
   sql,
   reasons,
-  confirmLabel = 'Verwijderen',
+  confirmLabel = 'Delete',
   busy = false,
   error,
   onConfirm,
@@ -51,7 +51,7 @@ export function ConfirmDialog({
       <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()} role="alertdialog" aria-label={title}>
         <div className="modal-header">
           <span>⚠️ {title}</span>
-          <button type="button" className="icon-btn" onClick={onCancel} disabled={busy} aria-label="Sluiten">
+          <button type="button" className="icon-btn" onClick={onCancel} disabled={busy} aria-label="Close">
             ✕
           </button>
         </div>
@@ -68,7 +68,7 @@ export function ConfirmDialog({
           )}
           {sql && (
             <>
-              <p className="confirm-sql-label">Uit te voeren SQL:</p>
+              <p className="confirm-sql-label">SQL to execute:</p>
               <pre className="guard-sql">{sql}</pre>
             </>
           )}
@@ -76,10 +76,10 @@ export function ConfirmDialog({
         </div>
         <div className="modal-footer">
           <button type="button" onClick={onCancel} disabled={busy}>
-            Annuleren
+            Cancel
           </button>
           <button type="button" className="danger" onClick={onConfirm} disabled={busy}>
-            {busy ? 'Bezig…' : confirmLabel}
+            {busy ? 'Working…' : confirmLabel}
           </button>
         </div>
       </div>

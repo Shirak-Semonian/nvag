@@ -69,7 +69,7 @@ export class SessionManager {
     }
     const source = this.configProvider?.(connectionId)
     if (!source) {
-      throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+      throw new Error('Connection not found. Save the connection first in the Connection Manager.')
     }
     return this.open(source.config, source.secret)
   }
@@ -83,11 +83,11 @@ export class SessionManager {
   async switchDatabase(connectionId: string, database: string): Promise<OpenSessionResult> {
     const session = this.getByConnectionId(connectionId)
     if (!session) {
-      throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+      throw new Error('No active session for this connection. Open the connection first.')
     }
     const sessionId = this.byConnectionId.get(connectionId)
     if (!sessionId) {
-      throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+      throw new Error('No active session for this connection. Open the connection first.')
     }
     const provider = registry.get(session.providerId)
     const dialect = provider.capabilities.dialect
@@ -108,7 +108,7 @@ export class SessionManager {
       // sluit de sessie en heropen met de nieuwe database.
       const source = this.configProvider?.(connectionId)
       if (!source) {
-        throw new Error('Verbinding niet gevonden. Bewaar de verbinding eerst in de Connection Manager.')
+        throw new Error('Connection not found. Save the connection first in the Connection Manager.')
       }
       await this.close(sessionId)
       return this.open({ ...source.config, database }, source.secret)

@@ -41,10 +41,10 @@ describe('QueryGuardDialog (F1-8)', () => {
     })
     render(<QueryGuardDialog />)
     expect(screen.getByText('PROD')).toBeTruthy()
-    expect(screen.getByText('Productie: altijd bevestigen')).toBeTruthy()
+    expect(screen.getByText('Production: always confirm')).toBeTruthy()
     expect(screen.getByText('DELETE/UPDATE zonder WHERE')).toBeTruthy()
     expect(screen.getByText('DELETE FROM klanten;')).toBeTruthy()
-    expect(screen.getByText('Toch uitvoeren')).toBeTruthy()
+    expect(screen.getByText('Run anyway')).toBeTruthy()
   })
 
   it('annuleert de geblokkeerde query via de Annuleren-knop', () => {
@@ -57,7 +57,7 @@ describe('QueryGuardDialog (F1-8)', () => {
       }
     })
     render(<QueryGuardDialog />)
-    fireEvent.click(screen.getByText('Annuleren'))
+    fireEvent.click(screen.getByText('Cancel'))
     expect(useAppStore.getState().pendingGuard).toBeNull()
   })
 
@@ -99,7 +99,7 @@ describe('QueryGuardDialog (F1-8)', () => {
       }
     })
     render(<QueryGuardDialog />)
-    fireEvent.click(screen.getByText('Toch uitvoeren'))
+    fireEvent.click(screen.getByText('Run anyway'))
     // confirmGuardQuery is async; wacht op de run-aanvraag met confirmed: true.
     await waitFor(() => {
       expect(mock.runRequests.length).toBeGreaterThanOrEqual(1)

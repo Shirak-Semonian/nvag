@@ -34,13 +34,13 @@ function useEscape(onClose: () => void): void {
 function sectionLabel(section: string | undefined): string {
   switch (section) {
     case 'algemeen':
-      return 'Algemeen'
+      return 'General'
     case 'opties':
-      return 'Opties'
+      return 'Options'
     case 'bestanden':
-      return 'Bestanden'
+      return 'Files'
     default:
-      return 'Overige'
+      return 'Other'
   }
 }
 
@@ -112,10 +112,10 @@ export function DatabasePropertiesDialog({
   if (loading || error || result === null) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
-        <div className="modal properties-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Database-eigenschappen">
+        <div className="modal properties-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Database properties">
           <div className="modal-header">
-            <span>Database-eigenschappen: {dbName}</span>
-            <button type="button" className="icon-btn" onClick={onClose} aria-label="Sluiten">
+            <span>Database properties: {dbName}</span>
+            <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
               ✕
             </button>
           </div>
@@ -123,7 +123,7 @@ export function DatabasePropertiesDialog({
             <table className="details-table">
               <tbody>
                 <tr>
-                  <th>Verbinding</th>
+                  <th>Connection</th>
                   <td>{conn?.name ?? state.connId}</td>
                 </tr>
                 <tr>
@@ -131,17 +131,17 @@ export function DatabasePropertiesDialog({
                   <td>{conn?.providerId ?? '—'}</td>
                 </tr>
                 <tr>
-                  <th>Omgeving</th>
+                  <th>Environment</th>
                   <td>{conn?.environment ?? '—'}</td>
                 </tr>
               </tbody>
             </table>
-            {loading && <div className="tree-details-loading">Eigenschappen laden…</div>}
-            {error && <div className="confirm-error">Eigenschappen niet beschikbaar: {error}</div>}
+            {loading && <div className="tree-details-loading">Loading properties…</div>}
+            {error && <div className="confirm-error">Properties not available: {error}</div>}
           </div>
           <div className="modal-footer">
             <button type="button" className="primary" onClick={onClose}>
-              Sluiten
+              Close
             </button>
           </div>
         </div>
@@ -166,7 +166,7 @@ export function DatabasePropertiesDialog({
 
   /** Na een geslaagde ALTER: melding, refresh, boom/tab-context bijwerken. */
   const applyAlterSuccess = async (alterResult: AlterDatabaseResult): Promise<void> => {
-    const lines = ['✅ Eigenschappen gewijzigd.']
+    const lines = ['✅ Properties changed.']
     if (alterResult.warning && alterResult.warning.length > 0) {
       lines.push(`⚠ ${alterResult.warning.join(', ')}`)
     }
@@ -228,10 +228,10 @@ export function DatabasePropertiesDialog({
 
   return (
     <div className="modal-backdrop" onClick={busy ? undefined : onClose}>
-      <div className="modal properties-modal dbprops-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Database-eigenschappen">
+      <div className="modal properties-modal dbprops-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Database properties">
         <div className="modal-header">
-          <span>Database-eigenschappen: {dbName}</span>
-          <button type="button" className="icon-btn" onClick={onClose} disabled={busy} aria-label="Sluiten">
+          <span>Database properties: {dbName}</span>
+          <button type="button" className="icon-btn" onClick={onClose} disabled={busy} aria-label="Close">
             ✕
           </button>
         </div>
@@ -239,7 +239,7 @@ export function DatabasePropertiesDialog({
           <table className="details-table">
             <tbody>
               <tr>
-                <th>Verbinding</th>
+                <th>Connection</th>
                 <td>{conn?.name ?? state.connId}</td>
               </tr>
               <tr>
@@ -247,7 +247,7 @@ export function DatabasePropertiesDialog({
                 <td>{conn?.providerId ?? '—'}</td>
               </tr>
               <tr>
-                <th>Omgeving</th>
+                <th>Environment</th>
                 <td>{conn?.environment ?? '—'}</td>
               </tr>
               <tr>
@@ -265,7 +265,7 @@ export function DatabasePropertiesDialog({
 
           {result.supportsAlter && editableProps.length > 0 && (
             <div className="dbprop-fields">
-              <p className="confirm-sql-label">Wijzigbare eigenschappen</p>
+              <p className="confirm-sql-label">Editable properties</p>
               {editableProps.map((p) =>
                 p.kind === 'select' ? (
                   <label key={p.key} className="dbprop-field">
@@ -323,16 +323,16 @@ export function DatabasePropertiesDialog({
 
           {result.files && result.files.length > 0 && (
             <div className="dbprop-section">
-              <p className="confirm-sql-label">Bestanden</p>
+              <p className="confirm-sql-label">Files</p>
               <table className="details-table dbprop-files-table">
                 <thead>
                   <tr>
-                    <th>Naam</th>
+                    <th>Name</th>
                     <th>Type</th>
-                    <th>Pad</th>
-                    <th>Grootte</th>
-                    <th>Max. grootte</th>
-                    <th>Groei</th>
+                    <th>Path</th>
+                    <th>Size</th>
+                    <th>Max size</th>
+                    <th>Growth</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -342,7 +342,7 @@ export function DatabasePropertiesDialog({
                       <td>{f.type}</td>
                       <td className="dbprop-file-path">{f.physicalName}</td>
                       <td>{fmtMb(f.sizeMb)}</td>
-                      <td>{f.maxSizeMb == null ? 'Onbeperkt' : fmtMb(f.maxSizeMb)}</td>
+                      <td>{f.maxSizeMb == null ? 'Unlimited' : fmtMb(f.maxSizeMb)}</td>
                       <td>{f.growthMb == null ? '—' : fmtMb(f.growthMb)}</td>
                     </tr>
                   ))}
@@ -364,15 +364,15 @@ export function DatabasePropertiesDialog({
                   </div>
                 ))}
               </div>
-              <p className="confirm-message">De volgende ALTER DATABASE-statement(s) worden uitgevoerd:</p>
+              <p className="confirm-message">The following ALTER DATABASE statement(s) will be executed:</p>
               <pre className="guard-sql">{pending.sql}</pre>
               {pending.error && <div className="confirm-error">❌ {pending.error}</div>}
               <div className="modal-actions">
                 <button type="button" onClick={() => setPending(null)} disabled={busy}>
-                  Annuleren
+                  Cancel
                 </button>
                 <button type="button" className="danger" onClick={() => void confirmPending()} disabled={busy}>
-                  {busy ? 'Bezig…' : 'Toch uitvoeren'}
+                  {busy ? 'Working…' : 'Run anyway'}
                 </button>
               </div>
             </div>
@@ -386,11 +386,11 @@ export function DatabasePropertiesDialog({
               onClick={() => void handleSave()}
               disabled={busy || loading || !hasChanges || pending !== null}
             >
-              {busy ? 'Bezig…' : 'Wijzigingen opslaan'}
+              {busy ? 'Working…' : 'Save changes'}
             </button>
           )}
           <button type="button" onClick={onClose} disabled={busy}>
-            Sluiten
+            Close
           </button>
         </div>
       </div>
@@ -408,7 +408,7 @@ export interface ObjectDefinitionState {
 
 const KIND_LABELS: Record<string, string> = {
   procedure: 'Stored procedure',
-  function: 'Functie',
+  function: 'Function',
   trigger: 'Trigger'
 }
 
@@ -457,12 +457,12 @@ export function ObjectDefinitionDialog({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal properties-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`${label}-eigenschappen`}>
+      <div className="modal properties-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`${label} properties`}>
         <div className="modal-header">
           <span>
             {label}: {state.name}
           </span>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Sluiten">
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
@@ -483,20 +483,20 @@ export function ObjectDefinitionDialog({
               </tr>
             </tbody>
           </table>
-          {loading && <div className="tree-details-loading">Definitie laden…</div>}
+          {loading && <div className="tree-details-loading">Loading definition…</div>}
           {!loading && definition !== null && (
             <>
-              <p className="confirm-sql-label">Definitie:</p>
+              <p className="confirm-sql-label">Definition:</p>
               <pre className="guard-sql">{definition}</pre>
             </>
           )}
           {!loading && error !== null && (
-            <div className="confirm-error">Definitie niet beschikbaar: {error}</div>
+            <div className="confirm-error">Definition not available: {error}</div>
           )}
         </div>
         <div className="modal-footer">
           <button type="button" className="primary" onClick={onClose}>
-            Sluiten
+            Close
           </button>
         </div>
       </div>

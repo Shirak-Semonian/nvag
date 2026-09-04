@@ -33,12 +33,12 @@ interface ExportAction {
 }
 
 const ACTIONS: ExportAction[] = [
-  { source: 'grid', format: 'csv', target: 'clipboard', label: 'CSV → klembord' },
-  { source: 'grid', format: 'csv', target: 'file', label: 'CSV → bestand…' },
-  { source: 'grid', format: 'xlsx', target: 'file', label: 'XLSX → bestand…' },
-  { source: 'result', format: 'csv', target: 'clipboard', label: 'CSV → klembord' },
-  { source: 'result', format: 'csv', target: 'file', label: 'CSV → bestand…' },
-  { source: 'result', format: 'xlsx', target: 'file', label: 'XLSX → bestand…' }
+  { source: 'grid', format: 'csv', target: 'clipboard', label: 'CSV → clipboard' },
+  { source: 'grid', format: 'csv', target: 'file', label: 'CSV → file…' },
+  { source: 'grid', format: 'xlsx', target: 'file', label: 'XLSX → file…' },
+  { source: 'result', format: 'csv', target: 'clipboard', label: 'CSV → clipboard' },
+  { source: 'result', format: 'csv', target: 'file', label: 'CSV → file…' },
+  { source: 'result', format: 'xlsx', target: 'file', label: 'XLSX → file…' }
 ]
 
 /** Bestandsnaam met tijdstempel: resultaat-20260831-221500 (zonder extensie). */
@@ -74,7 +74,7 @@ export function ExportMenu({ columns, resultRows, getGridRows }: ExportMenuProps
     setOpen(false)
     const rows = action.source === 'grid' ? getGridRows() : resultRows
     if (rows.length === 0) {
-      showFeedback({ kind: 'error', text: 'Geen rijen om te exporteren.' })
+      showFeedback({ kind: 'error', text: 'No rows to export.' })
       return
     }
     setBusy(true)
@@ -83,7 +83,7 @@ export function ExportMenu({ columns, resultRows, getGridRows }: ExportMenuProps
       const res = await window.nvag.query.exportResults({
         format: action.format,
         target: action.target,
-        fileName: `resultaat-${stamp()}`,
+        fileName: `result-${stamp()}`,
         columns: exportColumns,
         rows,
         delimiter: ';'
@@ -93,9 +93,9 @@ export function ExportMenu({ columns, resultRows, getGridRows }: ExportMenuProps
       } else if (res.canceled) {
         // Gebruiker annuleerde de save-dialoog; geen feedback nodig.
       } else if (action.target === 'clipboard') {
-        showFeedback({ kind: 'ok', text: `${res.rowCount ?? rows.length} rij(en) naar klembord gekopieerd.` })
+        showFeedback({ kind: 'ok', text: `${res.rowCount ?? rows.length} row(s) copied to clipboard.` })
       } else {
-        showFeedback({ kind: 'ok', text: `Geëxporteerd naar ${res.filePath}` })
+        showFeedback({ kind: 'ok', text: `Exported to ${res.filePath}` })
       }
     } catch (err) {
       showFeedback({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
@@ -114,9 +114,9 @@ export function ExportMenu({ columns, resultRows, getGridRows }: ExportMenuProps
         className={open ? 'export-trigger active' : 'export-trigger'}
         onClick={() => setOpen((o) => !o)}
         disabled={busy}
-        title="Resultaten exporteren (CSV / XLSX)"
+        title="Export results (CSV / XLSX)"
       >
-        {busy ? '⏳ Bezig…' : '⬇ Exporteren'}
+        {busy ? '⏳ Working…' : '⬇ Export'}
       </button>
       {feedback && (
         <span className={`export-feedback export-${feedback.kind}`} role="status">
@@ -127,13 +127,13 @@ export function ExportMenu({ columns, resultRows, getGridRows }: ExportMenuProps
         <>
           <div className="export-backdrop" onClick={() => setOpen(false)} />
           <div className="export-dropdown" role="menu">
-            <div className="export-group-label">Vanuit grid</div>
+            <div className="export-group-label">From grid</div>
             {gridActions.map((a) => (
               <button key={`grid-${a.format}-${a.target}`} type="button" role="menuitem" onClick={() => void run(a)}>
                 {a.label}
               </button>
             ))}
-            <div className="export-group-label">Volledig resultaat ({resultRows.length} rij(en))</div>
+            <div className="export-group-label">Full result ({resultRows.length} row(s))</div>
             {resultActions.map((a) => (
               <button key={`result-${a.format}-${a.target}`} type="button" role="menuitem" onClick={() => void run(a)}>
                 {a.label}

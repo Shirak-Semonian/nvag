@@ -78,7 +78,7 @@ describe('F2-1 table data (renderer)', () => {
     await useAppStore.getState().saveTableEdit(tabId, 'update', { naam: 'x' }, { id: 1 })
     expect(editSpy).toBeDefined()
     const tab = useAppStore.getState().tabs[0]
-    expect(tab.tableData?.lastEditMessage).toContain('1 rij(en)')
+    expect(tab.tableData?.lastEditMessage).toContain('1 row(s) updated')
   })
 
   it('toont een laadfout in de error-state en wist die na een geslaagde herlaadbeurt (SAL-42)', async () => {
@@ -146,7 +146,7 @@ describe('F2-1 table data (renderer)', () => {
     const td = useAppStore.getState().tabs.find((t) => t.id === tabId)?.tableData
     expect(td?.loading).toBe(false)
     expect(td?.data).toBeNull()
-    expect(td?.error).toContain('Geen actieve sessie')
+    expect(td?.error).toContain('No active session')
   })
 })
 

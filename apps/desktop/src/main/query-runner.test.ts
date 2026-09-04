@@ -152,7 +152,7 @@ describe('QueryRunner (main, SAL-17)', () => {
     vi.spyOn(sessionManager, 'getByConnectionId').mockReturnValue(undefined)
     const runner = new QueryRunner()
     expect(() => runner.run({ connectionId: 'conn-1', sql: 'SELECT 1' }, sender)).toThrow(
-      /Geen actieve sessie/
+      /No active session/
     )
   })
 
@@ -339,7 +339,7 @@ describe('QueryRunner (main, SAL-17)', () => {
       }
     }
     const provider = fakeProvider(iter, {
-      cancelError: new Error('annuleren niet ondersteund door provider X'),
+      cancelError: new Error('cancellation not supported by provider X'),
       onExecuteQuery: (qopts) => {
         signalRef = (qopts as { signal?: AbortSignal }).signal
       }
@@ -359,7 +359,7 @@ describe('QueryRunner (main, SAL-17)', () => {
     const warning = warnings[0]!.chunk
     expect(warning).toMatchObject({ kind: 'warning' })
     if (warning.kind === 'warning') {
-      expect(warning.message).toMatch(/niet volledig ondersteund/)
+      expect(warning.message).toMatch(/not fully supported/)
       expect(warning.message).toMatch(/provider X/)
     }
     // De uitvoering eindigt lokaal als geannuleerd (met de duidelijke melding).

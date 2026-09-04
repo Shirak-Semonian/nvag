@@ -37,16 +37,16 @@ describe('ExportMenu (F1-7)', () => {
 
   it('toont de trigger en opent het menu met beide bronnen', () => {
     renderMenu()
-    fireEvent.click(screen.getByTitle('Resultaten exporteren (CSV / XLSX)'))
-    expect(screen.getByText('Vanuit grid')).toBeTruthy()
-    expect(screen.getByText('Volledig resultaat (2 rij(en))')).toBeTruthy()
+    fireEvent.click(screen.getByTitle('Export results (CSV / XLSX)'))
+    expect(screen.getByText('From grid')).toBeTruthy()
+    expect(screen.getByText('Full result (2 row(s))')).toBeTruthy()
     expect(screen.getAllByRole('menuitem')).toHaveLength(6)
   })
 
   it('exporteert grid-rijen (selectie/weergave) naar CSV-klembord', async () => {
     const exportResults = mockExport()
     renderMenu()
-    fireEvent.click(screen.getByTitle('Resultaten exporteren (CSV / XLSX)'))
+    fireEvent.click(screen.getByTitle('Export results (CSV / XLSX)'))
     fireEvent.click(screen.getAllByRole('menuitem')[0]!) // grid: CSV → klembord
 
     await waitFor(() => expect(exportResults).toHaveBeenCalledTimes(1))
@@ -55,13 +55,13 @@ describe('ExportMenu (F1-7)', () => {
     expect(req.target).toBe('clipboard')
     expect(req.rows).toEqual(gridRows)
     expect(req.delimiter).toBe(';')
-    expect(req.fileName).toMatch(/^resultaat-\d{8}-\d{6}$/)
+    expect(req.fileName).toMatch(/^result-\d{8}-\d{6}$/)
   })
 
   it('exporteert het volledige resultaat naar XLSX-bestand (originele waarden)', async () => {
     const exportResults = mockExport()
     renderMenu()
-    fireEvent.click(screen.getByTitle('Resultaten exporteren (CSV / XLSX)'))
+    fireEvent.click(screen.getByTitle('Export results (CSV / XLSX)'))
     fireEvent.click(screen.getAllByRole('menuitem')[5]!) // resultaat: XLSX → bestand
 
     await waitFor(() => expect(exportResults).toHaveBeenCalledTimes(1))
@@ -74,16 +74,16 @@ describe('ExportMenu (F1-7)', () => {
   it('toont feedback na klembord-export', async () => {
     mockExport()
     renderMenu()
-    fireEvent.click(screen.getByTitle('Resultaten exporteren (CSV / XLSX)'))
+    fireEvent.click(screen.getByTitle('Export results (CSV / XLSX)'))
     fireEvent.click(screen.getAllByRole('menuitem')[0]!)
-    await waitFor(() => expect(screen.getByText(/2 rij\(en\) naar klembord gekopieerd/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/2 row\(s\) copied to clipboard/)).toBeTruthy())
   })
 
   it('toont een fout wanneer main een error teruggeeft', async () => {
     const exportResults = vi.fn(async (_req: ExportRequest): Promise<ExportResult> => ({ error: 'schijf vol' }))
     ;(window as unknown as { nvag: unknown }).nvag = { query: { exportResults } } as never
     renderMenu()
-    fireEvent.click(screen.getByTitle('Resultaten exporteren (CSV / XLSX)'))
+    fireEvent.click(screen.getByTitle('Export results (CSV / XLSX)'))
     fireEvent.click(screen.getAllByRole('menuitem')[0]!)
     await waitFor(() => expect(screen.getByText('schijf vol')).toBeTruthy())
   })
@@ -91,9 +91,9 @@ describe('ExportMenu (F1-7)', () => {
   it('weigert te exporteren zonder rijen', async () => {
     const exportResults = mockExport()
     render(<ExportMenu columns={columns} resultRows={[]} getGridRows={() => []} />)
-    fireEvent.click(screen.getByTitle('Resultaten exporteren (CSV / XLSX)'))
+    fireEvent.click(screen.getByTitle('Export results (CSV / XLSX)'))
     fireEvent.click(screen.getAllByRole('menuitem')[0]!)
-    await waitFor(() => expect(screen.getByText('Geen rijen om te exporteren.')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No rows to export.')).toBeTruthy())
     expect(exportResults).not.toHaveBeenCalled()
   })
 })

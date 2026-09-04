@@ -178,7 +178,7 @@ async function objectSuggestions(
       items.push({
         label: t.name,
         kind: monaco.languages.CompletionItemKind.Class,
-        detail: 'tabel',
+        detail: 'table',
         insertText: quoteIdentifier(ctx.dialect, t.name),
         range
       })
@@ -205,7 +205,7 @@ async function objectSuggestions(
       items.push({
         label: f.name,
         kind: monaco.languages.CompletionItemKind.Function,
-        detail: 'functie',
+        detail: 'function',
         insertText: quoteIdentifier(ctx.dialect, f.name),
         range
       })

@@ -34,25 +34,25 @@ export function StatusBar(): React.JSX.Element {
   let statusText: string
   let statusClass = ''
   if (!activeTab) {
-    statusText = 'Klaar'
+    statusText = 'Ready'
   } else if (activeTab.running) {
-    statusText = 'Query loopt…'
+    statusText = 'Query running…'
     statusClass = 'status-running'
   } else if (activeTab.result?.error) {
-    statusText = `Fout: ${activeTab.result.error}`
+    statusText = `Error: ${activeTab.result.error}`
     statusClass = 'status-error'
   } else if (activeTab.result) {
-    statusText = `Query voltooid — ${activeTab.result.rowCount} rij(en) in ${activeTab.result.durationMs} ms`
+    statusText = `Query completed — ${activeTab.result.rowCount} row(s) in ${activeTab.result.durationMs} ms`
     statusClass = 'status-ok'
   } else {
-    statusText = 'Klaar'
+    statusText = 'Ready'
   }
 
   return (
     <footer className="status-bar">
-      <span className={`status-dot ${session ? 'connected' : ''}`} title={session ? 'Verbonden' : 'Geen verbinding'} />
+      <span className={`status-dot ${session ? 'connected' : ''}`} title={session ? 'Connected' : 'No connection'} />
       <span className="status-connection">
-        {conn ? `Verbonden: ${conn.name}` : 'Geen verbinding'}
+        {conn ? `Connected: ${conn.name}` : 'No connection'}
         {session && (
           <span className="muted">
             {' '}
@@ -63,7 +63,7 @@ export function StatusBar(): React.JSX.Element {
       <span className={`status-query ${statusClass}`}>{statusText}</span>
       <span className="status-spacer" />
       {conn && <EnvBadge environment={conn.environment} />}
-      <span className="muted status-hint">Ctrl+Enter: query uitvoeren</span>
+      <span className="muted status-hint">Ctrl+Enter: run query</span>
     </footer>
   )
 }

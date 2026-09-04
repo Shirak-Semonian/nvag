@@ -48,7 +48,7 @@ function seedStore(opts: SeedOptions = {}): void {
     tabs: [
       {
         id: 'td1',
-        title: 'users — gegevens',
+        title: 'users — data',
         sql: '',
         connectionId: 'conn-1',
         database: '/tmp/test.db',
@@ -90,18 +90,18 @@ describe('TableDataPanel (SAL-42)', () => {
   it('toont "Laden…" zolang de load bezig is', () => {
     seedStore({ loading: true })
     render(<TableDataPanel tabId="td1" />)
-    expect(screen.getByText('Laden…')).toBeTruthy()
+    expect(screen.getByText('Loading…')).toBeTruthy()
   })
 
   it('toont de fout met "Opnieuw laden" i.p.v. een eeuwige "Laden…"', async () => {
     seedStore({ error: 'netwerkfout' })
     render(<TableDataPanel tabId="td1" />)
     expect(screen.getByText(/netwerkfout/)).toBeTruthy()
-    expect(screen.getByText('Tabelgegevens laden mislukt: netwerkfout')).toBeTruthy()
+    expect(screen.getByText('Failed to load table data: netwerkfout')).toBeTruthy()
 
     // Fout hersteld + opnieuw laden → rijen verschijnen en de fout is weg.
     installMock(async () => sampleResult)
-    fireEvent.click(screen.getByText('Opnieuw laden'))
+    fireEvent.click(screen.getByText('Reload'))
     await waitFor(() => expect(screen.getByText('id')).toBeTruthy())
     expect(screen.queryByText(/netwerkfout/)).toBeNull()
   })
@@ -109,22 +109,22 @@ describe('TableDataPanel (SAL-42)', () => {
   it('toont een duidelijke melding wanneer er geen sessie is (geen stille spinner)', () => {
     seedStore({ openSession: false })
     render(<TableDataPanel tabId="td1" />)
-    expect(screen.getByText(/Geen actieve verbinding voor deze tabel/)).toBeTruthy()
-    expect(screen.queryByText('Laden…')).toBeNull()
+    expect(screen.getByText(/No active connection for this table/)).toBeTruthy()
+    expect(screen.queryByText('Loading…')).toBeNull()
   })
 
   it('laadt automatisch zodra de sessie opengaat', async () => {
     seedStore({ openSession: false })
     installMock(async () => sampleResult)
     render(<TableDataPanel tabId="td1" />)
-    expect(screen.getByText(/Geen actieve verbinding voor deze tabel/)).toBeTruthy()
+    expect(screen.getByText(/No active connection for this table/)).toBeTruthy()
 
     // De verbinding wordt geopend → het paneel laadt de rijen vanzelf.
     await act(async () => {
       await useAppStore.getState().openSession(conn)
     })
     await waitFor(() => expect(screen.getByText('id')).toBeTruthy())
-    expect(screen.queryByText(/Geen actieve verbinding voor deze tabel/)).toBeNull()
+    expect(screen.queryByText(/No active connection for this table/)).toBeNull()
   })
 
   it('toont een refresh-fout boven het grid maar houdt de geladen rijen zichtbaar', async () => {
@@ -140,6 +140,6 @@ describe('TableDataPanel (SAL-42)', () => {
     })
     // Grid blijft staan; de fout is als banner zichtbaar.
     expect(screen.getByText('id')).toBeTruthy()
-    expect(screen.getByText(/Vernieuwen mislukt: refresh kapot/)).toBeTruthy()
+    expect(screen.getByText(/Refresh failed: refresh kapot/)).toBeTruthy()
   })
 })

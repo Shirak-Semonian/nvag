@@ -297,7 +297,7 @@ describe('app store', () => {
     await useAppStore.getState().runQuery('tab-test')
     const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-test')
     expect(tab?.running).toBe(false)
-    expect(tab?.result?.error).toContain('Geen actieve verbinding voor deze query')
+    expect(tab?.result?.error).toContain('No active connection for this query')
     expect(mock.queriedSql).toHaveLength(0)
   })
 
@@ -655,7 +655,7 @@ describe('app store', () => {
     await useAppStore.getState().switchTabConnection('tab-1', 'conn-b')
     const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
     expect(tab?.connectionId).toBe('conn-a')
-    expect(tab?.dbSwitchError).toContain('bestand niet gevonden')
+    expect(tab?.dbSwitchError).toContain('file not found')
   })
 
   it('wisselt de database van een tab via useDatabase en werkt de sessie bij (F1-10)', async () => {
@@ -688,7 +688,7 @@ describe('app store', () => {
     const failing = createMockNvag({ connections: [conn] })
     const original = failing.sessions.useDatabase
     failing.sessions.useDatabase = async () => {
-      throw new Error('USE mislukt')
+      throw new Error('USE failed')
     }
     window.nvag = failing
     useAppStore.setState({
@@ -707,7 +707,7 @@ describe('app store', () => {
     await useAppStore.getState().setTabDatabase('tab-1', 'archive')
     const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
     expect(tab?.database).toBe('main')
-    expect(tab?.dbSwitchError).toContain('USE mislukt')
+    expect(tab?.dbSwitchError).toContain('USE failed')
     expect(original).toBeDefined()
   })
 
@@ -739,7 +739,7 @@ describe('app store', () => {
     const conn = sampleConnection({ id: 'conn-srv', providerId: 'sqlserver', database: 'main' })
     const failing = createMockNvag({ connections: [conn] })
     failing.sessions.useDatabase = async () => {
-      throw new Error('USE mislukt')
+      throw new Error('USE failed')
     }
     window.nvag = failing
     useAppStore.setState({
@@ -758,7 +758,7 @@ describe('app store', () => {
     await useAppStore.getState().runQuery('tab-1')
     const tab = useAppStore.getState().tabs.find((t) => t.id === 'tab-1')
     expect(failing.queriedSql).toHaveLength(0)
-    expect(tab?.result?.error).toContain('USE mislukt')
+    expect(tab?.result?.error).toContain('USE failed')
     expect(tab?.running).toBe(false)
   })
 

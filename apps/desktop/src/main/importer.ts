@@ -31,11 +31,11 @@ interface ParsedTable {
 function parseCsv(content: string): ParsedTable {
   const result = Papa.parse<unknown[]>(content, { skipEmptyLines: true })
   if (result.errors.length > 0) {
-    throw new Error(`CSV-fout: ${result.errors[0]?.message ?? 'onbekend'}`)
+    throw new Error(`CSV error: ${result.errors[0]?.message ?? 'unknown'}`)
   }
   const data = result.data as unknown[][]
   if (data.length === 0) return { columns: [], rows: [] }
-  const columns = (data[0] ?? []).map((c, i) => String(c ?? `kolom${i + 1}`))
+  const columns = (data[0] ?? []).map((c, i) => String(c ?? `column${i + 1}`))
   const rows = data.slice(1).map((r) => r.map(normalizeCell))
   return { columns, rows }
 }
@@ -44,12 +44,12 @@ function parseJson(content: string): ParsedTable {
   const data = JSON.parse(content) as unknown
   const arr = Array.isArray(data) ? data : (data as { rows?: unknown[] })?.rows
   if (!Array.isArray(arr)) {
-    throw new Error('JSON moet een array van objecten zijn (of {rows: [...]}).')
+    throw new Error('JSON must be an array of objects (or {rows: [...]}).')
   }
   if (arr.length === 0) return { columns: [], rows: [] }
   const first = arr[0]
   if (typeof first !== 'object' || first === null || Array.isArray(first)) {
-    throw new Error('JSON-rijen moeten objecten zijn (kolom → waarde).')
+    throw new Error('JSON rows must be objects (column → value).')
   }
   const columns = Object.keys(first as Record<string, unknown>)
   const rows = arr.map((r) =>
@@ -70,7 +70,7 @@ async function parseXlsx(filePath: string): Promise<ParsedTable> {
     matrix.push(values)
   })
   if (matrix.length === 0) return { columns: [], rows: [] }
-  const columns = (matrix[0] ?? []).map((c, i) => String(c ?? `kolom${i + 1}`))
+  const columns = (matrix[0] ?? []).map((c, i) => String(c ?? `column${i + 1}`))
   const rows = matrix.slice(1).map((r) => r.map(normalizeCell))
   return { columns, rows }
 }
@@ -136,7 +136,7 @@ async function parseFile(filePath: string, format: ImportFileFormat): Promise<Pa
       return parseXml(readFileSync(filePath, 'utf8'))
     default: {
       const exhaustive: never = format
-      throw new Error(`Onbekend importformaat: ${String(exhaustive)}`)
+      throw new Error(`Unknown import format: ${String(exhaustive)}`)
     }
   }
 }
@@ -212,7 +212,7 @@ export async function executeImport(
   const { splitStatements } = await import('@nvag/sql-dialect')
   const session = sessionManager.getByConnectionId(connectionId)
   if (!session) {
-    throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+    throw new Error('No active session for this connection. Open the connection first.')
   }
   const conn = connectionStore.get(connectionId)
   if (conn && !confirmed) {
@@ -242,7 +242,7 @@ export async function executeImport(
 export function dedupeColumns(columns: string[]): string[] {
   const seen = new Map<string, number>()
   return columns.map((c) => {
-    const base = c || 'kolom'
+    const base = c || 'column'
     const n = (seen.get(base) ?? 0) + 1
     seen.set(base, n)
     return n === 1 ? base : `${base}_${n}`

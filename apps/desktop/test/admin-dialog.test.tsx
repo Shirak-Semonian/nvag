@@ -53,21 +53,21 @@ describe('F2-3 AdminDialog guard-flow', () => {
     api.admin.dropTable = drop
 
     // Naar het Tabellen-tabblad
-    fireEvent.click(await screen.findByRole('tab', { name: 'Tabellen' }))
-    const nameInput = screen.getByPlaceholderText('naam')
+    fireEvent.click(await screen.findByRole('tab', { name: 'Tables' }))
+    const nameInput = screen.getByPlaceholderText('name')
     fireEvent.change(nameInput, { target: { value: 'klanten' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tabel verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Drop table' }))
 
     // Zonder bevestiging: actie wordt NIET opnieuw uitgevoerd, dialoog toont SQL + reden.
     await waitFor(() => expect(screen.getByText(/DROP-statement/)).toBeTruthy())
-    expect(screen.getByText('De volgende SQL wordt uitgevoerd:')).toBeTruthy()
+    expect(screen.getByText('The following SQL will be executed:')).toBeTruthy()
     expect(screen.getByText('DROP TABLE "klanten";')).toBeTruthy()
     expect(drop).toHaveBeenCalledTimes(1)
     expect(drop).toHaveBeenLastCalledWith('conn-1', '', 'main', 'klanten', undefined)
 
     // Bevestigen → opnieuw met confirmed:true → succesmelding.
-    fireEvent.click(screen.getByRole('button', { name: 'Toch uitvoeren' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run anyway' }))
     await waitFor(() => expect(drop).toHaveBeenCalledTimes(2))
     expect(drop).toHaveBeenLastCalledWith('conn-1', '', 'main', 'klanten', true)
     expect(await screen.findByText(/✅ DROP TABLE klanten/)).toBeTruthy()
@@ -83,27 +83,27 @@ describe('F2-3 AdminDialog guard-flow', () => {
       })
     )
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Tabellen' }))
-    fireEvent.change(screen.getByPlaceholderText('naam'), { target: { value: 'klanten' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+    fireEvent.click(await screen.findByRole('tab', { name: 'Tables' }))
+    fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'klanten' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     // Geen bevestigingsdialoog, wél een waarschuwing in het resultaat.
     await waitFor(() => expect(screen.getByText(/✅ CREATE TABLE klanten/)).toBeTruthy())
     expect(screen.getByText(/⚠ CREATE-statement/)).toBeTruthy()
-    expect(screen.queryByText('De volgende SQL wordt uitgevoerd:')).toBeNull()
+    expect(screen.queryByText('The following SQL will be executed:')).toBeNull()
   })
 
   it('toont een fout wanneer de admin-actie faalt', async () => {
     const api = renderDialog()
     api.admin.createTable = vi.fn(async () => {
-      throw new Error('SQLite: tabel bestaat al')
+      throw new Error('SQLite: table already exists')
     })
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Tabellen' }))
-    fireEvent.change(screen.getByPlaceholderText('naam'), { target: { value: 'klanten' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+    fireEvent.click(await screen.findByRole('tab', { name: 'Tables' }))
+    fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'klanten' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
-    await waitFor(() => expect(screen.getByText(/❌ SQLite: tabel bestaat al/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/❌ SQLite: table already exists/)).toBeTruthy())
   })
 })
 
@@ -149,8 +149,8 @@ describe('F4 AdminDialog backup/restore', () => {
     const tab = await screen.findByRole('tab', { name: 'Backup' })
     expect(tab.getAttribute('disabled')).toBeNull()
     fireEvent.click(tab)
-    expect(await screen.findByText('Backup maken')).toBeTruthy()
-    expect(screen.getByText('Herstellen')).toBeTruthy()
+    expect(await screen.findByText('Create backup')).toBeTruthy()
+    expect(screen.getByText('Restore')).toBeTruthy()
   })
 
   it('verbergt/disablet het Backup-tabblad wanneer niet ondersteund', async () => {
@@ -169,9 +169,9 @@ describe('F4 AdminDialog backup/restore', () => {
     api.admin.backupDatabase = backup
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Backup' }))
-    fireEvent.change(screen.getByPlaceholderText('bijv. main / SalesDB'), { target: { value: 'main' } })
-    fireEvent.change(screen.getByPlaceholderText('/pad/naar/backup.db'), { target: { value: '/tmp/backup.db' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Backup maken' }))
+    fireEvent.change(screen.getByPlaceholderText('e.g. main / SalesDB'), { target: { value: 'main' } })
+    fireEvent.change(screen.getByPlaceholderText('/path/to/backup.db'), { target: { value: '/tmp/backup.db' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create backup' }))
 
     await waitFor(() => expect(backup).toHaveBeenCalledWith('conn-1', 'main', '/tmp/backup.db', undefined))
     expect(await screen.findByText(/✅ BACKUP main → \/tmp\/backup\.db/)).toBeTruthy()
@@ -193,14 +193,14 @@ describe('F4 AdminDialog backup/restore', () => {
     api.admin.restoreDatabase = restore
 
     fireEvent.click(await screen.findByRole('tab', { name: 'Backup' }))
-    fireEvent.change(screen.getByPlaceholderText('bijv. main / SalesDB'), { target: { value: 'main' } })
-    fireEvent.change(screen.getByPlaceholderText('/pad/naar/bron-backup.db'), { target: { value: '/tmp/backup.db' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Herstellen' }))
+    fireEvent.change(screen.getByPlaceholderText('e.g. main / SalesDB'), { target: { value: 'main' } })
+    fireEvent.change(screen.getByPlaceholderText('/path/to/source-backup.db'), { target: { value: '/tmp/backup.db' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }))
 
     await waitFor(() => expect(screen.getByText(/RESTORE-statement/)).toBeTruthy())
     expect(restore).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Toch uitvoeren' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run anyway' }))
     await waitFor(() => expect(restore).toHaveBeenCalledTimes(2))
     expect(restore).toHaveBeenLastCalledWith('conn-1', 'main', '/tmp/backup.db', true)
     expect(await screen.findByText(/✅ RESTORE main ← \/tmp\/backup\.db/)).toBeTruthy()
@@ -259,9 +259,9 @@ describe('SAL-51 AdminDialog database-context + datatype-dropdown', () => {
     const api = renderTsqlDialog('Factuur')
 
     // Tabellen-tab (via store geopend): database-context zichtbaar.
-    fireEvent.click(await screen.findByRole('tab', { name: 'Tabellen' }))
+    fireEvent.click(await screen.findByRole('tab', { name: 'Tables' }))
     await waitFor(() => {
-      const select = screen.getByLabelText('Doeldatabase') as HTMLSelectElement
+      const select = screen.getByLabelText('Target database') as HTMLSelectElement
       expect(select.value).toBe('Factuur')
     })
 
@@ -272,16 +272,16 @@ describe('SAL-51 AdminDialog database-context + datatype-dropdown', () => {
       })
     )
     api.admin.createTable = createTable
-    fireEvent.change(screen.getByPlaceholderText('naam'), { target: { value: 'facturen' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+    fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'facturen' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => expect(createTable).toHaveBeenCalledTimes(1))
     const req = createTable.mock.calls[0]?.[0] as { database: string }
     expect(req.database).toBe('Factuur')
 
     // De database-dropdown kan wisselen naar een andere database.
-    fireEvent.change(screen.getByLabelText('Doeldatabase'), { target: { value: 'Klanten' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+    fireEvent.change(screen.getByLabelText('Target database'), { target: { value: 'Klanten' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(createTable).toHaveBeenCalledTimes(2))
     expect((createTable.mock.calls[1]?.[0] as { database: string }).database).toBe('Klanten')
   })
@@ -302,16 +302,16 @@ describe('SAL-51 AdminDialog database-context + datatype-dropdown', () => {
       adminDialogTab: 'table'
     })
     render(<AdminDialog connectionId="conn-1" />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Tabellen' }))
-    expect(screen.queryByLabelText('Doeldatabase')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }))
+    expect(screen.queryByLabelText('Target database')).toBeNull()
     expect(api.admin.createTable).toBeTruthy()
   })
 
   it('type-veld is een combobox met dialect-correcte types (tsql) en eigen invoer blijft mogelijk', async () => {
     renderTsqlDialog(null)
 
-    fireEvent.click(await screen.findByRole('tab', { name: 'Tabellen' }))
-    await waitFor(() => expect(screen.getByPlaceholderText('naam')).toBeTruthy())
+    fireEvent.click(await screen.findByRole('tab', { name: 'Tables' }))
+    await waitFor(() => expect(screen.getByPlaceholderText('name')).toBeTruthy())
 
     // Standaardkolom heeft een tsql-passend type (int, niet INTEGER/TEXT).
     await waitFor(() => expect(screen.getByDisplayValue('int')).toBeTruthy())
@@ -369,8 +369,8 @@ describe('SAL-51 AdminDialog database-context + datatype-dropdown', () => {
         adminDialogTab: 'table'
       })
       render(<AdminDialog connectionId="conn-1" />)
-      fireEvent.click(await screen.findByRole('tab', { name: 'Tabellen' }))
-      await waitFor(() => expect(screen.getByPlaceholderText('naam')).toBeTruthy())
+      fireEvent.click(await screen.findByRole('tab', { name: 'Tables' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('name')).toBeTruthy())
 
       const readOptions = (): (string | null)[] => {
         const datalist = document.getElementById('admin-datatypes-conn-1')

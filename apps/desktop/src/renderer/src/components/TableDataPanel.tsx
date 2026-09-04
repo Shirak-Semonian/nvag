@@ -67,31 +67,31 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
     })
   }, [resultData])
 
-  if (!tab?.connectionId || !td) return <div className="results-empty">Geen tabel geselecteerd.</div>
+  if (!tab?.connectionId || !td) return <div className="results-empty">No table selected.</div>
   if (!resultData) {
     // SAL-42: expliciete toestanden i.p.v. een eeuwige "Laden…":
     // bezig → spinner; mislukt → fout + opnieuw laden; geen sessie → melding.
     if (td.loading) {
-      return <div className="results-empty">Laden…</div>
+      return <div className="results-empty">Loading…</div>
     }
     if (td.error) {
       return (
         <div className="results-error table-data-load-error">
-          <span>Tabelgegevens laden mislukt: {td.error}</span>
-          <button onClick={() => void loadTableRows(tabId)}>Opnieuw laden</button>
+          <span>Failed to load table data: {td.error}</span>
+          <button onClick={() => void loadTableRows(tabId)}>Reload</button>
         </div>
       )
     }
     if (!hasSession) {
       return (
         <div className="results-empty">
-          Geen actieve verbinding voor deze tabel. Open eerst de verbinding om de gegevens te laden.
+          No active connection for this table. Open the connection first to load the data.
         </div>
       )
     }
     // Sessie staat open maar er is nog geen data: de load wordt door het
     // effect hierboven gestart (of is net bezig); toon een korte laadtekst.
-    return <div className="results-empty">Laden…</div>
+    return <div className="results-empty">Loading…</div>
   }
   const data = resultData
 
@@ -125,12 +125,12 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
     <div className="table-data-panel">
       <div className="result-toolbar">
         <span className="result-meta">
-          {data.columns.length} kolom(men) · {data.rowCount} rij(en)
-          {data.truncated ? ' (afgekapt op 100)' : ''}
+          {data.columns.length} column(s) · {data.rowCount} row(s)
+          {data.truncated ? ' (truncated at 100)' : ''}
         </span>
         <span className="result-toolbar-spacer" />
-        <button type="button" onClick={() => void loadTableRows(tabId)} title="Vernieuwen">
-          ⟳ Vernieuwen
+        <button type="button" onClick={() => void loadTableRows(tabId)} title="Refresh">
+          ⟳ Refresh
         </button>
         <button
           type="button"
@@ -145,9 +145,9 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
               )
             }))
           }}
-          title="Nieuwe rij invoegen"
+          title="Insert new row"
         >
-          ＋ Nieuwe rij
+          ＋ New row
         </button>
         {gridApi && (
           <button
@@ -159,17 +159,17 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
               for (const row of sel) deleteRow(row)
             }}
             disabled={gridApi.getSelectedRows().length === 0}
-            title="Geselecteerde rijen verwijderen"
+            title="Delete selected rows"
           >
-            🗑 Verwijderen
+            🗑 Delete
           </button>
         )}
       </div>
 
       {td.error && (
         <div className="results-error table-data-refresh-error">
-          <span>Vernieuwen mislukt: {td.error}</span>
-          <button onClick={() => void loadTableRows(tabId)}>Opnieuw laden</button>
+          <span>Refresh failed: {td.error}</span>
+          <button onClick={() => void loadTableRows(tabId)}>Reload</button>
         </div>
       )}
 
@@ -193,7 +193,7 @@ export function TableDataPanel({ tabId }: { tabId: string }): React.JSX.Element 
 
       {td.lastSql && (
         <details className="table-data-sql" open>
-          <summary>Uitgevoerde SQL (zichtbaar)</summary>
+          <summary>Executed SQL (visible)</summary>
           <pre>{td.lastSql}</pre>
         </details>
       )}
@@ -232,14 +232,14 @@ function InsertRowForm({ tabId }: { tabId: string }): React.JSX.Element {
 
   return (
     <div className="insert-row-form">
-      <strong>Nieuwe rij</strong>
+      <strong>New row</strong>
       <div className="insert-row-grid">
         {editable.map((col) => (
           <label key={col.name}>
             <span>{col.name}</span>
             <input
               value={values[col.name] ?? ''}
-              placeholder="waarde"
+              placeholder="value"
               onChange={(e) => setValues((v) => ({ ...v, [col.name]: e.target.value }))}
             />
           </label>
@@ -247,7 +247,7 @@ function InsertRowForm({ tabId }: { tabId: string }): React.JSX.Element {
       </div>
       <div className="insert-row-actions">
         <button type="button" className="primary" onClick={submit}>
-          INSERT uitvoeren
+          Run INSERT
         </button>
         <button
           type="button"
@@ -261,7 +261,7 @@ function InsertRowForm({ tabId }: { tabId: string }): React.JSX.Element {
             }))
           }
         >
-          Annuleren
+          Cancel
         </button>
       </div>
     </div>

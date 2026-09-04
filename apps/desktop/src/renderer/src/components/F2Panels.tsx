@@ -20,12 +20,12 @@ export function SearchPanel({ connectionId }: { connectionId: string | null }): 
 
   const typeLabel = (m: SearchMatch): string => {
     switch (m.objectType) {
-      case 'table': return '📋 tabel'
+      case 'table': return '📋 table'
       case 'view': return '👁️ view'
       case 'procedure': return '⚙️ procedure'
-      case 'function': return 'ƒ functie'
-      case 'column': return '▤ kolom'
-      case 'definition': return '📄 definitie'
+      case 'function': return 'ƒ function'
+      case 'column': return '▤ column'
+      case 'definition': return '📄 definition'
       default: return m.objectType
     }
   }
@@ -35,7 +35,7 @@ export function SearchPanel({ connectionId }: { connectionId: string | null }): 
       <div className="f2-panel-row">
         <input
           className="f2-search-input"
-          placeholder="Zoek objecten, kolommen en definities… (bijv. user of order)"
+          placeholder="Search objects, columns, and definitions… (e.g. user or order)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -49,11 +49,11 @@ export function SearchPanel({ connectionId }: { connectionId: string | null }): 
           disabled={!connectionId || !query.trim() || searching}
           onClick={() => connectionId && void runSearch(connectionId, query)}
         >
-          {searching ? 'Zoeken…' : 'Zoeken'}
+          {searching ? 'Search…' : 'Search'}
         </button>
       </div>
       <div className="f2-panel-list">
-        {results.length === 0 && <div className="results-empty">Geen resultaten. Voer een zoekopdracht in.</div>}
+        {results.length === 0 && <div className="results-empty">No results. Enter a search query.</div>}
         {results.map((m, i) => (
           <div
             key={i}
@@ -120,12 +120,12 @@ export function SnippetsPanel({ activeTabId }: { activeTabId: string | null }): 
         <span className="result-meta">{snippets.length} snippet(s)</span>
       </div>
       <div className="f2-panel-list">
-        {snippets.length === 0 && <div className="results-empty">Geen snippets in deze folder.</div>}
+        {snippets.length === 0 && <div className="results-empty">No snippets in this folder.</div>}
         {snippets.map((s) => (
           <div key={s.id} className="search-result snippet-row">
             <div
               className="snippet-main"
-              title="Klik om in de editor in te voegen"
+              title="Click to insert into the editor"
               onClick={() => activeTabId && insertSnippet(activeTabId, s.sql)}
             >
               <span className="search-name">{s.title}</span>
@@ -133,7 +133,7 @@ export function SnippetsPanel({ activeTabId }: { activeTabId: string | null }): 
             </div>
             <button
               className="icon-btn"
-              title="Verwijderen"
+              title="Delete"
               onClick={() => void removeSnippet(s.id)}
             >
               ✕
@@ -150,16 +150,16 @@ export function SnippetsPanel({ activeTabId }: { activeTabId: string | null }): 
               </option>
             ))}
           </select>
-          <input placeholder="Titel" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
         <textarea
-          placeholder="SQL (leeg = SQL van de actieve tab)"
+          placeholder="SQL (empty = SQL of the active tab)"
           value={sql}
           onChange={(e) => setSql(e.target.value)}
           rows={3}
         />
         <button className="primary" onClick={() => void save()} disabled={!title}>
-          Snippet opslaan
+          Save snippet
         </button>
       </div>
     </div>
@@ -188,11 +188,11 @@ export function ImportPanel({ connectionId }: { connectionId: string | null }): 
     <div className="f2-panel">
       <div className="f2-panel-row">
         <button className="primary" onClick={() => void pickFile()} disabled={busy}>
-          📂 Bestand kiezen (CSV/Excel/JSON/XML)
+          📂 Choose file (CSV/Excel/JSON/XML)
         </button>
         {preview && (
           <span className="result-meta">
-            {preview.fileName} — {preview.format.toUpperCase()} — {preview.totalRows} rijen
+            {preview.fileName} — {preview.format.toUpperCase()} — {preview.totalRows} rows
           </span>
         )}
       </div>
@@ -202,15 +202,15 @@ export function ImportPanel({ connectionId }: { connectionId: string | null }): 
           <div className="import-mapping">
             <div className="f2-panel-row">
               <label>
-                Doeltabel{' '}
+                Target table{' '}
                 <input
-                  placeholder="tabelnaam"
+                  placeholder="table name"
                   value={table}
                   onChange={(e) => setTable(e.target.value)}
                 />
               </label>
               <label>
-                Rijen (0 = alle){' '}
+                Rows (0 = all){' '}
                 <input
                   type="number"
                   min={0}
@@ -222,8 +222,8 @@ export function ImportPanel({ connectionId }: { connectionId: string | null }): 
             <table className="import-map-table">
               <thead>
                 <tr>
-                  <th>Bronkolom</th>
-                  <th>→ Doelkolom</th>
+                  <th>Source column</th>
+                  <th>→ Target column</th>
                 </tr>
               </thead>
               <tbody>
@@ -233,7 +233,7 @@ export function ImportPanel({ connectionId }: { connectionId: string | null }): 
                     <td>
                       <input
                         value={mappingFor(i)}
-                        placeholder="doelkolom"
+                        placeholder="target column"
                         onChange={(e) =>
                           setMapping((m) => ({ ...m, [i]: e.target.value }))
                         }
@@ -251,7 +251,7 @@ export function ImportPanel({ connectionId }: { connectionId: string | null }): 
                   void generate(connectionId, table, undefined, mapping, rowLimit)
                 }
               >
-                INSERT-SQL genereren
+                Generate INSERT SQL
               </button>
               {generatedSql && (
                 <button
@@ -259,7 +259,7 @@ export function ImportPanel({ connectionId }: { connectionId: string | null }): 
                   disabled={!connectionId}
                   onClick={() => connectionId && void execute(connectionId)}
                 >
-                  Uitvoeren ({generatedSql.split('INSERT').length - 1} inserts)
+                  Run ({generatedSql.split('INSERT').length - 1} inserts)
                 </button>
               )}
             </div>
@@ -290,7 +290,7 @@ export function ImportPanel({ connectionId }: { connectionId: string | null }): 
 
       {generatedSql && (
         <details className="table-data-sql" open>
-          <summary>Gegenereerde INSERT-SQL ({generatedSql.split('INSERT').length - 1} inserts)</summary>
+          <summary>Generated INSERT SQL ({generatedSql.split('INSERT').length - 1} inserts)</summary>
           <pre>{generatedSql.slice(0, 2000)}{generatedSql.length > 2000 ? '\n…' : ''}</pre>
         </details>
       )}
@@ -313,29 +313,29 @@ export function AuditPanel(): React.JSX.Element {
 
   const actionLabel = (a: string): string =>
     a
-      .replace('connection.created', 'Verbinding aangemaakt')
-      .replace('connection.removed', 'Verbinding verwijderd')
-      .replace('session.opened', 'Sessie geopend')
-      .replace('query.executed', 'Query uitgevoerd')
+      .replace('connection.created', 'Connection created')
+      .replace('connection.removed', 'Connection removed')
+      .replace('session.opened', 'Session opened')
+      .replace('query.executed', 'Query executed')
       .replace('query.exported', 'Export')
-      .replace('table.edit', 'Tabelbewerking')
+      .replace('table.edit', 'Table edit')
       .replace('import.executed', 'Import')
-      .replace('admin.ddl', 'Admin-DDL')
+      .replace('admin.ddl', 'Admin DDL')
       .replace('transaction.commit', 'COMMIT')
       .replace('transaction.rollback', 'ROLLBACK')
 
   return (
     <div className="f2-panel">
       <div className="f2-panel-row">
-        <span className="result-meta">{entries.length} auditregel(s)</span>
+        <span className="result-meta">{entries.length} audit record(s)</span>
         <span className="f2-panel-spacer" />
-        <button onClick={() => void loadAudit()}>⟳ Vernieuwen</button>
+        <button onClick={() => void loadAudit()}>⟳ Refresh</button>
         <button className="danger" onClick={() => void clearAudit()}>
-          Wissen
+          Clear
         </button>
       </div>
       <div className="audit-list">
-        {entries.length === 0 && <div className="results-empty">Geen auditregels.</div>}
+        {entries.length === 0 && <div className="results-empty">No audit records.</div>}
         {entries.map((e) => (
           <div key={e.id} className={`audit-row ${e.success ? '' : 'audit-error'}`}>
             <span className="audit-at">{new Date(e.at).toLocaleTimeString('nl-NL')}</span>
@@ -386,28 +386,28 @@ export function MonitoringPanel({ connectionId }: { connectionId: string | null 
   return (
     <div className="f2-panel">
       <div className="f2-panel-row">
-        <span className="result-meta">Monitoring (F3-2) — {rows.length} actieve sessie(s)</span>
+        <span className="result-meta">Monitoring (F3-2) — {rows.length} active session(s)</span>
         <span className="f2-panel-spacer" />
         <label className="checkbox-row" style={{ fontSize: 12 }}>
           <input type="checkbox" checked={includeIdle} onChange={(e) => setIncludeIdle(e.target.checked)} />
-          Idle tonen
+          Show idle
         </label>
         <button onClick={() => void load()} disabled={busy || !connectionId}>
-          ⟳ Vernieuwen
+          ⟳ Refresh
         </button>
       </div>
       <div className="audit-list">
-        {rows.length === 0 && <div className="results-empty">Geen actieve sessies.</div>}
+        {rows.length === 0 && <div className="results-empty">No active sessions.</div>}
         {rows.map((r) => (
           <div key={r.id} className="audit-row">
-            <span className="audit-action">sessie {r.id}</span>
+            <span className="audit-action">session {r.id}</span>
             {r.user && <span className="audit-server">{r.user}</span>}
             {r.database && <span className="audit-server">{r.database}</span>}
             <span className="audit-detail">
               {r.status ?? ''}
               {r.durationMs !== undefined ? ` · ${formatMs(r.durationMs)}` : ''}
               {r.cpuMs !== undefined ? ` · cpu ${formatMs(r.cpuMs)}` : ''}
-              {r.blockedBy ? ` · ⛔ geblokkeerd door ${r.blockedBy}` : ''}
+              {r.blockedBy ? ` · ⛔ blocked by ${r.blockedBy}` : ''}
             </span>
             {r.query && <code className="snippet-sql">{r.query}</code>}
           </div>
@@ -462,39 +462,39 @@ export function PerformancePanel({ connectionId, sql }: { connectionId: string |
         <span className="result-meta">Query Performance (F2-4)</span>
         <span className="f2-panel-spacer" />
         <button onClick={() => void run(false)} disabled={busy || !connectionId}>
-          Laatste query
+          Last query
         </button>
         <button
           className="primary"
           onClick={() => void run(true)}
           disabled={busy || !connectionId || !sql.trim()}
-          title={sql.trim() ? 'EXPLAIN-analyse van de huidige SQL draaien' : 'Geen SQL in de editor'}
+          title={sql.trim() ? 'Run EXPLAIN analysis on the current SQL' : 'No SQL in the editor'}
         >
-          {busy ? 'Bezig…' : 'EXPLAIN (huidige SQL)'}
+          {busy ? 'Working…' : 'EXPLAIN (current SQL)'}
         </button>
       </div>
-      {error && <div className="msg-error">Fout: {error}</div>}
+      {error && <div className="msg-error">Error: {error}</div>}
       {stats && (
         <>
           <table className="dashboard-db-table">
             <tbody>
               <tr>
-                <td>Verstreken tijd</td>
+                <td>Elapsed time</td>
                 <td>{stats.elapsedMs} ms</td>
               </tr>
               <tr>
-                <td>Rijen geretourneerd</td>
+                <td>Rows returned</td>
                 <td>{stats.rowsReturned}</td>
               </tr>
               {stats.rowsRead !== undefined && (
                 <tr>
-                  <td>Rijen gelezen</td>
+                  <td>Rows read</td>
                   <td>{stats.rowsRead}</td>
                 </tr>
               )}
               {stats.cpuMs !== undefined && (
                 <tr>
-                  <td>CPU-tijd</td>
+                  <td>CPU time</td>
                   <td>{stats.cpuMs} ms</td>
                 </tr>
               )}
@@ -530,8 +530,8 @@ export function PlanTree({ nodes, depth }: { nodes: ExplainPlanNode[]; depth: nu
             {n.detail ? ` (${n.detail})` : ''}
           </span>
           <span className="plan-meta">
-            {n.rows !== undefined ? ` ~${n.rows} rijen` : ''}
-            {n.cost !== undefined ? ` · kost ${n.cost}` : ''}
+            {n.rows !== undefined ? ` ~${n.rows} rows` : ''}
+            {n.cost !== undefined ? ` · cost ${n.cost}` : ''}
           </span>
           {n.children.length > 0 && <PlanTree nodes={n.children} depth={depth + 1} />}
         </div>
@@ -560,8 +560,8 @@ export function DashboardPanel({ connectionId }: { connectionId: string | null }
     if (connectionId) void loadDashboard(connectionId)
   }, [connectionId, loadDashboard])
 
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
-  if (!dashboard) return <div className="results-empty">Dashboard laden…</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
+  if (!dashboard) return <div className="results-empty">Loading dashboard…</div>
 
   const info = dashboard.serverInfo
   return (
@@ -569,7 +569,7 @@ export function DashboardPanel({ connectionId }: { connectionId: string | null }
       <div className="f2-panel-row">
         <span className="result-meta">Dashboard</span>
         <span className="f2-panel-spacer" />
-        <button onClick={() => connectionId && void loadDashboard(connectionId)}>⟳ Vernieuwen</button>
+        <button onClick={() => connectionId && void loadDashboard(connectionId)}>⟳ Refresh</button>
       </div>
       <div className="dashboard-grid">
         <div className="dashboard-card">
@@ -577,11 +577,11 @@ export function DashboardPanel({ connectionId }: { connectionId: string | null }
           <dl>
             <dt>Provider</dt>
             <dd>{info.providerName}</dd>
-            <dt>Versie</dt>
+            <dt>Version</dt>
             <dd>{info.serverVersion}</dd>
             <dt>Database</dt>
             <dd>{info.currentDatabase ?? '—'}</dd>
-            <dt>Gebruiker</dt>
+            <dt>User</dt>
             <dd>{info.currentUser ?? '—'}</dd>
           </dl>
         </div>
@@ -590,8 +590,8 @@ export function DashboardPanel({ connectionId }: { connectionId: string | null }
           <table className="dashboard-db-table">
             <thead>
               <tr>
-                <th>Naam</th>
-                <th>Grootte</th>
+                <th>Name</th>
+                <th>Size</th>
               </tr>
             </thead>
             <tbody>
@@ -605,10 +605,10 @@ export function DashboardPanel({ connectionId }: { connectionId: string | null }
           </table>
         </div>
         <div className="dashboard-card dashboard-card-wide">
-          <h4>Actieve queries ({dashboard.activeQueries.length})</h4>
+          <h4>Active queries ({dashboard.activeQueries.length})</h4>
           {dashboard.activeQueries.length === 0 ? (
             <div className="results-empty">
-              Geen actieve queries{info.providerName ? ` (${info.providerName} rapporteert ze niet of er draait niets)` : ''}.
+              No active queries{info.providerName ? ` (${info.providerName} reports none or nothing is running)` : ''}.
             </div>
           ) : (
             <pre className="dashboard-queries">{JSON.stringify(dashboard.activeQueries, null, 2)}</pre>

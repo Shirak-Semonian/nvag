@@ -12,7 +12,7 @@ import { sessionManager } from './session-manager'
 function requireSession(connectionId: string) {
   const session = sessionManager.getByConnectionId(connectionId)
   if (!session) {
-    throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+    throw new Error('No active session for this connection. Open the connection first.')
   }
   return { session, provider: registry.get(session.providerId) }
 }

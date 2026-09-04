@@ -101,40 +101,40 @@ export function QueryEditor({
       // F5: query uitvoeren (hele tab)
       editor.addAction({
         id: `nvag.runAll.${tabId}`,
-        label: 'Query uitvoeren (F5)',
+        label: 'Run query (F5)',
         keybindings: [monaco.KeyCode.F5],
         run: runAll
       }),
       // Ctrl+Enter: query uitvoeren (SAL-11)
       editor.addAction({
         id: `nvag.run.${tabId}`,
-        label: 'Query uitvoeren (Ctrl+Enter)',
+        label: 'Run query (Ctrl+Enter)',
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
         run: runAll
       }),
       // Ctrl+Shift+E: selectie uitvoeren
       editor.addAction({
         id: `nvag.runSelection.${tabId}`,
-        label: 'Selectie uitvoeren',
+        label: 'Run selection',
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE],
         run: runSelection
       }),
       // Ctrl+O: bestand openen · Ctrl+S / Ctrl+Shift+S: opslaan
       editor.addAction({
         id: `nvag.openFile.${tabId}`,
-        label: 'Querybestand openen…',
+        label: 'Open query file…',
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyO],
         run: () => onOpenFileRef.current?.()
       }),
       editor.addAction({
         id: `nvag.saveFile.${tabId}`,
-        label: 'Querybestand opslaan',
+        label: 'Save query file',
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
         run: () => onSaveFileRef.current?.()
       }),
       editor.addAction({
         id: `nvag.saveFileAs.${tabId}`,
-        label: 'Querybestand opslaan als…',
+        label: 'Save query file as…',
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS],
         run: () => onSaveFileAsRef.current?.()
       })
@@ -171,7 +171,7 @@ export function QueryEditor({
     monaco.editor.setModelMarkers(model, 'nvag', [
       {
         severity: monaco.MarkerSeverity.Error,
-        message: errorMessage ?? 'SQL-fout',
+        message: errorMessage ?? 'SQL error',
         startLineNumber: line,
         startColumn: column,
         endLineNumber: line,

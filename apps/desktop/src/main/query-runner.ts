@@ -89,7 +89,7 @@ export class QueryRunner {
   run(req: RunRequest, sender: QuerySender): QueryRunStartResponse {
     const session = sessionManager.getByConnectionId(req.connectionId)
     if (!session) {
-      throw new Error('Geen actieve sessie voor deze verbinding. Open eerst de verbinding.')
+      throw new Error('No active session for this connection. Open the connection first.')
     }
     const provider = registry.get(session.providerId)
     const executionId = randomUUID()
@@ -130,7 +130,7 @@ export class QueryRunner {
     const warnTruncated = (): void => {
       send({
         kind: 'warning',
-        message: `Resultaat afgekapt op ${maxRows} rijen (max-rij-cap). Verfijn je query of verhoog de cap.`
+        message: `Result truncated at ${maxRows} rows (max-row cap). Refine your query or increase the cap.`
       })
     }
 
@@ -250,7 +250,7 @@ export class QueryRunner {
             action: 'query.executed',
             server: req.server ?? req.connectionId,
             database: session.database ?? '',
-            detail: `Query ${error ? 'mislukt' : active.cancelRequested ? 'geannuleerd' : 'uitgevoerd'}: ${req.sql.slice(0, 300)}${req.sql.length > 300 ? '…' : ''}`,
+            detail: `Query ${error ? 'failed' : active.cancelRequested ? 'cancelled' : 'executed'}: ${req.sql.slice(0, 300)}${req.sql.length > 300 ? '…' : ''}`,
             success: !error && !active.cancelRequested,
             ...(error ? { error } : {})
           })
@@ -289,7 +289,7 @@ export class QueryRunner {
         executionId,
         chunk: {
           kind: 'warning',
-          message: `Annuleren niet volledig ondersteund door de provider: ${message} De query wordt lokaal gestopt; de server-side uitvoering kan nog kort doorlopen.`
+          message: `Cancellation is not fully supported by the provider: ${message} The query is stopped locally; server-side execution may continue for a short time.`
         }
       })
     }

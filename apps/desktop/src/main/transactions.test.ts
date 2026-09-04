@@ -64,7 +64,7 @@ describe('F2-2 TransactionManager', () => {
     await manager.begin('conn-tx')
     // Schrijf binnen de transactie (zelfde sessie als de manager).
     const sessionForTx = sessionManager.getByConnectionId('conn-tx')
-    if (!sessionForTx) throw new Error('geen sessie')
+    if (!sessionForTx) throw new Error('no session')
     const { registry: reg } = await import('./registry')
     const provider = reg.get('sqlite')
     for await (const chunk of provider.executeQuery(sessionForTx, "INSERT INTO t (v) VALUES ('x')", {})) {
@@ -77,7 +77,7 @@ describe('F2-2 TransactionManager', () => {
   it('rollback maakt de wijziging ongedaan', async () => {
     await manager.begin('conn-tx')
     const sessionForTx = sessionManager.getByConnectionId('conn-tx')
-    if (!sessionForTx) throw new Error('geen sessie')
+    if (!sessionForTx) throw new Error('no session')
     const { registry: reg } = await import('./registry')
     const provider = reg.get('sqlite')
     for await (const chunk of provider.executeQuery(sessionForTx, "INSERT INTO t (v) VALUES ('y')", {})) {
@@ -100,7 +100,7 @@ describe('F2-2 TransactionManager', () => {
   })
 
   it('gooit bij commit zonder sessie', async () => {
-    await expect(manager.commit('conn-bestaat-niet')).rejects.toThrow('Geen actieve sessie')
+    await expect(manager.commit('conn-bestaat-niet')).rejects.toThrow('No active session')
   })
 
   it('clear zet de status terug', async () => {

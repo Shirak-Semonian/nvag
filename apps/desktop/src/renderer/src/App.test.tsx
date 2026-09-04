@@ -79,12 +79,12 @@ beforeEach(() => {
 })
 
 async function connectViaDialog(): Promise<void> {
-  fireEvent.click(await screen.findByTitle('Nieuwe verbinding'))
-  const nameInput = screen.getByLabelText('Naam') as HTMLInputElement
-  const pathInput = screen.getByLabelText('Databasepad (host)') as HTMLInputElement
+  fireEvent.click(await screen.findByTitle('New connection'))
+  const nameInput = screen.getByLabelText('Name') as HTMLInputElement
+  const pathInput = screen.getByLabelText('Database path (host)') as HTMLInputElement
   fireEvent.change(nameInput, { target: { value: 'Klantendatabase' } })
   fireEvent.change(pathInput, { target: { value: '/tmp/klanten.db' } })
-  fireEvent.click(screen.getByRole('button', { name: 'Opslaan & verbinden' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save & Connect' }))
 
   // Sessie open: de verbonden server (🟢) verschijnt naast de bestaande (⚪)
   await waitFor(() => expect(screen.getAllByText('Klantendatabase').length).toBeGreaterThanOrEqual(2))
@@ -115,25 +115,25 @@ describe('App (renderer-integratie)', () => {
 
   it('biedt create-if-missing aan in de verbindingsdialoog (SAL-11)', async () => {
     render(<App />)
-    fireEvent.click(await screen.findByTitle('Nieuwe verbinding'))
-    expect(screen.getByText('Maak het bestand aan wanneer het niet bestaat')).toBeTruthy()
+    fireEvent.click(await screen.findByTitle('New connection'))
+    expect(screen.getByText('Create the file when it does not exist')).toBeTruthy()
   })
 
   it('toont objecteigenschappen per objecttype in de Object Viewer (F1-5)', async () => {
     render(<App />)
     await expandToTables()
     fireEvent.click(screen.getByText('klanten'))
-    await waitFor(() => expect(screen.getByText('Tabel: klanten')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Table: klanten')).toBeTruthy())
     // Algemeen: eigenschappen
-    expect(await screen.findByText('Rijen')).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'Kolommen' })).toBeTruthy()
+    expect(await screen.findByText('Rows')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Columns' })).toBeTruthy()
     // Kolommen-sectie
-    fireEvent.click(screen.getByRole('tab', { name: 'Kolommen' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Columns' }))
     expect(screen.getByText(/id 🔑/)).toBeTruthy()
     expect(screen.getByText('naam')).toBeTruthy()
     expect(screen.getAllByText('TEXT').length).toBeGreaterThan(0)
     // Definitie-sectie toont de CREATE
-    fireEvent.click(screen.getByRole('tab', { name: 'Definitie' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Definition' }))
     expect(await screen.findByText(/CREATE TABLE/)).toBeTruthy()
   })
 
@@ -141,7 +141,7 @@ describe('App (renderer-integratie)', () => {
     render(<App />)
     await expandToTables()
     fireEvent.click(screen.getByText('klanten'))
-    await waitFor(() => expect(screen.getByText('Tabel: klanten')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Table: klanten')).toBeTruthy())
 
     fireEvent.click(screen.getByRole('button', { name: 'SELECT' }))
     await waitFor(() => {
@@ -175,10 +175,10 @@ describe('App (renderer-integratie)', () => {
       expect(editor.value).toBe('SELECT * FROM "main"."klanten" LIMIT 100')
     })
 
-    fireEvent.click(screen.getByRole('button', { name: '▶ Uitvoeren' }))
+    fireEvent.click(screen.getByRole('button', { name: '▶ Run' }))
     await waitFor(() => expect(screen.getByText('Jan')).toBeTruthy())
     expect(screen.getByText('NULL')).toBeTruthy()
-    expect(screen.getByText(/2 rij\(en\) in 3 ms/)).toBeTruthy()
+    expect(screen.getByText(/2 row\(s\) in 3 ms/)).toBeTruthy()
   })
 
   it('wisselt tussen Resultaten- en Berichten-tabbladen (SAL-11)', async () => {
@@ -188,17 +188,17 @@ describe('App (renderer-integratie)', () => {
 
     const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
     fireEvent.change(editor, { target: { value: 'SELECT FOUT;' } })
-    fireEvent.click(screen.getByRole('button', { name: '▶ Uitvoeren' }))
+    fireEvent.click(screen.getByRole('button', { name: '▶ Run' }))
 
     // Resultaten-tab toont de fout (ook in de statusbalk)
     await waitFor(() =>
       expect(screen.getAllByText(/near "FOUT": syntax error/).length).toBeGreaterThanOrEqual(1)
     )
     // Berichten-tab toont het foutbericht
-    fireEvent.click(screen.getByRole('tab', { name: 'Berichten' }))
-    expect(screen.getAllByText(/Fout: near "FOUT": syntax error/).length).toBeGreaterThanOrEqual(1)
+    fireEvent.click(screen.getByRole('tab', { name: 'Messages' }))
+    expect(screen.getAllByText(/Error: near "FOUT": syntax error/).length).toBeGreaterThanOrEqual(1)
     // Terug naar Resultaten
-    fireEvent.click(screen.getByRole('tab', { name: 'Resultaten' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Results' }))
     expect(screen.getAllByText(/near "FOUT": syntax error/).length).toBeGreaterThanOrEqual(1)
   })
 
@@ -207,10 +207,10 @@ describe('App (renderer-integratie)', () => {
     await expandToTables()
     // Dubbelklik opent een tab mét verbinding → statusbalk toont de sessie
     fireEvent.doubleClick(screen.getByText('klanten'))
-    await waitFor(() => expect(screen.getByText(/Verbonden: Klantendatabase/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/Connected: Klantendatabase/)).toBeTruthy())
     expect(screen.getByText(/SQLite 3\.53\.1/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '▶ Uitvoeren' }))
-    await waitFor(() => expect(screen.getByText(/Query voltooid — 2 rij\(en\) in 3 ms/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: '▶ Run' }))
+    await waitFor(() => expect(screen.getByText(/Query completed — 2 row\(s\) in 3 ms/)).toBeTruthy())
   })
 
   // ------------------------------------------------------------------ F1-10
@@ -232,7 +232,7 @@ describe('App (renderer-integratie)', () => {
 
     render(<App />)
 
-    const dbSelect = (await screen.findByTitle('Database van deze tab')) as HTMLSelectElement
+    const dbSelect = (await screen.findByTitle('Database of this tab')) as HTMLSelectElement
     expect(dbSelect).toBeTruthy()
     expect(screen.getByRole('option', { name: 'main' })).toBeTruthy()
 
@@ -253,7 +253,7 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(screen.getAllByRole('option', { name: 'Server B' }).length).toBeGreaterThan(0))
 
     const connSelect = screen.getByTitle(
-      'Verbonden server van deze tab (kiezen opent de sessie)'
+      'Connected server of this tab (selecting opens the session)'
     ) as HTMLSelectElement
     fireEvent.change(connSelect, { target: { value: 'conn-b' } })
 
@@ -280,11 +280,11 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(screen.getAllByRole('option', { name: 'Server B' }).length).toBeGreaterThan(0))
 
     const connSelect = screen.getByTitle(
-      'Verbonden server van deze tab (kiezen opent de sessie)'
+      'Connected server of this tab (selecting opens the session)'
     ) as HTMLSelectElement
     fireEvent.change(connSelect, { target: { value: 'conn-b' } })
 
-    await waitFor(() => expect(screen.getByText(/bestand niet gevonden/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/file not found/)).toBeTruthy())
     expect(useAppStore.getState().tabs[0]?.connectionId).toBeNull()
   })
 
@@ -324,7 +324,7 @@ describe('App (renderer-integratie)', () => {
     fireEvent.click(within(tree()).getByText('Tables'))
     await waitFor(() =>
       expect(
-        within(tree()).getByText(/Kan gegevens niet laden: The server principal 'sa' is not able to access the database 'Klanten'/)
+        within(tree()).getByText(/Failed to load data: The server principal 'sa' is not able to access the database 'Klanten'/)
       ).toBeTruthy()
     )
   })
@@ -399,7 +399,7 @@ describe('App (renderer-integratie)', () => {
 
   it('toont de refresh-knop disabled zolang er geen verbinding open is (SAL-31)', () => {
     render(<App />)
-    const refresh = screen.getByRole('button', { name: 'Databases vernieuwen' }) as HTMLButtonElement
+    const refresh = screen.getByRole('button', { name: 'Refresh databases' }) as HTMLButtonElement
     expect(refresh.disabled).toBe(true)
   })
 
@@ -410,14 +410,14 @@ describe('App (renderer-integratie)', () => {
 
     // Server-side wijziging: nieuwe database aangemaakt buiten Nvag om
     databases.push({ name: 'NieuweTestDB' })
-    fireEvent.click(screen.getByRole('button', { name: 'Databases vernieuwen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh databases' }))
     await waitFor(() => expect(screen.getByText('NieuweTestDB')).toBeTruthy())
     expect(screen.getByText('Klanten')).toBeTruthy()
 
     // Verwijderde database verdwijnt na een nieuwe refresh
     const idx = databases.findIndex((d) => d.name === 'Klanten')
     databases.splice(idx, 1)
-    fireEvent.click(screen.getByRole('button', { name: 'Databases vernieuwen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh databases' }))
     await waitFor(() => expect(screen.queryByText('Klanten')).toBeNull())
     expect(screen.getByText('NieuweTestDB')).toBeTruthy()
   })
@@ -450,9 +450,9 @@ describe('App (renderer-integratie)', () => {
     render(<App />)
     await expandDatabasesFolder()
     mockOpts.metadataErrors = { listDatabases: 'Kan databases niet bereiken' }
-    fireEvent.click(screen.getByRole('button', { name: 'Databases vernieuwen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh databases' }))
     await waitFor(() =>
-      expect(screen.getByText(/Kan gegevens niet laden: Kan databases niet bereiken/)).toBeTruthy()
+      expect(screen.getByText(/Failed to load data: Kan databases niet bereiken/)).toBeTruthy()
     )
     // De boom blijft bruikbaar: header + folder bestaan nog
     expect(screen.getByText('Object Explorer')).toBeTruthy()
@@ -468,8 +468,8 @@ describe('App (renderer-integratie)', () => {
     // Admin-dialoog openen via de toolbar (actieve tab heeft een open sessie)
     fireEvent.click(screen.getByRole('button', { name: /🛠 Admin/ }))
     await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Naam'), { target: { value: 'NieuweTestDB' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'NieuweTestDB' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     // Object Explorer herlaadt automatisch: nieuwe database verschijnt zonder handmatige refresh
     const tree = (): HTMLElement => document.querySelector('.tree') as HTMLElement
@@ -488,8 +488,8 @@ describe('App (renderer-integratie)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /🛠 Admin/ }))
     await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Naam'), { target: { value: 'Klanten' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Klanten' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(screen.queryByText('Klanten')).toBeNull())
     expect(screen.getByText(/✅ DROP DATABASE Klanten/)).toBeTruthy()
@@ -644,7 +644,7 @@ describe('App (renderer-integratie)', () => {
     await expandToTables()
 
     // Chevron op de tabel klapt de subobjecten uit (rijklik blijft de viewer)
-    fireEvent.click(screen.getByRole('button', { name: 'Tabel uitklappen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand table' }))
     await waitFor(() => expect(screen.getByText('Columns')).toBeTruthy())
     expect(screen.getByText('Keys')).toBeTruthy()
     expect(screen.getByText('Constraints')).toBeTruthy()
@@ -659,7 +659,7 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(screen.getByText('PK_klanten')).toBeTruthy())
 
     // Inklappen via de chevron verwijdert de subobjecten weer
-    fireEvent.click(screen.getByRole('button', { name: 'Tabel inklappen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse table' }))
     await waitFor(() => expect(screen.queryByText('Columns')).toBeNull())
   })
 
@@ -673,14 +673,14 @@ describe('App (renderer-integratie)', () => {
 
     // Server-side wijziging: nieuwe tabel buiten Nvag om aangemaakt
     state.tables.push('nieuwe_tabel')
-    fireEvent.click(within(tree()).getByRole('button', { name: 'Vernieuwen Tables' }))
+    fireEvent.click(within(tree()).getByRole('button', { name: 'Refresh Tables' }))
     await waitFor(() => expect(within(tree()).getByText('nieuwe_tabel')).toBeTruthy())
     expect(within(tree()).getByText('klanten')).toBeTruthy()
 
     // Verwijderde tabel verdwijnt na een nieuwe refresh
     const idx = state.tables.indexOf('klanten')
     state.tables.splice(idx, 1)
-    fireEvent.click(within(tree()).getByRole('button', { name: 'Vernieuwen Tables' }))
+    fireEvent.click(within(tree()).getByRole('button', { name: 'Refresh Tables' }))
     await waitFor(() => expect(within(tree()).queryByText('klanten')).toBeNull())
     expect(within(tree()).getByText('nieuwe_tabel')).toBeTruthy()
   })
@@ -697,9 +697,9 @@ describe('App (renderer-integratie)', () => {
     // Admin-dialoog: nieuwe tabel aanmaken
     fireEvent.click(screen.getByRole('button', { name: /🛠 Admin/ }))
     await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
-    fireEvent.click(screen.getByRole('tab', { name: 'Tabellen' }))
-    fireEvent.change(screen.getByPlaceholderText('naam'), { target: { value: 'nieuwe_tabel' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Creëren' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }))
+    fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'nieuwe_tabel' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     // Object Explorer herlaadt de geopende Tables-folder automatisch
     await waitFor(() => expect(within(tree()).getByText('nieuwe_tabel')).toBeTruthy())
@@ -711,14 +711,14 @@ describe('App (renderer-integratie)', () => {
     await expandToTables()
 
     fireEvent.contextMenu(screen.getByText('klanten'))
-    await waitFor(() => expect(screen.getByText('Vernieuwen')).toBeTruthy())
-    expect(screen.getByText('Tabelgegevens bekijken')).toBeTruthy()
-    expect(screen.getByText('Eigenschappen')).toBeTruthy()
-    expect(screen.getByText('Script Object als CREATE')).toBeTruthy()
-    expect(screen.getByText('Script Object als SELECT')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Refresh')).toBeTruthy())
+    expect(screen.getByText('View table data')).toBeTruthy()
+    expect(screen.getByText('Properties')).toBeTruthy()
+    expect(screen.getByText('Script Object as CREATE')).toBeTruthy()
+    expect(screen.getByText('Script Object as SELECT')).toBeTruthy()
 
     // Script Object als CREATE opent een querytab met de gegenereerde CREATE TABLE
-    fireEvent.click(screen.getByText('Script Object als CREATE'))
+    fireEvent.click(screen.getByText('Script Object as CREATE'))
     await waitFor(() => {
       const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
       expect(editor.value).toContain('CREATE TABLE "main"."klanten" (')
@@ -733,17 +733,17 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Nieuwe query')).toBeTruthy())
-    expect(screen.getByText('Vernieuwen')).toBeTruthy()
-    expect(screen.getByText('Eigenschappen')).toBeTruthy()
-    expect(screen.getByText('Scripts genereren')).toBeTruthy()
-    expect(screen.getByText('Nieuwe objecten aanmaken…')).toBeTruthy()
-    expect(screen.getByText('Taken…')).toBeTruthy()
-    expect(screen.getByText('Verbinding verbreken')).toBeTruthy()
-    expect(screen.getByText('Database verwijderen…')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('New query')).toBeTruthy())
+    expect(screen.getByText('Refresh')).toBeTruthy()
+    expect(screen.getByText('Properties')).toBeTruthy()
+    expect(screen.getByText('Generate scripts')).toBeTruthy()
+    expect(screen.getByText('Create new objects…')).toBeTruthy()
+    expect(screen.getByText('Tasks…')).toBeTruthy()
+    expect(screen.getByText('Disconnect')).toBeTruthy()
+    expect(screen.getByText('Drop database…')).toBeTruthy()
 
     // Scripts genereren → dialect-correcte CREATE DATABASE in een nieuwe querytab.
-    fireEvent.click(screen.getByText('Scripts genereren'))
+    fireEvent.click(screen.getByText('Generate scripts'))
     await waitFor(() => {
       const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
       expect(editor.value).toContain('CREATE DATABASE [Klanten]')
@@ -757,17 +757,17 @@ describe('App (renderer-integratie)', () => {
 
     // "Nieuwe objecten aanmaken…" → AdminDialog op de Databases-tab.
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Nieuwe objecten aanmaken…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Nieuwe objecten aanmaken…'))
+    await waitFor(() => expect(screen.getByText('Create new objects…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Create new objects…'))
     await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Sluiten' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(screen.queryByText(/Database Administration/)).toBeNull())
 
     // "Taken…" → AdminDialog op de Backup-tab (capability-gated via supportsBackupRestore).
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Taken…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Taken…'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Backup maken' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Tasks…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Tasks…'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create backup' })).toBeTruthy())
   })
 
   it('verwijdert een database alleen na expliciete bevestiging; annuleren doet niets (SAL-34)', async () => {
@@ -776,29 +776,29 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Database verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop database…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop database…'))
 
     // Bevestigingsdialoog toont de destructieve SQL.
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
-    expect(screen.getByText(/kan niet ongedaan worden gemaakt/)).toBeTruthy()
+    expect(screen.getByText(/cannot be undone/)).toBeTruthy()
     expect(screen.getByText(/DROP DATABASE \[Klanten\]/)).toBeTruthy()
 
     // Annuleren: niets destructiefs, database blijft bestaan.
-    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(within(tree()).getByText('Klanten')).toBeTruthy()
 
     // Opnieuw openen en wél bevestigen → database verdwijnt na refresh.
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Database verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop database…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop database…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(within(tree()).queryByText('Klanten')).toBeNull())
     expect(state.databases.some((d) => d.name === 'Klanten')).toBe(false)
-    expect(screen.getByText(/Database 'Klanten' verwijderd/)).toBeTruthy()
+    expect(screen.getByText(/Database 'Klanten' removed/)).toBeTruthy()
   })
 
   it('toont guard-redenen bij een geblokkeerde database-drop en voert pas na tweede bevestiging uit (SAL-34)', async () => {
@@ -807,17 +807,17 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Database verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop database…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop database…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     // Guard-blokkade: redenen + tweede bevestiging.
-    await waitFor(() => expect(screen.getByText(/PROD-omgeving vereist bevestiging/)).toBeTruthy())
-    expect(screen.getByRole('button', { name: 'Toch verwijderen' })).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(/PROD environment requires confirmation/)).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Delete anyway' })).toBeTruthy()
     expect(within(tree()).getByText('Klanten')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Toch verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete anyway' }))
     await waitFor(() => expect(within(tree()).queryByText('Klanten')).toBeNull())
     const drops = (window.nvag as ReturnType<typeof createMockNvag>).adminRequests.filter((r) => r.action === 'dropDatabase')
     expect(drops.length).toBe(2)
@@ -835,15 +835,15 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('klanten'))
-    await waitFor(() => expect(screen.getByText('Tabel verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Tabel verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop table…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop table…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
     expect(screen.getByText(/DROP TABLE \[main\].\[klanten\]/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(within(tree()).queryByText('klanten')).toBeNull())
     expect(state.tables.includes('klanten')).toBe(false)
-    expect(screen.getByText(/'klanten' verwijderd/)).toBeTruthy()
+    expect(screen.getByText(/'klanten' removed/)).toBeTruthy()
   })
 
   it('geeft bij DROP uit het contextmenu de database van de node door (SAL-51)', async () => {
@@ -863,10 +863,10 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('klanten'))
-    await waitFor(() => expect(screen.getByText('Tabel verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Tabel verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop table…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop table…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(dropTable).toHaveBeenCalled())
     // De drop gaat naar de database van de node (Klanten), niet naar master.
     expect(dropTable.mock.calls[0]?.[1]).toBe('Klanten')
@@ -879,20 +879,20 @@ describe('App (renderer-integratie)', () => {
 
     // Tables-folder → Nieuwe tabel… → AdminDialog op de Tabellen-tab.
     fireEvent.contextMenu(within(tree()).getByText('Tables'))
-    await waitFor(() => expect(screen.getByText('Nieuwe tabel…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Nieuwe tabel…'))
+    await waitFor(() => expect(screen.getByText('New table…')).toBeTruthy())
+    fireEvent.click(screen.getByText('New table…'))
     await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
-    expect(screen.getByRole('tab', { name: 'Tabellen' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByPlaceholderText('naam')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'Tables' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByPlaceholderText('name')).toBeTruthy()
     // SAL-51: de database van de folder (Klanten) is de doeldatabase van de dialoog.
-    expect((screen.getByLabelText('Doeldatabase') as HTMLSelectElement).value).toBe('Klanten')
-    fireEvent.click(screen.getByRole('button', { name: 'Sluiten' }))
+    expect((screen.getByLabelText('Target database') as HTMLSelectElement).value).toBe('Klanten')
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(screen.queryByText(/Database Administration/)).toBeNull())
 
     // Views-folder → Nieuwe view… → AdminDialog op de Views-tab.
     fireEvent.contextMenu(within(tree()).getByText('Views'))
-    await waitFor(() => expect(screen.getByText('Nieuwe view…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Nieuwe view…'))
+    await waitFor(() => expect(screen.getByText('New view…')).toBeTruthy())
+    fireEvent.click(screen.getByText('New view…'))
     await waitFor(() => expect(screen.getByText(/Database Administration/)).toBeTruthy())
     expect(screen.getByRole('tab', { name: 'Views' }).getAttribute('aria-selected')).toBe('true')
   })
@@ -937,13 +937,13 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('Klanten')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Nieuwe query')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('New query')).toBeTruthy())
     // Zonder supportsDdlAdmin geen destructieve opties; zonder backup geen Taken.
-    expect(screen.queryByText('Database verwijderen…')).toBeNull()
-    expect(screen.queryByText('Nieuwe objecten aanmaken…')).toBeNull()
-    expect(screen.queryByText('Taken…')).toBeNull()
+    expect(screen.queryByText('Drop database…')).toBeNull()
+    expect(screen.queryByText('Create new objects…')).toBeNull()
+    expect(screen.queryByText('Tasks…')).toBeNull()
     // Verbinding verbreken blijft beschikbaar.
-    expect(screen.getByText('Verbinding verbreken')).toBeTruthy()
+    expect(screen.getByText('Disconnect')).toBeTruthy()
   })
 
   it('biedt procedure-contextmenu met Uitvoeren en Eigenschappen (SAL-34)', async () => {
@@ -957,12 +957,12 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('sp_rapport')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
-    await waitFor(() => expect(screen.getByText('Script Object als CREATE')).toBeTruthy())
-    expect(screen.getByText('Uitvoeren…')).toBeTruthy()
-    expect(screen.getByText('Eigenschappen')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Script Object as CREATE')).toBeTruthy())
+    expect(screen.getByText('Run…')).toBeTruthy()
+    expect(screen.getByText('Properties')).toBeTruthy()
 
     // Uitvoeren → dialect-correcte EXEC in een nieuwe querytab.
-    fireEvent.click(screen.getByText('Uitvoeren…'))
+    fireEvent.click(screen.getByText('Run…'))
     await waitFor(() => {
       const editor = screen.getByTestId('query-editor') as HTMLTextAreaElement
       expect(editor.value).toBe('EXEC [main].[sp_rapport];')
@@ -980,8 +980,8 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('sp_rapport')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
-    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
-    fireEvent.click(screen.getByText('Eigenschappen'))
+    await waitFor(() => expect(screen.getByText('Properties')).toBeTruthy())
+    fireEvent.click(screen.getByText('Properties'))
     await waitFor(() => expect(screen.getByText('Stored procedure: sp_rapport')).toBeTruthy())
     expect(screen.getByText(/CREATE TABLE/)).toBeTruthy()
   })
@@ -995,7 +995,7 @@ describe('App (renderer-integratie)', () => {
       dialect: 'tsql',
       supportsAlter: true,
       properties: [
-        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true },
+        { key: 'name', label: 'Name', kind: 'text', value: database, editable: true, renamesDatabase: true },
         {
           key: 'recovery',
           label: 'Recovery model',
@@ -1003,8 +1003,8 @@ describe('App (renderer-integratie)', () => {
           value: 'FULL',
           editable: true,
           options: [
-            { value: 'FULL', label: 'Volledig (FULL)' },
-            { value: 'SIMPLE', label: 'Eenvoudig (SIMPLE)' }
+            { value: 'FULL', label: 'Full (FULL)' },
+            { value: 'SIMPLE', label: 'Simple (SIMPLE)' }
           ]
         },
         { key: 'collation', label: 'Collation', kind: 'info', value: 'SQL_Latin1_General_CP1_CI_AS', editable: false }
@@ -1014,9 +1014,9 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
-    fireEvent.click(screen.getByText('Eigenschappen'))
-    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Properties')).toBeTruthy())
+    fireEvent.click(screen.getByText('Properties'))
+    await waitFor(() => expect(screen.getByText('Database properties: Klanten')).toBeTruthy())
     expect(screen.getAllByText('SQL Server').length).toBeGreaterThan(0)
     // Read-only-info (collation) + bewerkbare velden (recovery).
     expect(screen.getByText('SQL_Latin1_General_CP1_CI_AS')).toBeTruthy()
@@ -1032,20 +1032,20 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Bewerken…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Bewerken…'))
+    await waitFor(() => expect(screen.getByText('Edit…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Edit…'))
 
     // De bestaande ConnectionDialog in edit-modus met de huidige config.
-    await waitFor(() => expect(screen.getByText('Verbinding bewerken')).toBeTruthy())
-    const nameInput = screen.getByLabelText('Naam') as HTMLInputElement
+    await waitFor(() => expect(screen.getByText('Edit connection')).toBeTruthy())
+    const nameInput = screen.getByLabelText('Name') as HTMLInputElement
     expect(nameInput.value).toBe('SQL Server')
     expect(screen.getByLabelText('Host')).toBeTruthy()
-    expect(screen.getByLabelText('Omgeving')).toBeTruthy()
+    expect(screen.getByLabelText('Environment')).toBeTruthy()
 
     // Naam wijzigen + opslaan → opgeslagen config wordt bijgewerkt en de
     // open sessie wordt herbouwd met de nieuwe instellingen.
     fireEvent.change(nameInput, { target: { value: 'SQL Server (nieuw)' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Opslaan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mock.savedConfigs.find((c) => c.id === 'conn-sql')?.name).toBe('SQL Server (nieuw)'))
     await waitFor(() => expect(mock.closedSessions).toContain('s1'))
@@ -1069,11 +1069,11 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('SQL Server')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Bewerken…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Bewerken…'))
-    await waitFor(() => expect(screen.getByText('Verbinding bewerken')).toBeTruthy())
-    fireEvent.change(screen.getByLabelText('Naam'), { target: { value: 'SQL Server hernoemd' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Opslaan' }))
+    await waitFor(() => expect(screen.getByText('Edit…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Edit…'))
+    await waitFor(() => expect(screen.getByText('Edit connection')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'SQL Server hernoemd' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mock.savedConfigs.find((c) => c.id === 'conn-sql')?.name).toBe('SQL Server hernoemd'))
     // Geen sessie geopend (was niet verbonden); geen close/openSaved-calls.
@@ -1091,7 +1091,7 @@ describe('App (renderer-integratie)', () => {
       dialect: 'tsql',
       supportsAlter: true,
       properties: [
-        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true },
+        { key: 'name', label: 'Name', kind: 'text', value: database, editable: true, renamesDatabase: true },
         {
           key: 'recovery',
           label: 'Recovery model',
@@ -1099,9 +1099,9 @@ describe('App (renderer-integratie)', () => {
           value: 'FULL',
           editable: true,
           options: [
-            { value: 'FULL', label: 'Volledig (FULL)' },
-            { value: 'SIMPLE', label: 'Eenvoudig (SIMPLE)' },
-            { value: 'BULK_LOGGED', label: 'Bulk-logboek (BULK_LOGGED)' }
+            { value: 'FULL', label: 'Full (FULL)' },
+            { value: 'SIMPLE', label: 'Simple (SIMPLE)' },
+            { value: 'BULK_LOGGED', label: 'Bulk-logged (BULK_LOGGED)' }
           ]
         },
         { key: 'collation', label: 'Collation', kind: 'info', value: 'Dutch_CI_AS', editable: false }
@@ -1111,26 +1111,26 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
-    fireEvent.click(screen.getByText('Eigenschappen'))
-    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Properties')).toBeTruthy())
+    fireEvent.click(screen.getByText('Properties'))
+    await waitFor(() => expect(screen.getByText('Database properties: Klanten')).toBeTruthy())
 
     // Recovery-model wijzigen naar SIMPLE.
     const recovery = (await screen.findByLabelText('Recovery model')) as HTMLSelectElement
     fireEvent.change(recovery, { target: { value: 'SIMPLE' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Wijzigingen opslaan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     // Guard-blokkade: SQL-preview + redenen tonen (geen uitvoering zonder bevestiging).
     await waitFor(() => expect(screen.getByText(/ALTER DATABASE \[Klanten\] SET RECOVERY SIMPLE/)).toBeTruthy())
-    expect(screen.getByText(/PROD-omgeving vereist bevestiging/)).toBeTruthy()
+    expect(screen.getByText(/PROD environment requires confirmation/)).toBeTruthy()
 
     const altersBefore = mock.adminRequests.filter((r) => r.action === 'alterDatabase')
     expect(altersBefore.length).toBe(1)
     expect(altersBefore[0]?.confirmed).toBeFalsy()
 
     // Tweede, expliciete bevestiging → ALTER wordt uitgevoerd.
-    fireEvent.click(screen.getByRole('button', { name: 'Toch uitvoeren' }))
-    await waitFor(() => expect(screen.getByText(/Eigenschappen gewijzigd/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Run anyway' }))
+    await waitFor(() => expect(screen.getByText(/Properties changed/)).toBeTruthy())
 
     const alters = mock.adminRequests.filter((r) => r.action === 'alterDatabase')
     expect(alters.length).toBe(2)
@@ -1147,10 +1147,10 @@ describe('App (renderer-integratie)', () => {
       dialect: 'tsql',
       supportsAlter: true,
       properties: [
-        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true },
+        { key: 'name', label: 'Name', kind: 'text', value: database, editable: true, renamesDatabase: true },
         { key: 'state', label: 'Status', kind: 'info', value: 'ONLINE', editable: false, section: 'algemeen' },
         { key: 'collation', label: 'Collation', kind: 'info', value: 'Dutch_CI_AS', editable: false, section: 'algemeen' },
-        { key: 'create_date', label: 'Aangemaakt op', kind: 'info', value: '2024-01-15T08:30:00.000Z', editable: false, section: 'algemeen' },
+        { key: 'create_date', label: 'Created on', kind: 'info', value: '2024-01-15T08:30:00.000Z', editable: false, section: 'algemeen' },
         {
           key: 'recovery',
           label: 'Recovery model',
@@ -1158,13 +1158,13 @@ describe('App (renderer-integratie)', () => {
           value: 'FULL',
           editable: true,
           options: [
-            { value: 'FULL', label: 'Volledig (FULL)' },
-            { value: 'SIMPLE', label: 'Eenvoudig (SIMPLE)' }
+            { value: 'FULL', label: 'Full (FULL)' },
+            { value: 'SIMPLE', label: 'Simple (SIMPLE)' }
           ]
         },
-        { key: 'auto_close', label: 'Auto close', kind: 'info', value: 'Nee', editable: false, section: 'opties' },
-        { key: 'auto_shrink', label: 'Auto shrink', kind: 'info', value: 'Nee', editable: false, section: 'opties' },
-        { key: 'page_verify', label: 'Paginaverificatie', kind: 'info', value: 'CHECKSUM', editable: false, section: 'opties' }
+        { key: 'auto_close', label: 'Auto close', kind: 'info', value: 'No', editable: false, section: 'opties' },
+        { key: 'auto_shrink', label: 'Auto shrink', kind: 'info', value: 'No', editable: false, section: 'opties' },
+        { key: 'page_verify', label: 'Page verification', kind: 'info', value: 'CHECKSUM', editable: false, section: 'opties' }
       ],
       files: [
         {
@@ -1189,27 +1189,27 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
-    fireEvent.click(screen.getByText('Eigenschappen'))
-    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Properties')).toBeTruthy())
+    fireEvent.click(screen.getByText('Properties'))
+    await waitFor(() => expect(screen.getByText('Database properties: Klanten')).toBeTruthy())
 
     // Secties + read-only-waarden uit de server.
-    expect(screen.getByText('Algemeen')).toBeTruthy()
+    expect(screen.getByText('General')).toBeTruthy()
     expect(screen.getByText('Dutch_CI_AS')).toBeTruthy()
-    expect(screen.getByText('Opties')).toBeTruthy()
-    expect(screen.getAllByText('Nee').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Options')).toBeTruthy()
+    expect(screen.getAllByText('No').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('CHECKSUM')).toBeTruthy()
 
     // Bestanden-tabel met paden/groottes.
-    expect(screen.getByText('Bestanden')).toBeTruthy()
+    expect(screen.getByText('Files')).toBeTruthy()
     expect(screen.getByText('/var/opt/mssql/data/Klanten.mdf')).toBeTruthy()
     expect(screen.getByText('/var/opt/mssql/data/Klanten_log.ldf')).toBeTruthy()
     expect(screen.getByText('ROWS')).toBeTruthy()
-    expect(screen.getByText('Onbeperkt')).toBeTruthy()
+    expect(screen.getByText('Unlimited')).toBeTruthy()
 
     // Bewerkbare velden blijven beschikbaar (ALTER).
     expect((screen.getByLabelText('Recovery model') as HTMLSelectElement).value).toBe('FULL')
-    expect(screen.getByRole('button', { name: 'Wijzigingen opslaan' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy()
   })
 
   it('toont niet-ondersteunde providers netjes read-only in de eigenschappen-dialoog (SAL-50)', async () => {
@@ -1221,11 +1221,11 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getAllByText('main').length).toBeGreaterThan(0))
 
     fireEvent.contextMenu(within(tree()).getAllByText('main')[0]!)
-    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
-    fireEvent.click(screen.getByText('Eigenschappen'))
-    await waitFor(() => expect(screen.getByText(/SQLite-databases zijn bestanden/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Properties')).toBeTruthy())
+    fireEvent.click(screen.getByText('Properties'))
+    await waitFor(() => expect(screen.getByText(/SQLite databases are files/)).toBeTruthy())
     // Geen bewerkbare velden / geen opslaan-knop voor niet-ondersteunde provider.
-    expect(screen.queryByRole('button', { name: 'Wijzigingen opslaan' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
   })
 
   it('werkt een MODIFY NAME door in de dialoog, boom en tab-context (SAL-50)', async () => {
@@ -1236,7 +1236,7 @@ describe('App (renderer-integratie)', () => {
       dialect: 'tsql',
       supportsAlter: true,
       properties: [
-        { key: 'name', label: 'Naam', kind: 'text', value: database, editable: true, renamesDatabase: true }
+        { key: 'name', label: 'Name', kind: 'text', value: database, editable: true, renamesDatabase: true }
       ]
     })
     // ALTER met naamswijziging werkt ook de databaselijst van de mock bij,
@@ -1257,16 +1257,16 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Eigenschappen')).toBeTruthy())
-    fireEvent.click(screen.getByText('Eigenschappen'))
-    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Properties')).toBeTruthy())
+    fireEvent.click(screen.getByText('Properties'))
+    await waitFor(() => expect(screen.getByText('Database properties: Klanten')).toBeTruthy())
 
-    const nameInput = (await screen.findByLabelText('Naam')) as HTMLInputElement
+    const nameInput = (await screen.findByLabelText('Name')) as HTMLInputElement
     fireEvent.change(nameInput, { target: { value: 'Klanten2' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Wijzigingen opslaan' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     // Dialoog toont de nieuwe naam na de refresh; boom + tab-context volgen.
-    await waitFor(() => expect(screen.getByText('Database-eigenschappen: Klanten2')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Database properties: Klanten2')).toBeTruthy())
     await waitFor(() => expect(within(tree()).getByText('Klanten2')).toBeTruthy())
     const tab = useAppStore.getState().tabs.find((t) => t.database === 'Klanten2')
     expect(tab).toBeTruthy()
@@ -1283,8 +1283,8 @@ describe('App (renderer-integratie)', () => {
     expect(serverRow().querySelector('.status-dot.connected')).toBeTruthy()
 
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
-    fireEvent.click(screen.getByText('Verbinding verbreken'))
+    await waitFor(() => expect(screen.getByText('Disconnect')).toBeTruthy())
+    fireEvent.click(screen.getByText('Disconnect'))
 
     await waitFor(() => expect((window.nvag as ReturnType<typeof createMockNvag>).closedSessions).toContain('s1'))
     expect(within(tree()).queryByText('Databases')).toBeNull()
@@ -1304,12 +1304,12 @@ describe('App (renderer-integratie)', () => {
       throw new Error('IPC kapot')
     }
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
-    fireEvent.click(screen.getByText('Verbinding verbreken'))
+    await waitFor(() => expect(screen.getByText('Disconnect')).toBeTruthy())
+    fireEvent.click(screen.getByText('Disconnect'))
 
     await waitFor(() => expect(within(tree()).queryByText('Databases')).toBeNull())
     expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined()
-    expect(screen.getByText(/gesloten, maar het sluiten gaf een fout: IPC kapot/)).toBeTruthy()
+    expect(screen.getByText(/Connection \(SQL Server\) closed, but closing returned an error: IPC kapot/)).toBeTruthy()
   })
 
   it('toont een succesmelding bij verbreken via server-contextmenu (SAL-43)', async () => {
@@ -1318,12 +1318,12 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
-    fireEvent.click(screen.getByText('Verbinding verbreken'))
+    await waitFor(() => expect(screen.getByText('Disconnect')).toBeTruthy())
+    fireEvent.click(screen.getByText('Disconnect'))
 
     await waitFor(() => expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined())
     expect(within(tree()).queryByText('Databases')).toBeNull()
-    expect(screen.getByText(/Verbinding \(SQL Server\) verbroken/)).toBeTruthy()
+    expect(screen.getByText(/Connection \(SQL Server\) disconnected/)).toBeTruthy()
   })
 
   it('verbreken via database-contextmenu sluit de sessie en laat databases verdwijnen (SAL-43)', async () => {
@@ -1332,14 +1332,14 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
-    fireEvent.click(screen.getByText('Verbinding verbreken'))
+    await waitFor(() => expect(screen.getByText('Disconnect')).toBeTruthy())
+    fireEvent.click(screen.getByText('Disconnect'))
 
     await waitFor(() => expect((window.nvag as ReturnType<typeof createMockNvag>).closedSessions).toContain('s1'))
     expect(within(tree()).queryByText('Databases')).toBeNull()
     expect(within(tree()).queryByText('Klanten')).toBeNull()
     expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined()
-    expect(screen.getByText(/Verbinding \(SQL Server\) verbroken/)).toBeTruthy()
+    expect(screen.getByText(/Connection \(SQL Server\) disconnected/)).toBeTruthy()
   })
 
   it('biedt op een gesloten server Verbinding maken aan (geen Verbinding verbreken) en verbindt opnieuw (SAL-43)', async () => {
@@ -1373,10 +1373,10 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('SQL Server')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Verbinding maken')).toBeTruthy())
-    expect(screen.queryByText('Verbinding verbreken')).toBeNull()
+    await waitFor(() => expect(screen.getByText('Connect')).toBeTruthy())
+    expect(screen.queryByText('Disconnect')).toBeNull()
 
-    fireEvent.click(screen.getByText('Verbinding maken'))
+    fireEvent.click(screen.getByText('Connect'))
     await waitFor(() => expect(mock.openSavedCalls).toEqual(['conn-sql']))
     await waitFor(() => expect(useAppStore.getState().openSessions['conn-sql']).toBeTruthy())
 
@@ -1395,8 +1395,8 @@ describe('App (renderer-integratie)', () => {
 
     // Verbreken via server-contextmenu.
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Verbinding verbreken')).toBeTruthy())
-    fireEvent.click(screen.getByText('Verbinding verbreken'))
+    await waitFor(() => expect(screen.getByText('Disconnect')).toBeTruthy())
+    fireEvent.click(screen.getByText('Disconnect'))
     await waitFor(() => expect(within(tree()).queryByText('Databases')).toBeNull())
 
     // Dubbelklik op de gesloten server → sessie wordt opnieuw geopend.
@@ -1413,14 +1413,14 @@ describe('App (renderer-integratie)', () => {
     const tree = await expandSqlServerDb()
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Drop database…')).toBeTruthy())
     fireEvent.click(document.body)
-    await waitFor(() => expect(screen.queryByText('Database verwijderen…')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('Drop database…')).toBeNull())
 
     fireEvent.contextMenu(within(tree()).getByText('Klanten'))
-    await waitFor(() => expect(screen.getByText('Database verwijderen…')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Drop database…')).toBeTruthy())
     fireEvent.keyDown(window, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByText('Database verwijderen…')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('Drop database…')).toBeNull())
   })
 
   it('toont de statusflow Uitvoeren → Bezig… → Annuleren → Geannuleerd en laat daarna direct opnieuw uitvoeren (SAL-33)', async () => {
@@ -1453,16 +1453,16 @@ describe('App (renderer-integratie)', () => {
     })
 
     // Uitvoeren → Bezig… met timer en actieve Annuleren-knop.
-    fireEvent.click(screen.getByRole('button', { name: '▶ Uitvoeren' }))
-    await waitFor(() => expect(screen.getByText(/Bezig…/)).toBeTruthy())
-    const cancelButton = screen.getByRole('button', { name: /■ Annuleren/ })
+    fireEvent.click(screen.getByRole('button', { name: '▶ Run' }))
+    await waitFor(() => expect(screen.getByText(/Running…/)).toBeTruthy())
+    const cancelButton = screen.getByRole('button', { name: /■ Cancel/ })
     expect((cancelButton as HTMLButtonElement).disabled).toBe(false)
 
     // Annuleren → Geannuleerd (eindstatus) en de Uitvoeren-knop is terug.
     fireEvent.click(cancelButton)
-    await waitFor(() => expect(screen.getByText(/Geannuleerd/)).toBeTruthy())
-    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Uitvoeren' })).toBeTruthy())
-    expect(screen.queryByRole('button', { name: /■ Annuleren/ })).toBeNull()
+    await waitFor(() => expect(screen.getByText(/Cancelled/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('button', { name: '▶ Run' })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: /■ Cancel/ })).toBeNull()
   })
 
   // ------------------------------------------------------------------ SAL-45
@@ -1485,30 +1485,30 @@ describe('App (renderer-integratie)', () => {
     // Programmability-folder openen voor routines/triggers.
     fireEvent.click(within(tree()).getByText('Programmability'))
     await waitFor(() => expect(within(tree()).getByText('Stored Procedures')).toBeTruthy())
-    await expectItem('Stored Procedures', 'sp_rapport', 'Procedure verwijderen…')
-    await expectItem('Functions', 'fn_bereken', 'Functie verwijderen…')
-    await expectItem('Database Triggers', 'trg_klanten_ins', 'Trigger verwijderen…')
+    await expectItem('Stored Procedures', 'sp_rapport', 'Drop procedure…')
+    await expectItem('Functions', 'fn_bereken', 'Drop function…')
+    await expectItem('Database Triggers', 'trg_klanten_ins', 'Drop trigger…')
 
     // Security-folder openen voor users/roles.
     fireEvent.click(within(tree()).getByText('Security'))
     await waitFor(() => expect(within(tree()).getByText('Users')).toBeTruthy())
-    await expectItem('Users', 'app_ro', 'Gebruiker verwijderen…')
-    await expectItem('Roles', 'db_datareader', 'Rol verwijderen…')
+    await expectItem('Users', 'app_ro', 'Drop user…')
+    await expectItem('Roles', 'db_datareader', 'Drop role…')
 
     // Directe folders: synonyms + sequences.
-    await expectItem('Synonyms', 'syn_oud', 'Synonym verwijderen…')
-    await expectItem('Sequences', 'seq_ordernr', 'Sequence verwijderen…')
+    await expectItem('Synonyms', 'syn_oud', 'Drop synonym…')
+    await expectItem('Sequences', 'seq_ordernr', 'Drop sequence…')
 
     // Bevestiging: contextmenu → verwijderen → dialoog met SQL; annuleren niets.
     // (Stored Procedures-folder is nog uitgeklapt van de item-checks.)
     fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
-    await waitFor(() => expect(screen.getByText('Procedure verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Procedure verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop procedure…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop procedure…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
     expect(screen.getByText(/DROP PROCEDURE \[main\]\.\[sp_rapport\]/)).toBeTruthy()
-    expect(screen.getByText(/kan niet ongedaan worden gemaakt/)).toBeTruthy()
+    expect(screen.getByText(/cannot be undone/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(within(tree()).getByText('sp_rapport')).toBeTruthy()
     const mock = window.nvag as ReturnType<typeof createMockNvag>
@@ -1526,14 +1526,14 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('sp_rapport')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('sp_rapport'))
-    await waitFor(() => expect(screen.getByText('Procedure verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Procedure verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop procedure…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop procedure…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(within(tree()).queryByText('sp_rapport')).toBeNull())
     expect(state.procedures.includes('sp_rapport')).toBe(false)
-    expect(screen.getByText(/'sp_rapport' verwijderd/)).toBeTruthy()
+    expect(screen.getByText(/'sp_rapport' removed/)).toBeTruthy()
     const mock = window.nvag as ReturnType<typeof createMockNvag>
     const drops = mock.adminRequests.filter((r) => r.action === 'dropProcedure')
     expect(drops.length).toBe(1)
@@ -1550,16 +1550,16 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('fn_bereken')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('fn_bereken'))
-    await waitFor(() => expect(screen.getByText('Functie verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Functie verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop function…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop function…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
-    await waitFor(() => expect(screen.getByText(/PROD-omgeving vereist bevestiging/)).toBeTruthy())
-    expect(screen.getByRole('button', { name: 'Toch verwijderen' })).toBeTruthy()
+    await waitFor(() => expect(screen.getByText(/PROD environment requires confirmation/)).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Delete anyway' })).toBeTruthy()
     expect(within(tree()).getByText('fn_bereken')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Toch verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete anyway' }))
     await waitFor(() => expect(within(tree()).queryByText('fn_bereken')).toBeNull())
     expect(state.functions.includes('fn_bereken')).toBe(false)
     const drops = (window.nvag as ReturnType<typeof createMockNvag>).adminRequests.filter((r) => r.action === 'dropFunction')
@@ -1576,7 +1576,7 @@ describe('App (renderer-integratie)', () => {
     // Tabel-subfolders openen via de chevron (rijklik opent de viewer).
     fireEvent.click(within(tree()).getByText('Tables'))
     await waitFor(() => expect(within(tree()).getByText('klanten')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Tabel uitklappen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Expand table' }))
     await waitFor(() => expect(within(tree()).getByText('Indexes')).toBeTruthy())
     expect(within(tree()).getByText('Constraints')).toBeTruthy()
 
@@ -1584,25 +1584,25 @@ describe('App (renderer-integratie)', () => {
     fireEvent.click(within(tree()).getByText('Indexes'))
     await waitFor(() => expect(within(tree()).getByText('idx_klanten_naam')).toBeTruthy())
     fireEvent.contextMenu(within(tree()).getByText('idx_klanten_naam'))
-    await waitFor(() => expect(screen.getByText('Index verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Index verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop index…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop index…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
     expect(screen.getByText(/DROP INDEX \[idx_klanten_naam\] ON \[main\]\.\[klanten\]/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(within(tree()).queryByText('idx_klanten_naam')).toBeNull())
-    expect(screen.getByText(/Index 'idx_klanten_naam' verwijderd/)).toBeTruthy()
+    expect(screen.getByText(/Index 'idx_klanten_naam' removed/)).toBeTruthy()
 
     // Constraint: menu-item + bevestiging.
     fireEvent.click(within(tree()).getByText('Constraints'))
     await waitFor(() => expect(within(tree()).getByText('CK_leeftijd')).toBeTruthy())
     fireEvent.contextMenu(within(tree()).getByText('CK_leeftijd'))
-    await waitFor(() => expect(screen.getByText('Constraint verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Constraint verwijderen…'))
+    await waitFor(() => expect(screen.getByText('Drop constraint…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Drop constraint…'))
     await waitFor(() => expect(screen.getByRole('alertdialog')).toBeTruthy())
     expect(screen.getByText(/ALTER TABLE \[main\]\.\[klanten\] DROP CONSTRAINT \[CK_leeftijd\]/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(within(tree()).queryByText('CK_leeftijd')).toBeNull())
-    expect(screen.getByText(/Constraint 'CK_leeftijd' verwijderd/)).toBeTruthy()
+    expect(screen.getByText(/Constraint 'CK_leeftijd' removed/)).toBeTruthy()
 
     const mock = window.nvag as ReturnType<typeof createMockNvag>
     expect(mock.adminRequests.some((r) => r.action === 'dropIndex')).toBe(true)
@@ -1651,21 +1651,21 @@ describe('App (renderer-integratie)', () => {
 
     // Annuleren doet niets.
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Verwijderen…'))
-    await waitFor(() => expect(screen.getByText(/Opgeslagen verbinding 'SQL Server' verwijderen\?/)).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
-    await waitFor(() => expect(screen.queryByText(/Opgeslagen verbinding 'SQL Server' verwijderen\?/)).toBeNull())
+    await waitFor(() => expect(screen.getByText('Delete…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Delete…'))
+    await waitFor(() => expect(screen.getByText(/Delete saved connection 'SQL Server'\?/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText(/Delete saved connection 'SQL Server'\?/)).toBeNull())
     expect(within(tree()).getByText('SQL Server')).toBeTruthy()
     expect(mock.savedConfigs.some((c) => c.id === 'conn-sql')).toBe(true)
 
     // Bevestigen verwijdert de opgeslagen verbinding + sluit de sessie;
     // de andere connectie blijft onaangetast.
     fireEvent.contextMenu(within(tree()).getByText('SQL Server'))
-    await waitFor(() => expect(screen.getByText('Verwijderen…')).toBeTruthy())
-    fireEvent.click(screen.getByText('Verwijderen…'))
-    await waitFor(() => expect(screen.getByText(/Opgeslagen verbinding 'SQL Server' verwijderen\?/)).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Verwijderen' }))
+    await waitFor(() => expect(screen.getByText('Delete…')).toBeTruthy())
+    fireEvent.click(screen.getByText('Delete…'))
+    await waitFor(() => expect(screen.getByText(/Delete saved connection 'SQL Server'\?/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     await waitFor(() => expect(within(tree()).queryByText('SQL Server')).toBeNull())
     expect(within(tree()).getByText('Andere server')).toBeTruthy()
@@ -1674,7 +1674,7 @@ describe('App (renderer-integratie)', () => {
     expect(mock.closedSessions).toContain('s1')
     expect(useAppStore.getState().openSessions['conn-sql']).toBeUndefined()
     expect(useAppStore.getState().openSessions['conn-other']).toBeUndefined()
-    expect(screen.getByText(/Opgeslagen verbinding 'SQL Server' verwijderd/)).toBeTruthy()
+    expect(screen.getByText(/Saved connection 'SQL Server' removed/)).toBeTruthy()
   })
 
   it('verbergt verwijder-items wanneer supportsDdlAdmin of de capability ontbreekt (SAL-45)', async () => {
@@ -1726,8 +1726,8 @@ describe('App (renderer-integratie)', () => {
     await waitFor(() => expect(within(tree()).getByText('sp_verborgen')).toBeTruthy())
 
     fireEvent.contextMenu(within(tree()).getByText('sp_verborgen'))
-    await waitFor(() => expect(screen.getByText('Script Object als CREATE')).toBeTruthy())
-    expect(screen.queryByText('Procedure verwijderen…')).toBeNull()
+    await waitFor(() => expect(screen.getByText('Script Object as CREATE')).toBeTruthy())
+    expect(screen.queryByText('Drop procedure…')).toBeNull()
     // Zonder supportsSynonyms/UsersAndRoles geen folders/items.
     expect(within(tree()).queryByText('Synonyms')).toBeNull()
     expect(within(tree()).queryByText('Users')).toBeNull()
@@ -1736,8 +1736,8 @@ describe('App (renderer-integratie)', () => {
 
 describe('SAL-52: professionele menubalk met Bestand-menu', () => {
   async function openBestandMenu(): Promise<void> {
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Bestand' }))
-    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Openen…' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('menuitem', { name: 'File' }))
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Open…' })).toBeTruthy())
   }
 
   function closeMenuWithEscape(): void {
@@ -1745,7 +1745,7 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
     const target =
       active && active instanceof HTMLElement && active.closest('.menu-bar')
         ? active
-        : screen.getByRole('menuitem', { name: 'Nieuwe query' })
+        : screen.getByRole('menuitem', { name: 'New query' })
     fireEvent.keyDown(target, { key: 'Escape' })
   }
 
@@ -1754,17 +1754,17 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
     render(<App />)
 
     // Menubalk zichtbaar (boven de toolbars).
-    expect(screen.getByRole('menuitem', { name: 'Bestand' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'File' })).toBeTruthy()
 
     // De drie bestandsknoppen staan niet meer in de query-toolbar.
     const toolbar = document.querySelector('.editor-toolbar')
     expect(toolbar).not.toBeNull()
-    expect(within(toolbar as HTMLElement).queryByText('📂 Openen')).toBeNull()
-    expect(within(toolbar as HTMLElement).queryByText('💾 Opslaan')).toBeNull()
-    expect(within(toolbar as HTMLElement).queryByText('Opslaan als…')).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText('📂 Open')).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText('💾 Save')).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText('Save As…')).toBeNull()
 
     // Menu is standaard gesloten: geen losse menu-items zichtbaar.
-    expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Open…' })).toBeNull()
   })
 
   it('opent Bestand en roept Openen… → openQueryFile → queryFiles.open aan (menu sluit na actie)', async () => {
@@ -1783,14 +1783,14 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
     expect(screen.getByText('Ctrl+S')).toBeTruthy()
     expect(screen.getByText('Ctrl+Shift+S')).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Openen…' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open…' }))
     await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1))
     await waitFor(() => {
       const active = useAppStore.getState().tabs.find((t) => t.id === useAppStore.getState().activeTabId)
       expect(active?.filePath).toBe('/tmp/query.sql')
     })
     // Na een actie sluit het menu.
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Open…' })).toBeNull())
   })
 
   it('houdt de Ctrl+O-shortcut werkend (venster-niveau)', async () => {
@@ -1807,10 +1807,10 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
     render(<App />)
 
     await openBestandMenu()
-    const saveItem = screen.getByRole('menuitem', { name: 'Opslaan' }) as HTMLButtonElement
+    const saveItem = screen.getByRole('menuitem', { name: 'Save' }) as HTMLButtonElement
     expect(saveItem.disabled).toBe(true)
     closeMenuWithEscape()
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Opslaan' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Save' })).toBeNull())
 
     // Een bestand aan de actieve tab koppelen (zelfde weg als Openen…).
     vi.spyOn(window.nvag.queryFiles, 'open').mockResolvedValue({
@@ -1822,7 +1822,7 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
     await useAppStore.getState().openQueryFile()
 
     await openBestandMenu()
-    const saveItemEnabled = screen.getByRole('menuitem', { name: 'Opslaan' }) as HTMLButtonElement
+    const saveItemEnabled = screen.getByRole('menuitem', { name: 'Save' }) as HTMLButtonElement
     expect(saveItemEnabled.disabled).toBe(false)
   })
 
@@ -1834,19 +1834,19 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
 
     // Nieuwe query → extra tab.
     await openBestandMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Nieuwe query' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New query' }))
     await waitFor(() => expect(useAppStore.getState().tabs.length).toBe(tabCount + 1))
 
     // Verbindingen beheren… → Connection Manager-dialoog (ConnectionDialog).
     await openBestandMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Verbindingen beheren…' }))
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Nieuwe verbinding' })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Annuleren' }))
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Nieuwe verbinding' })).toBeNull())
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Manage connections…' }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'New connection' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'New connection' })).toBeNull())
 
     // Afsluiten → app.quit via IPC.
     await openBestandMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Afsluiten' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Quit' }))
     await waitFor(() => expect(quitSpy).toHaveBeenCalledTimes(1))
   })
 
@@ -1857,7 +1857,7 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
     const tabCount = useAppStore.getState().tabs.length
 
     await openBestandMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: "Recente query's" }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Recent queries' }))
     const recentItem = await screen.findByRole('menuitem', { name: /SELECT 42/ })
     fireEvent.click(recentItem)
 
@@ -1872,10 +1872,10 @@ describe('SAL-52: professionele menubalk met Bestand-menu', () => {
 
     await openBestandMenu()
     closeMenuWithEscape()
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Open…' })).toBeNull())
 
     await openBestandMenu()
     fireEvent.mouseDown(document.body)
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Openen…' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Open…' })).toBeNull())
   })
 })

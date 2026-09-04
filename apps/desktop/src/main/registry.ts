@@ -24,7 +24,7 @@ class Registry implements ProviderRegistry {
 
   get(id: string): DatabaseProvider {
     const p = this.providers.get(id)
-    if (!p) throw new Error(`Provider niet geregistreerd: ${id}`)
+    if (!p) throw new Error(`Provider not registered: ${id}`)
     return p
   }
 
@@ -45,7 +45,7 @@ async function registerLazy(name: string, factory: () => Promise<DatabaseProvide
     const provider = await factory()
     registry.register(provider)
   } catch (err) {
-    console.warn(`[nvag] Provider ${name} niet geladen: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[nvag] Provider ${name} failed to load: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 

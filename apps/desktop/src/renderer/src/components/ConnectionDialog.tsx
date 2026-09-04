@@ -79,7 +79,7 @@ export function ConnectionDialog(): React.JSX.Element | null {
             await useAppStore.getState().openSavedConnection(form.id)
           } catch (err) {
             setTestMsg(
-              `✗ Verbinding opgeslagen, maar opnieuw verbinden mislukt: ${
+              `✗ Connection saved, but reconnecting failed: ${
                 err instanceof Error ? err.message : String(err)
               }`
             )
@@ -110,11 +110,11 @@ export function ConnectionDialog(): React.JSX.Element | null {
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <h2>{mode === 'edit' ? 'Verbinding bewerken' : 'Nieuwe verbinding'}</h2>
+        <h2>{mode === 'edit' ? 'Edit connection' : 'New connection'}</h2>
         <div className="modal-body">
           <label>
-            Naam
-            <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="Mijn SQLite-db" />
+            Name
+            <input value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="My SQLite DB" />
           </label>
           <label>
             Provider
@@ -136,12 +136,12 @@ export function ConnectionDialog(): React.JSX.Element | null {
             </select>
           </label>
           <label>
-            {form.providerId === 'sqlite' ? 'Databasepad (host)' : 'Host'}
-            <input value={form.host} onChange={(e) => set({ host: e.target.value })} placeholder={form.providerId === 'sqlite' ? '/pad/naar/test.db' : 'localhost'} />
+            {form.providerId === 'sqlite' ? 'Database path (host)' : 'Host'}
+            <input value={form.host} onChange={(e) => set({ host: e.target.value })} placeholder={form.providerId === 'sqlite' ? '/path/to/test.db' : 'localhost'} />
           </label>
           {form.providerId !== 'sqlite' && (
             <label>
-              Poort
+              Port
               <input
                 type="number"
                 value={form.port ?? ''}
@@ -152,8 +152,8 @@ export function ConnectionDialog(): React.JSX.Element | null {
           )}
           {form.providerId !== 'sqlite' && (
             <label>
-              Database (optioneel)
-              <input value={form.database ?? ''} onChange={(e) => set({ database: e.target.value })} placeholder="standaard database/schema" />
+              Database (optional)
+              <input value={form.database ?? ''} onChange={(e) => set({ database: e.target.value })} placeholder="default database/schema" />
             </label>
           )}
           {form.providerId === 'sqlite' && (
@@ -163,11 +163,11 @@ export function ConnectionDialog(): React.JSX.Element | null {
                 checked={form.createIfMissing === true}
                 onChange={(e) => set({ createIfMissing: e.target.checked })}
               />
-              Maak het bestand aan wanneer het niet bestaat
+              Create the file when it does not exist
             </label>
           )}
           <label>
-            Omgeving
+            Environment
             <select value={form.environment} onChange={(e) => set({ environment: e.target.value as ConnectionConfig['environment'] })}>
               <option value="DEV">DEV</option>
               <option value="TEST">TEST</option>
@@ -176,17 +176,17 @@ export function ConnectionDialog(): React.JSX.Element | null {
             </select>
           </label>
           <label>
-            Groep
+            Group
             <input value={form.group} onChange={(e) => set({ group: e.target.value })} />
           </label>
           {form.providerId !== 'sqlite' && (
             <>
               <label>
-                Gebruikersnaam
+                Username
                 <input value={form.username ?? ''} onChange={(e) => set({ username: e.target.value })} />
               </label>
               <label>
-                Wachtwoord
+                Password
                 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
               </label>
             </>
@@ -195,11 +195,11 @@ export function ConnectionDialog(): React.JSX.Element | null {
           {testMsg && <div className={`test-msg ${testMsg.startsWith('✓') ? 'ok' : 'err'}`}>{testMsg}</div>}
         </div>
         <div className="modal-footer">
-          <button onClick={handleTest} disabled={busy}>Test verbinding</button>
+          <button onClick={handleTest} disabled={busy}>Test connection</button>
           <button className="primary" onClick={handleSave} disabled={busy}>
-            {mode === 'edit' ? 'Opslaan' : 'Opslaan & verbinden'}
+            {mode === 'edit' ? 'Save' : 'Save & Connect'}
           </button>
-          <button onClick={close}>Annuleren</button>
+          <button onClick={close}>Cancel</button>
         </div>
       </div>
     </div>

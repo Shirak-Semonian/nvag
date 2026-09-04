@@ -38,11 +38,11 @@ async function importPluginFile(filePath: string): Promise<DatabaseProvider> {
   }
   const factory = mod.createProvider ?? (mod.default as (() => DatabaseProvider) | undefined)
   if (typeof factory !== 'function') {
-    throw new Error('Plugin exporteert geen createProvider() of default-factory.')
+    throw new Error('Plugin does not export a createProvider() or default factory.')
   }
   const provider = factory()
   if (!provider || typeof provider.id !== 'string') {
-    throw new Error('Plugin-factory retourneert geen geldige DatabaseProvider.')
+    throw new Error('Plugin factory does not return a valid DatabaseProvider.')
   }
   return provider
 }

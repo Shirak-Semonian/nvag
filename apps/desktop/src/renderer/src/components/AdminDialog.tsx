@@ -195,23 +195,23 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
       <div className="modal admin-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span>Database Administration {caps ? `(${caps.dialect})` : ''}</span>
-          <button type="button" className="icon-btn" onClick={close} aria-label="Sluiten">
+          <button type="button" className="icon-btn" onClick={close} aria-label="Close">
             ✕
           </button>
         </div>
         {multiDb && tab !== 'database' && tab !== 'users' && (
           <div className="admin-dbrow">
             <label>
-              Doeldatabase{' '}
-              <select value={database} onChange={(e) => setDatabase(e.target.value)} aria-label="Doeldatabase">
-                {!database && <option value="">(sessie-database)</option>}
+              Target database{' '}
+              <select value={database} onChange={(e) => setDatabase(e.target.value)} aria-label="Target database">
+                {!database && <option value="">(session database)</option>}
                 {dbOptions.map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>
                 ))}
                 {database && !dbOptions.includes(database) && (
-                  <option value={database}>{database} (sessie)</option>
+                  <option value={database}>{database} (session)</option>
                 )}
               </select>
             </label>
@@ -229,13 +229,13 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
               disabled={(t === 'users' && !supportsUsers) || (t === 'backup' && !supportsBackup)}
               title={
                 (t === 'users' && !supportsUsers
-                  ? 'Provider ondersteunt geen users/roles'
+                  ? 'Provider does not support users/roles'
                   : t === 'backup' && !supportsBackup
-                    ? 'Provider ondersteunt geen backup/restore'
+                    ? 'Provider does not support backup/restore'
                     : undefined)
               }
             >
-              {t === 'database' ? 'Databases' : t === 'schema' ? 'Schemas' : t === 'table' ? 'Tabellen' : t === 'view' ? 'Views' : t === 'index' ? 'Indexen' : t === 'users' ? 'Users' : 'Backup'}
+              {t === 'database' ? 'Databases' : t === 'schema' ? 'Schemas' : t === 'table' ? 'Tables' : t === 'view' ? 'Views' : t === 'index' ? 'Indexes' : t === 'users' ? 'Users' : 'Backup'}
             </button>
           ))}
         </div>
@@ -255,12 +255,12 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
                 <div key={i} className="msg-warning">⚠️ {r}</div>
               ))}
             </div>
-            <p>De volgende SQL wordt uitgevoerd:</p>
+            <p>The following SQL will be executed:</p>
             <pre className="guard-sql">{pending.sql}</pre>
             <div className="modal-actions">
-              <button type="button" onClick={() => setPending(null)}>Annuleren</button>
+              <button type="button" onClick={() => setPending(null)}>Cancel</button>
               <button type="button" className="danger" onClick={() => void confirmPending()}>
-                Toch uitvoeren
+                Run anyway
               </button>
             </div>
           </div>
@@ -273,12 +273,12 @@ export function AdminDialog({ connectionId }: { connectionId: string | null }): 
 
 function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string, kind?: 'admin' | 'backup', opts?: AdminRunOpts) => Promise<void> }): React.JSX.Element {
   const [name, setName] = useState('')
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
   return (
     <div className="admin-form">
       <label>
-        Naam{' '}
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="bijv. nieuwe_db" />
+        Name{' '}
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. new_db" />
       </label>
       <div className="admin-actions">
         <button
@@ -286,14 +286,14 @@ function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null
           disabled={!name}
           onClick={() => onRun((confirmed) => window.nvag.admin.createDatabase(connectionId, name, confirmed), `CREATE DATABASE ${name}`, 'admin', { refreshDbList: true })}
         >
-          Creëren
+          Create
         </button>
         <button
           className="danger"
           disabled={!name}
           onClick={() => onRun((confirmed) => window.nvag.admin.dropDatabase(connectionId, name, confirmed), `DROP DATABASE ${name}`, 'admin', { refreshDbList: true })}
         >
-          Verwijderen
+          Delete
         </button>
       </div>
     </div>
@@ -302,13 +302,13 @@ function DatabaseAdminTab({ connectionId, onRun }: { connectionId: string | null
 
 function SchemaAdminTab({ connectionId, database, onRun, supportsSchemas }: { connectionId: string | null; database: string; onRun: (fn: AdminActionFn, label: string) => Promise<void>; supportsSchemas: boolean }): React.JSX.Element {
   const [name, setName] = useState('')
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
-  if (!supportsSchemas) return <div className="results-empty">Deze provider ondersteunt geen aparte schemas.</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
+  if (!supportsSchemas) return <div className="results-empty">This provider does not support separate schemas.</div>
   return (
     <div className="admin-form">
       <label>
-        Naam{' '}
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="bijv. audit" />
+        Name{' '}
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. audit" />
       </label>
       <div className="admin-actions">
         <button
@@ -316,14 +316,14 @@ function SchemaAdminTab({ connectionId, database, onRun, supportsSchemas }: { co
           disabled={!name}
           onClick={() => onRun((confirmed) => window.nvag.admin.createSchema(connectionId, database, name, confirmed), `CREATE SCHEMA ${name}`)}
         >
-          Creëren
+          Create
         </button>
         <button
           className="danger"
           disabled={!name}
           onClick={() => onRun((confirmed) => window.nvag.admin.dropSchema(connectionId, database, name, confirmed), `DROP SCHEMA ${name}`)}
         >
-          Verwijderen
+          Delete
         </button>
       </div>
     </div>
@@ -354,7 +354,7 @@ function TableAdminTab({ connectionId, database, onRun }: { connectionId: string
     setColumns([{ name: 'id', dataType: pkType, primaryKey: true }])
   }, [dialect])
 
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
 
   const updateColumn = (i: number, patch: Partial<AdminColumnDef>): void => {
     setColumns((cols) => cols.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
@@ -367,18 +367,18 @@ function TableAdminTab({ connectionId, database, onRun }: { connectionId: string
     <div className="admin-form">
       <div className="f2-panel-row">
         <label>
-          Tabel{' '}
-          <input value={table} onChange={(e) => setTable(e.target.value)} placeholder="naam" />
+          Table{' '}
+          <input value={table} onChange={(e) => setTable(e.target.value)} placeholder="name" />
         </label>
         <label>
-          Schema (optioneel){' '}
+          Schema (optional){' '}
           <input value={schema} onChange={(e) => setSchema(e.target.value)} placeholder="main/public/dbo" />
         </label>
       </div>
       <table className="admin-column-table">
         <thead>
           <tr>
-            <th>Kolom</th>
+            <th>Column</th>
             <th>Type</th>
             <th>PK</th>
             <th>NOT NULL</th>
@@ -420,7 +420,7 @@ function TableAdminTab({ connectionId, database, onRun }: { connectionId: string
         ))}
       </datalist>
       <button onClick={() => setColumns((cols) => [...cols, { name: '', dataType: addColumnType }])}>
-        ＋ Kolom
+        ＋ Column
       </button>
       <div className="admin-actions">
         <button
@@ -433,14 +433,14 @@ function TableAdminTab({ connectionId, database, onRun }: { connectionId: string
             )
           }
         >
-          Creëren
+          Create
         </button>
         <button
           className="danger"
           disabled={!table}
           onClick={() => onRun((confirmed) => window.nvag.admin.dropTable(connectionId, database, schema || 'main', table, confirmed), `DROP TABLE ${table}`)}
         >
-          Tabel verwijderen
+          Drop table
         </button>
       </div>
     </div>
@@ -451,16 +451,16 @@ function ViewAdminTab({ connectionId, database, onRun }: { connectionId: string 
   const [name, setName] = useState('')
   const [schema, setSchema] = useState('')
   const [selectSql, setSelectSql] = useState('SELECT * FROM ')
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
   return (
     <div className="admin-form">
       <div className="f2-panel-row">
         <label>
-          Naam{' '}
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="view_naam" />
+          Name{' '}
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="view_name" />
         </label>
         <label>
-          Schema (optioneel){' '}
+          Schema (optional){' '}
           <input value={schema} onChange={(e) => setSchema(e.target.value)} placeholder="main/public/dbo" />
         </label>
       </div>
@@ -476,14 +476,14 @@ function ViewAdminTab({ connectionId, database, onRun }: { connectionId: string 
           disabled={!name || !selectSql.trim()}
           onClick={() => onRun((confirmed) => window.nvag.admin.createView(connectionId, database, schema || 'main', name, selectSql, confirmed), `CREATE VIEW ${name}`)}
         >
-          Creëren
+          Create
         </button>
         <button
           className="danger"
           disabled={!name}
           onClick={() => onRun((confirmed) => window.nvag.admin.dropView(connectionId, database, schema || 'main', name, confirmed), `DROP VIEW ${name}`)}
         >
-          Verwijderen
+          Delete
         </button>
       </div>
     </div>
@@ -496,26 +496,26 @@ function IndexAdminTab({ connectionId, database, onRun }: { connectionId: string
   const [schema, setSchema] = useState('')
   const [columns, setColumns] = useState('')
   const [unique, setUnique] = useState(false)
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
   const cols = columns.split(',').map((c) => c.trim()).filter(Boolean)
   return (
     <div className="admin-form">
       <div className="f2-panel-row">
         <label>
-          Indexnaam <input value={name} onChange={(e) => setName(e.target.value)} placeholder="idx_naam" />
+          Index name <input value={name} onChange={(e) => setName(e.target.value)} placeholder="idx_name" />
         </label>
         <label>
-          Tabel <input value={table} onChange={(e) => setTable(e.target.value)} placeholder="users" />
+          Table <input value={table} onChange={(e) => setTable(e.target.value)} placeholder="users" />
         </label>
         <label>
-          Schema (optioneel){' '}
+          Schema (optional){' '}
           <input value={schema} onChange={(e) => setSchema(e.target.value)} placeholder="public" />
         </label>
       </div>
       <div className="f2-panel-row">
         <label>
-          Kolommen (komma-gescheiden){' '}
-          <input value={columns} onChange={(e) => setColumns(e.target.value)} placeholder="naam, email" />
+          Columns (comma-separated){' '}
+          <input value={columns} onChange={(e) => setColumns(e.target.value)} placeholder="name, email" />
         </label>
         <label>
           <input type="checkbox" checked={unique} onChange={(e) => setUnique(e.target.checked)} /> UNIQUE
@@ -532,14 +532,14 @@ function IndexAdminTab({ connectionId, database, onRun }: { connectionId: string
             )
           }
         >
-          Creëren
+          Create
         </button>
         <button
           className="danger"
           disabled={!name || !table}
           onClick={() => onRun((confirmed) => window.nvag.admin.dropIndex(connectionId, database, schema || 'main', table, name, confirmed), `DROP INDEX ${name}`)}
         >
-          Verwijderen
+          Delete
         </button>
       </div>
     </div>
@@ -549,16 +549,16 @@ function IndexAdminTab({ connectionId, database, onRun }: { connectionId: string
 function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | null; onRun: (fn: AdminActionFn, label: string) => Promise<void>; users: { name: string; role?: string }[] }): React.JSX.Element {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
   return (
     <div className="admin-form">
       <div className="f2-panel-row">
         <label>
-          Gebruikersnaam{' '}
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="bijv. app_ro" />
+          Username{' '}
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. app_ro" />
         </label>
         <label>
-          Wachtwoord (optioneel){' '}
+          Password (optional){' '}
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
       </div>
@@ -568,14 +568,14 @@ function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | 
           disabled={!name}
           onClick={() => onRun((confirmed) => window.nvag.admin.createUser({ connectionId, name, password: password || undefined }, confirmed), `CREATE USER ${name}`)}
         >
-          Gebruiker aanmaken
+          Create user
         </button>
         <button
           className="danger"
           disabled={!name}
           onClick={() => onRun((confirmed) => window.nvag.admin.dropUser(connectionId, '', name, confirmed), `DROP USER ${name}`)}
         >
-          Verwijderen
+          Delete
         </button>
       </div>
       <div className="audit-list">
@@ -585,7 +585,7 @@ function UsersAdminTab({ connectionId, onRun, users }: { connectionId: string | 
             {u.role && <span className="audit-server">{u.role}</span>}
           </div>
         ))}
-        {users.length === 0 && <div className="results-empty">Geen gebruikers (of niet ondersteund).</div>}
+        {users.length === 0 && <div className="results-empty">No users (or not supported).</div>}
       </div>
     </div>
   )
@@ -615,18 +615,18 @@ function BackupAdminTab({
   useEffect(() => {
     if (database) setDatabaseName((prev) => prev || database)
   }, [database])
-  if (!connectionId) return <div className="results-empty">Open eerst een verbinding.</div>
+  if (!connectionId) return <div className="results-empty">Open a connection first.</div>
   return (
     <div className="admin-form">
       <label>
         Database{' '}
-        <input value={databaseName} onChange={(e) => setDatabaseName(e.target.value)} placeholder="bijv. main / SalesDB" />
+        <input value={databaseName} onChange={(e) => setDatabaseName(e.target.value)} placeholder="e.g. main / SalesDB" />
       </label>
 
       <div className="f2-panel-row">
         <label>
-          Backup naar (pad){' '}
-          <input value={targetPath} onChange={(e) => setTargetPath(e.target.value)} placeholder="/pad/naar/backup.db" />
+          Backup to (path){' '}
+          <input value={targetPath} onChange={(e) => setTargetPath(e.target.value)} placeholder="/path/to/backup.db" />
         </label>
       </div>
       <div className="admin-actions">
@@ -641,7 +641,7 @@ function BackupAdminTab({
             )
           }
         >
-          Backup maken
+          Create backup
         </button>
       </div>
 
@@ -649,8 +649,8 @@ function BackupAdminTab({
 
       <div className="f2-panel-row">
         <label>
-          Herstellen vanuit (pad){' '}
-          <input value={sourcePath} onChange={(e) => setSourcePath(e.target.value)} placeholder="/pad/naar/bron-backup.db" />
+          Restore from (path){' '}
+          <input value={sourcePath} onChange={(e) => setSourcePath(e.target.value)} placeholder="/path/to/source-backup.db" />
         </label>
       </div>
       <div className="admin-actions">
@@ -665,11 +665,11 @@ function BackupAdminTab({
             )
           }
         >
-          Herstellen
+          Restore
         </button>
       </div>
       <p className="admin-hint">
-        RESTORE overschrijft de database en vraagt altijd bevestiging.
+        RESTORE overwrites the database and always asks for confirmation.
       </p>
     </div>
   )

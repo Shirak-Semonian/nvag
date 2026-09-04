@@ -98,7 +98,7 @@ function NullCellRenderer({ value }: { value: unknown }): React.JSX.Element {
 function buildColumnDefs(columns: QueryColumn[]): ColDef[] {
   return columns.map((c, i) => ({
     field: fieldFor(i),
-    headerName: c.name || `kolom ${i + 1}`,
+    headerName: c.name || `column ${i + 1}`,
     sortable: true,
     filter: true,
     resizable: true,
@@ -133,7 +133,7 @@ function ResultSetGrid({ resultSet }: { resultSet: QueryResultSet }): React.JSX.
   if (resultSet.columns.length === 0) {
     return (
       <div className="results-empty">
-        Query uitgevoerd. {resultSet.rowCount} rij(en) beïnvloed.
+        Query executed. {resultSet.rowCount} row(s) affected.
       </div>
     )
   }
@@ -192,22 +192,22 @@ function ResultSetGrid({ resultSet }: { resultSet: QueryResultSet }): React.JSX.
     <div className="result-set">
       <div className="result-toolbar">
         <span className="result-meta">
-          {resultSet.columns.length} kolom(men) · {resultSet.rowCount} rij(en)
+          {resultSet.columns.length} column(s) · {resultSet.rowCount} row(s)
         </span>
         <span className="result-toolbar-spacer" />
         <button
           type="button"
           onClick={copySelected}
           disabled={selectedCount === 0}
-          title={selectedCount === 0 ? 'Selecteer eerst rijen' : 'Geselecteerde rijen als TSV kopiëren'}
+          title={selectedCount === 0 ? 'Select rows first' : 'Copy selected rows as TSV'}
         >
-          📋 Rijen ({selectedCount})
+          📋 Rows ({selectedCount})
         </button>
-        <button type="button" onClick={copyDataset} title="Volledige dataset als TSV kopiëren">
+        <button type="button" onClick={copyDataset} title="Copy full dataset as TSV">
           📋 Dataset
         </button>
-        <button type="button" onClick={() => setTextViewOpen(true)} title="Resultaten als tekst bekijken">
-          📄 Naar tekst
+        <button type="button" onClick={() => setTextViewOpen(true)} title="View results as text">
+          📄 To text
         </button>
         <ExportMenu columns={resultSet.columns} resultRows={resultRows} getGridRows={collectGridRows} />
       </div>
@@ -231,12 +231,12 @@ function ResultSetGrid({ resultSet }: { resultSet: QueryResultSet }): React.JSX.
       </div>
       {resultSet.truncated && (
         <div className="results-truncated">
-          ⚠️ Resultaat afgekapt op {resultSet.rowCount} rijen (max-rij-cap). Verfijn je query of verhoog de cap.
+          ⚠️ Result truncated at {resultSet.rowCount} rows (max-row cap). Refine your query or increase the cap.
         </div>
       )}
       {textViewOpen && (
         <ResultsTextView
-          title="Resultaten als tekst"
+          title="Results as text"
           text={rowsToTsv(resultSet.columns, allRows)}
           onClose={() => setTextViewOpen(false)}
         />
@@ -265,7 +265,7 @@ export function ResultsGrid({
   if (!result) {
     return (
       <div className="results-empty">
-        {running ? 'Bezig met uitvoeren…' : 'Voer een query uit om resultaten te zien.'}
+        {running ? 'Running…' : 'Run a query to see results.'}
       </div>
     )
   }
@@ -286,13 +286,13 @@ export function ResultsGrid({
     if (result.cancelled) {
       return (
         <div className="results-empty">
-          Query geannuleerd door gebruiker. {sets[0]?.rowCount ?? 0} rij(en) verwerkt in {result.durationMs} ms.
+          Query cancelled by user. {sets[0]?.rowCount ?? 0} row(s) processed in {result.durationMs} ms.
         </div>
       )
     }
     return (
       <div className="results-empty">
-        Query uitgevoerd. {sets[0]?.rowCount ?? 0} rij(en) beïnvloed in {result.durationMs} ms.
+        Query executed. {sets[0]?.rowCount ?? 0} row(s) affected in {result.durationMs} ms.
       </div>
     )
   }
@@ -300,7 +300,7 @@ export function ResultsGrid({
   if (result.cancelled && sets.length === 1 && sets[0]?.rows.length === 0) {
     return (
       <div className="results-empty">
-        Query geannuleerd door gebruiker.
+        Query cancelled by user.
       </div>
     )
   }
@@ -311,7 +311,7 @@ export function ResultsGrid({
   return (
     <div className="results-grid-wrap">
       {sets.length > 1 && (
-        <div className="result-set-tabs" role="tablist" aria-label="Resultatensets">
+        <div className="result-set-tabs" role="tablist" aria-label="Result sets">
           {sets.map((s, i) => (
             <button
               key={i}
@@ -321,7 +321,7 @@ export function ResultsGrid({
               className={`result-set-tab ${i === activeIndex ? 'active' : ''}`}
               onClick={() => setActiveSet(i)}
             >
-              Resultaat {i + 1} ({s.columns.length === 0 ? s.rowCount : s.rowCount} rijen)
+              Result {i + 1} ({s.columns.length === 0 ? s.rowCount : s.rowCount} rows)
             </button>
           ))}
         </div>
@@ -359,9 +359,9 @@ export function ResultsTextView({
           <span>{title}</span>
           <div>
             <button type="button" onClick={() => void copy()}>
-              {copied ? '✓ Gekopieerd' : 'Kopiëren'}
+              {copied ? '✓ Copied' : 'Copy'}
             </button>
-            <button type="button" className="icon-btn" onClick={onClose} aria-label="Sluiten">
+            <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
               ✕
             </button>
           </div>
@@ -383,14 +383,14 @@ function formatMs(ms: number): string {
 
 function MessageLine({ msg }: { msg: QueryMessage }): React.JSX.Element {
   const label =
-    msg.severity === 'error' ? 'Fout' : msg.severity === 'warning' ? 'Waarschuwing' : 'Info'
+    msg.severity === 'error' ? 'Error' : msg.severity === 'warning' ? 'Warning' : 'Info'
   return (
     <div className={`msg-${msg.severity}`}>
       <span className="msg-label">{label}:</span> {msg.text}
       {msg.position && (
         <span className="msg-position">
           {' '}
-          (regel {msg.position.line}, kolom {msg.position.column})
+          (line {msg.position.line}, column {msg.position.column})
         </span>
       )}
     </div>
@@ -409,12 +409,12 @@ export function MessagesPanel({
   if (running && !result) {
     return (
       <div className="messages-panel">
-        <div className="msg-info">Bezig met uitvoeren… {formatMs(elapsedMs ?? 0)}</div>
+        <div className="msg-info">Running… {formatMs(elapsedMs ?? 0)}</div>
       </div>
     )
   }
   if (!result) {
-    return <div className="messages-empty">Klaar.</div>
+    return <div className="messages-empty">Done.</div>
   }
 
   const messages = result.messages ?? []
@@ -422,10 +422,10 @@ export function MessagesPanel({
 
   return (
     <div className="messages-panel">
-      {running && <div className="msg-info">Bezig met uitvoeren… {formatMs(elapsedMs ?? 0)}</div>}
+      {running && <div className="msg-info">Running… {formatMs(elapsedMs ?? 0)}</div>}
       {result.error && !hasErrorMessage && (
         <div className="msg-error">
-          <span className="msg-label">Fout:</span> {result.error}
+          <span className="msg-label">Error:</span> {result.error}
         </div>
       )}
       {messages.map((m, i) => (
@@ -435,13 +435,13 @@ export function MessagesPanel({
         <>
           {result.cancelled ? (
             <div className="msg-warning">
-              <span className="msg-label">Geannuleerd:</span> Query geannuleerd door gebruiker.
+              <span className="msg-label">Cancelled:</span> Query cancelled by user.
             </div>
           ) : (
             !result.error && (
               <div className="msg-ok">
-                Query voltooid — {result.rowCount} rij(en) in {formatMs(result.durationMs)}
-                {result.columns.length > 0 ? `, ${result.columns.length} kolom(men)` : ''}.
+                Query completed — {result.rowCount} row(s) in {formatMs(result.durationMs)}
+                {result.columns.length > 0 ? `, ${result.columns.length} column(s)` : ''}.
               </div>
             )
           )}

@@ -321,7 +321,7 @@ export function ObjectExplorer(): React.JSX.Element {
             ...n,
             children: [],
             loaded: true,
-            error: `Kan ${errorLabel} niet laden: ${text}`
+            error: `Failed to load ${errorLabel}: ${text}`
           }))
         )
       } finally {
@@ -371,17 +371,17 @@ export function ObjectExplorer(): React.JSX.Element {
       try {
         const result = await useAppStore.getState().closeSession(connId)
         if (!result.closed) {
-          showNotice(`Deze verbinding (${label}) is al gesloten.`, 'info')
+          showNotice(`This connection (${label}) is already closed.`, 'info')
           return
         }
         if (result.error) {
-          showNotice(`Verbinding (${label}) gesloten, maar het sluiten gaf een fout: ${result.error}`, 'error')
+          showNotice(`Connection (${label}) closed, but closing returned an error: ${result.error}`, 'error')
           return
         }
-        showNotice(`Verbinding (${label}) verbroken.`, 'success')
+        showNotice(`Connection (${label}) disconnected.`, 'success')
       } catch (err) {
         const text = err instanceof Error ? err.message : String(err)
-        showNotice(`Verbinding verbreken mislukt: ${text}`, 'error')
+        showNotice(`Disconnect failed: ${text}`, 'error')
       }
     },
     [showNotice]
@@ -392,10 +392,10 @@ export function ObjectExplorer(): React.JSX.Element {
     async (connId: string, label: string): Promise<void> => {
       try {
         await openSavedConnection(connId)
-        showNotice(`Verbinding (${label}) geopend.`, 'success')
+        showNotice(`Connection (${label}) opened.`, 'success')
       } catch (err) {
         const text = err instanceof Error ? err.message : String(err)
-        showNotice(`Verbinding maken mislukt: ${text}`, 'error')
+        showNotice(`Connect failed: ${text}`, 'error')
       }
     },
     [openSavedConnection, showNotice]
@@ -648,7 +648,7 @@ export function ObjectExplorer(): React.JSX.Element {
       }
       const node = findTable(treeRef.current)
       if (!node) return
-      await runLoader(node, () => loadChildren(node), 'tabelmetagegevens')
+      await runLoader(node, () => loadChildren(node), 'table metadata')
     },
     [loadChildren, runLoader]
   )
@@ -667,7 +667,7 @@ export function ObjectExplorer(): React.JSX.Element {
       try {
         await useAppStore.getState().removeConnection(state.connId)
         setRemoveConn(null)
-        showNotice(`Opgeslagen verbinding '${state.label}' verwijderd.`, 'success')
+        showNotice(`Saved connection '${state.label}' removed.`, 'success')
       } catch (err) {
         setRemoveConn({ ...state, busy: false, error: err instanceof Error ? err.message : String(err) })
       }
@@ -739,7 +739,7 @@ export function ObjectExplorer(): React.JSX.Element {
         if (t.kind === 'database') {
           // SAL-31-signaal: Object Explorer + database-dropdown herladen.
           useAppStore.getState().bumpDbListRevision()
-          showNotice(`Database '${t.db}' verwijderd.`, 'success')
+          showNotice(`Database '${t.db}' removed.`, 'success')
           return
         }
         // SAL-45: tabel-subobjecten (index/constraint/trigger op een tabel)
@@ -764,7 +764,7 @@ export function ObjectExplorer(): React.JSX.Element {
                   ? `${t.kind === 'index' ? 'Index' : 'Constraint'} '${t.name}'`
                   : t.name
         const display = t.kind === 'index' || t.kind === 'constraint' ? label : `'${label}'`
-        showNotice(`${display} verwijderd.`, 'success')
+        showNotice(`${display} removed.`, 'success')
       } catch (err) {
         setConfirm({ ...state, busy: false, error: err instanceof Error ? err.message : String(err) })
       }
@@ -795,7 +795,7 @@ export function ObjectExplorer(): React.JSX.Element {
         // lijst ophalen (verse query, geen cache). Server-nodes slaan we
         // over: hun children (Databases-folder) komen uit de sessie-state.
         if (node.kind === 'folder' || node.kind === 'database') {
-          await runLoader(node, () => loadChildren(node), node.kind === 'database' ? "schema's" : 'gegevens')
+          await runLoader(node, () => loadChildren(node), node.kind === 'database' ? 'schemas' : 'data')
         }
       }
       commitExpanded(next)
@@ -812,7 +812,7 @@ export function ObjectExplorer(): React.JSX.Element {
         removeDescendants(node, next)
       } else {
         next.add(node.key)
-        await runLoader(node, () => loadChildren(node), 'tabelmetagegevens')
+        await runLoader(node, () => loadChildren(node), 'table metadata')
       }
       commitExpanded(next)
     },
@@ -845,11 +845,11 @@ export function ObjectExplorer(): React.JSX.Element {
           }
         }
         visit(node.children)
-        await runLoader(node, () => loadChildren(node), "schema's")
-        await Promise.all(descendants.map((n) => runLoader(n, () => loadChildren(n), 'gegevens')))
+        await runLoader(node, () => loadChildren(node), 'schemas')
+        await Promise.all(descendants.map((n) => runLoader(n, () => loadChildren(n), 'data')))
         return
       }
-      await runLoader(node, () => loadChildren(node), 'gegevens')
+      await runLoader(node, () => loadChildren(node), 'data')
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [loadChildren, runLoader]
@@ -870,7 +870,7 @@ export function ObjectExplorer(): React.JSX.Element {
     if (folderNodes.length === 0) return
     setRefreshing(true)
     try {
-      await Promise.all(folderNodes.map((n) => runLoader(n, () => loadChildren(n), 'gegevens')))
+      await Promise.all(folderNodes.map((n) => runLoader(n, () => loadChildren(n), 'data')))
     } finally {
       setRefreshing(false)
     }
@@ -897,7 +897,7 @@ export function ObjectExplorer(): React.JSX.Element {
     }
     collect(treeRef.current)
     if (targets.length === 0) return
-    void Promise.all(targets.map((n) => runLoader(n, () => loadChildren(n), 'gegevens')))
+    void Promise.all(targets.map((n) => runLoader(n, () => loadChildren(n), 'data')))
   }, [dbObjectsRevision, loadChildren, runLoader])
 
   /** Klik op tabel/view: Object Viewer openen met eigenschappen per type (F1-5). */
@@ -914,7 +914,7 @@ export function ObjectExplorer(): React.JSX.Element {
         .getState()
         .openScriptTab(connId, obj, kind)
         .catch((err) => {
-          showNotice(`Script genereren mislukt: ${err instanceof Error ? err.message : String(err)}`, 'error')
+          showNotice(`Script generation failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
         })
     },
     [showNotice]
@@ -952,29 +952,29 @@ export function ObjectExplorer(): React.JSX.Element {
     const connLabel = connName ?? node.label
     const items: MenuItem[] = []
     const refreshItem: MenuItem = {
-      label: 'Vernieuwen',
+      label: 'Refresh',
       icon: <RefreshIcon size={14} />,
       action: () => void refreshNode(node)
     }
     const newQueryItem = (database?: string): MenuItem => ({
-      label: 'Nieuwe query',
+      label: 'New query',
       icon: <NewQueryIcon size={14} />,
       action: () => useAppStore.getState().addTab({ connectionId: connId, database })
     })
     const propertiesItem = (action: () => void): MenuItem => ({
-      label: 'Eigenschappen',
+      label: 'Properties',
       icon: <PropertiesIcon size={14} />,
       action
     })
     const disconnectItem: MenuItem = {
-      label: 'Verbinding verbreken',
+      label: 'Disconnect',
       action: () => {
         if (!connId) return
         void handleDisconnect(connId, connLabel)
       }
     }
     const connectItem: MenuItem = {
-      label: 'Verbinding maken',
+      label: 'Connect',
       action: () => {
         if (!connId) return
         void handleConnect(connId, connLabel)
@@ -995,7 +995,7 @@ export function ObjectExplorer(): React.JSX.Element {
         // credentials) via de bestaande ConnectionDialog in edit-modus.
         if (connId) {
           items.push({
-            label: 'Bewerken…',
+            label: 'Edit…',
             icon: <EditIcon size={14} />,
             action: () => {
               setMenu(null)
@@ -1014,7 +1014,7 @@ export function ObjectExplorer(): React.JSX.Element {
         if (connId) {
           items.push({ separator: true, label: '' })
           items.push(
-            dropItem('Verwijderen…', () => {
+            dropItem('Delete…', () => {
               setMenu(null)
               setRemoveConn({ connId, label: connLabel, busy: false, error: null })
             })
@@ -1035,19 +1035,19 @@ export function ObjectExplorer(): React.JSX.Element {
         )
         // Scripts genereren: dialect-correct CREATE DATABASE in een nieuwe tab.
         items.push({
-          label: 'Scripts genereren',
+          label: 'Generate scripts',
           action: () => {
             setMenu(null)
             if (!dialect) return
             const sql = buildCreateDatabase(dialect, db)
             useAppStore.getState().addTab({ sql, connectionId: connId, database: db, title: `${db} — CREATE` })
-            showNotice(`CREATE DATABASE-script voor '${db}' gegenereerd.`, 'success')
+            showNotice(`CREATE DATABASE script for '${db}' generated.`, 'success')
           }
         })
         items.push({ separator: true, label: '' })
         if (caps?.supportsDdlAdmin) {
           items.push({
-            label: 'Nieuwe objecten aanmaken…',
+            label: 'Create new objects…',
             action: () => {
               setMenu(null)
               // SAL-51: database-context meesturen — schakelt de gebruiker na
@@ -1058,7 +1058,7 @@ export function ObjectExplorer(): React.JSX.Element {
         }
         if (caps?.supportsBackupRestore) {
           items.push({
-            label: 'Taken…',
+            label: 'Tasks…',
             action: () => {
               setMenu(null)
               // SAL-51: database-context meegeven (backup-tab preselecteert db).
@@ -1070,8 +1070,8 @@ export function ObjectExplorer(): React.JSX.Element {
         if (caps?.supportsDdlAdmin) {
           items.push({ separator: true, label: '' })
           items.push(
-            dropItem('Database verwijderen…', () =>
-              startDrop({ kind: 'database', connId, db, sql: dialect ? buildDrop(dialect, 'DATABASE', db) : `DROP DATABASE ${db};` }, `Database '${db}' verwijderen`)
+            dropItem('Drop database…', () =>
+              startDrop({ kind: 'database', connId, db, sql: dialect ? buildDrop(dialect, 'DATABASE', db) : `DROP DATABASE ${db};` }, `Drop database '${db}'`)
             )
           )
         }
@@ -1082,10 +1082,10 @@ export function ObjectExplorer(): React.JSX.Element {
         items.push(refreshItem)
         // Waar logisch "Nieuwe X aanmaken…" → AdminDialog op de juiste tab.
         const createActions: { folderId: string; label: string; tab: AdminDialogTab }[] = [
-          { folderId: 'tables', label: 'Nieuwe tabel…', tab: 'table' },
-          { folderId: 'views', label: 'Nieuwe view…', tab: 'view' },
-          { folderId: 'schemas', label: 'Nieuw schema…', tab: 'schema' },
-          { folderId: 'users', label: 'Nieuwe gebruiker…', tab: 'users' }
+          { folderId: 'tables', label: 'New table…', tab: 'table' },
+          { folderId: 'views', label: 'New view…', tab: 'view' },
+          { folderId: 'schemas', label: 'New schema…', tab: 'schema' },
+          { folderId: 'users', label: 'New user…', tab: 'users' }
         ]
         const createAction = createActions.find((a) => a.folderId === folderId)
         const gated =
@@ -1114,31 +1114,31 @@ export function ObjectExplorer(): React.JSX.Element {
         const obj: DbObjectRef = { type: 'table', database: ref.db, schema: ref.schema, name: ref.name }
         items.push(refreshItem)
         items.push({
-          label: 'Tabelgegevens bekijken',
+          label: 'View table data',
           icon: <DataIcon size={14} />,
           action: () => openTableDataTab(ref.connId, ref.db, ref.schema ?? 'main', ref.name)
         })
         items.push({
-          label: 'Eigenschappen',
+          label: 'Properties',
           icon: <PropertiesIcon size={14} />,
           action: () => showViewer(node)
         })
         items.push({ separator: true, label: '' })
-        items.push({ label: 'Script Object als CREATE', action: () => handleScript(ref.connId, obj, 'CREATE') })
-        items.push({ label: 'Script Object als SELECT', action: () => handleScript(ref.connId, obj, 'SELECT') })
-        items.push({ label: 'Script Object als INSERT', action: () => handleScript(ref.connId, obj, 'INSERT') })
-        items.push({ label: 'Script Object als UPDATE', action: () => handleScript(ref.connId, obj, 'UPDATE') })
-        items.push({ label: 'Script Object als DELETE', action: () => handleScript(ref.connId, obj, 'DELETE') })
+        items.push({ label: 'Script Object as CREATE', action: () => handleScript(ref.connId, obj, 'CREATE') })
+        items.push({ label: 'Script Object as SELECT', action: () => handleScript(ref.connId, obj, 'SELECT') })
+        items.push({ label: 'Script Object as INSERT', action: () => handleScript(ref.connId, obj, 'INSERT') })
+        items.push({ label: 'Script Object as UPDATE', action: () => handleScript(ref.connId, obj, 'UPDATE') })
+        items.push({ label: 'Script Object as DELETE', action: () => handleScript(ref.connId, obj, 'DELETE') })
         items.push({ separator: true, label: '' })
         items.push({
-          label: 'SELECT in nieuwe query',
+          label: 'SELECT in new query',
           icon: <NewQueryIcon size={14} />,
           action: () => openTableQuery(ref.connId, ref.name, ref.schema)
         })
         if (caps?.supportsDdlAdmin) {
           items.push({ separator: true, label: '' })
           items.push(
-            dropItem('Tabel verwijderen…', () =>
+            dropItem('Drop table…', () =>
               startDrop(
                 {
                   kind: 'table',
@@ -1148,7 +1148,7 @@ export function ObjectExplorer(): React.JSX.Element {
                   table: ref.name,
                   sql: caps.dialect ? buildDrop(caps.dialect, 'TABLE', ref.name, { schema: ref.schema ?? null }) : `DROP TABLE ${ref.name};`
                 },
-                `Tabel '${ref.name}' verwijderen`
+                `Drop table '${ref.name}'`
               )
             )
           )
@@ -1161,19 +1161,19 @@ export function ObjectExplorer(): React.JSX.Element {
         const obj: DbObjectRef = { type: 'view', database: ref.db, schema: ref.schema, name: ref.name }
         items.push(refreshItem)
         items.push({
-          label: 'Eigenschappen',
+          label: 'Properties',
           icon: <PropertiesIcon size={14} />,
           action: () => showViewer(node)
         })
         items.push({ separator: true, label: '' })
-        items.push({ label: 'Script Object als CREATE', action: () => handleScript(ref.connId, obj, 'CREATE') })
-        items.push({ label: 'Script Object als SELECT', action: () => handleScript(ref.connId, obj, 'SELECT') })
+        items.push({ label: 'Script Object as CREATE', action: () => handleScript(ref.connId, obj, 'CREATE') })
+        items.push({ label: 'Script Object as SELECT', action: () => handleScript(ref.connId, obj, 'SELECT') })
         items.push({ separator: true, label: '' })
         items.push(newQueryItem(ref.db))
         if (caps?.supportsDdlAdmin) {
           items.push({ separator: true, label: '' })
           items.push(
-            dropItem('View verwijderen…', () =>
+            dropItem('Drop view…', () =>
               startDrop(
                 {
                   kind: 'view',
@@ -1183,7 +1183,7 @@ export function ObjectExplorer(): React.JSX.Element {
                   view: ref.name,
                   sql: caps.dialect ? buildDrop(caps.dialect, 'VIEW', ref.name, { schema: ref.schema ?? null }) : `DROP VIEW ${ref.name};`
                 },
-                `View '${ref.name}' verwijderen`
+                `Drop view '${ref.name}'`
               )
             )
           )
@@ -1199,18 +1199,18 @@ export function ObjectExplorer(): React.JSX.Element {
         const database = node.ctx?.db
         if (connId && objName && database) {
           const obj: DbObjectRef = { type, database, schema, name: objName }
-          items.push({ label: 'Script Object als CREATE', action: () => handleScript(connId, obj, 'CREATE') })
+          items.push({ label: 'Script Object as CREATE', action: () => handleScript(connId, obj, 'CREATE') })
           // Uitvoeren: dialect-correcte CALL/EXEC/SELECT in een nieuwe querytab.
           if (node.kind === 'procedure' || node.kind === 'function') {
             const routineKind: 'procedure' | 'function' = node.kind
             items.push({
-              label: 'Uitvoeren…',
+              label: 'Run…',
               icon: <NewQueryIcon size={14} />,
               action: () => {
                 setMenu(null)
                 const dialect = caps?.dialect ?? 'tsql'
                 const sql = buildRoutineCall(dialect, routineKind, schema, objName)
-                useAppStore.getState().addTab({ sql, connectionId: connId, database, title: `${objName} — uitvoeren` })
+                useAppStore.getState().addTab({ sql, connectionId: connId, database, title: `${objName} — Run` })
               }
             })
           }
@@ -1224,14 +1224,14 @@ export function ObjectExplorer(): React.JSX.Element {
           // supportsDdlAdmin. PostgreSQL-triggers vereisen de tabelnaam
           // (DROP TRIGGER … ON <tabel>); zonder tabel geen menu-item.
           const dropType = node.kind === 'procedure' ? 'PROCEDURE' : node.kind === 'function' ? 'FUNCTION' : 'TRIGGER'
-          const dropLabel = node.kind === 'procedure' ? 'Procedure' : node.kind === 'function' ? 'Functie' : 'Trigger'
+          const dropLabel = node.kind === 'procedure' ? 'procedure' : node.kind === 'function' ? 'function' : 'trigger'
           const dropKind: 'procedure' | 'function' | 'trigger' =
             node.kind === 'procedure' ? 'procedure' : node.kind === 'function' ? 'function' : 'trigger'
           const canDropTrigger = node.kind !== 'trigger' || caps?.dialect !== 'postgres' || !!node.ctx?.table
           if (caps?.supportsDdlAdmin && canDropTrigger) {
             items.push({ separator: true, label: '' })
             items.push(
-              dropItem(`${dropLabel} verwijderen…`, () =>
+              dropItem(`Drop ${dropLabel}…`, () =>
                 startDrop(
                   {
                     kind: dropKind,
@@ -1251,7 +1251,7 @@ export function ObjectExplorer(): React.JSX.Element {
                         })
                       : `DROP ${dropType} ${objName};`
                   },
-                  `${dropLabel} '${objName}' verwijderen`
+                  `Drop ${dropLabel} '${objName}'`
                 )
               )
             )
@@ -1275,14 +1275,14 @@ export function ObjectExplorer(): React.JSX.Element {
           const schemaDrop =
             node.kind === 'schema' && caps.supportsSchemas
               ? {
-                  label: 'Schema',
+                  label: 'schema',
                   target: { kind: 'schema' as const, connId, db, schema: objName, sql: caps.dialect ? buildDrop(caps.dialect, 'SCHEMA', objName) : `DROP SCHEMA ${objName};` }
                 }
               : null
           const seqSynDrop =
             node.kind === 'sequence' || node.kind === 'synonym'
               ? {
-                  label: node.kind === 'sequence' ? 'Sequence' : 'Synonym',
+                  label: node.kind === 'sequence' ? 'sequence' : 'synonym',
                   target: {
                     kind: node.kind,
                     connId,
@@ -1298,7 +1298,7 @@ export function ObjectExplorer(): React.JSX.Element {
           const userRoleDrop =
             (node.kind === 'user' || node.kind === 'role') && caps.supportsUsersAndRoles
               ? {
-                  label: node.kind === 'user' ? 'Gebruiker' : 'Rol',
+                  label: node.kind === 'user' ? 'user' : 'role',
                   target: {
                     kind: node.kind,
                     connId,
@@ -1312,8 +1312,8 @@ export function ObjectExplorer(): React.JSX.Element {
           if (drop) {
             items.push({ separator: true, label: '' })
             items.push(
-              dropItem(`${drop.label} verwijderen…`, () =>
-                startDrop(drop.target, `${drop.label} '${objName}' verwijderen`)
+              dropItem(`Drop ${drop.label}…`, () =>
+                startDrop(drop.target, `Drop ${drop.label} '${objName}'`)
               )
             )
           }
@@ -1331,7 +1331,7 @@ export function ObjectExplorer(): React.JSX.Element {
         // DROP CONSTRAINT bestaat alleen op tsql/postgres (buildDropConstraint);
         // index-drop is dialect-correct via buildDrop.
         if (node.kind === 'constraint' && caps.dialect !== 'tsql' && caps.dialect !== 'postgres') break
-        const label = node.kind === 'index' ? 'Index' : 'Constraint'
+        const label = node.kind === 'index' ? 'index' : 'constraint'
         const sql =
           node.kind === 'index'
             ? caps.dialect
@@ -1342,12 +1342,12 @@ export function ObjectExplorer(): React.JSX.Element {
               : `ALTER TABLE ${table} DROP CONSTRAINT ${objName};`
         items.push({ separator: true, label: '' })
         items.push(
-          dropItem(`${label} verwijderen…`, () =>
+          dropItem(`Drop ${label}…`, () =>
             startDrop(
               node.kind === 'index'
                 ? { kind: 'index', connId, db, schema: ctx.schema ?? '', table, name: objName, sql }
                 : { kind: 'constraint', connId, db, schema: ctx.schema ?? '', table, name: objName, sql },
-              `${label} '${objName}' verwijderen`
+              `Drop ${label} '${objName}'`
             )
           )
         )
@@ -1440,14 +1440,14 @@ export function ObjectExplorer(): React.JSX.Element {
             >
               <span className={`tree-arrow${expandable ? ' clickable' : ''}`}>
                 {isLoading ? (
-                  <span className="tree-spinner" aria-label="Laden…" />
+                  <span className="tree-spinner" aria-label="Loading…" />
                 ) : node.kind === 'table' ? (
                   // Tabel: rijklik opent de viewer — de chevron klapt de
                   // subobjecten (Columns/Keys/...) apart uit/in.
                   <button
                     className="tree-arrow-btn"
-                    title={isOpen ? 'Subobjecten inklappen' : 'Subobjecten tonen (kolommen, keys, …)'}
-                    aria-label={isOpen ? 'Tabel inklappen' : 'Tabel uitklappen'}
+                    title={isOpen ? 'Collapse subobjects' : 'Show subobjects (columns, keys, …)'}
+                    aria-label={isOpen ? 'Collapse table' : 'Expand table'}
                     onClick={(e) => {
                       e.stopPropagation()
                       void toggleTable(node)
@@ -1467,7 +1467,7 @@ export function ObjectExplorer(): React.JSX.Element {
               {node.kind === 'table' && node.ref && (
                 <button
                   className="tree-action"
-                  title="Tabelgegevens bekijken/bewerken (F2-1, eis 8)"
+                  title="View/edit table data (F2-1, req 8)"
                   onClick={(e) => {
                     e.stopPropagation()
                     openTableDataTab(node.ref!.connId, node.ref!.db, node.ref!.schema ?? 'main', node.ref!.name)
@@ -1482,8 +1482,8 @@ export function ObjectExplorer(): React.JSX.Element {
                   !['programmability', 'security'].includes(node.ctx.folderId))) && (
                 <button
                   className="tree-action tree-refresh-action"
-                  title="Vernieuwen (actuele metadata ophalen)"
-                  aria-label={`Vernieuwen ${node.label}`}
+                  title="Refresh (load current metadata)"
+                  aria-label={`Refresh ${node.label}`}
                   onClick={(e) => {
                     e.stopPropagation()
                     void refreshNode(node)
@@ -1495,7 +1495,7 @@ export function ObjectExplorer(): React.JSX.Element {
               {node.kind === 'server' && (
                 <span
                   className={`status-dot ${node.connected ? 'connected' : ''}`}
-                  title={node.connected ? 'Verbonden' : 'Niet verbonden — dubbelklik om te verbinden'}
+                  title={node.connected ? 'Connected' : 'Not connected — double-click to connect'}
                 />
               )}
               {node.environment && <EnvBadge environment={node.environment} />}
@@ -1505,7 +1505,7 @@ export function ObjectExplorer(): React.JSX.Element {
             )}
             {showEmpty && (
               <div className="tree-empty-child" style={{ paddingLeft: depth * 14 + 6 + 22 }}>
-                Geen objecten
+                No objects
               </div>
             )}
             {showError && (
@@ -1529,24 +1529,24 @@ export function ObjectExplorer(): React.JSX.Element {
             className={`icon-btn ${refreshing ? 'spin' : ''}`}
             title={
               refreshing
-                ? 'Bezig met vernieuwen…'
+                ? 'Refreshing…'
                 : hasOpenDbFolders
-                  ? 'Vernieuwen (databaselijst opnieuw ophalen)'
-                  : 'Vernieuwen (open eerst een verbinding)'
+                  ? 'Refresh (reload database list)'
+                  : 'Refresh (open a connection first)'
             }
-            aria-label="Databases vernieuwen"
+            aria-label="Refresh databases"
             disabled={!hasOpenDbFolders || refreshing}
             onClick={() => void refreshDatabases()}
           >
             <RefreshIcon size={14} />
           </button>
-          <button className="icon-btn" title="Nieuwe verbinding" onClick={() => openConnectionDialog('create')}>
+          <button className="icon-btn" title="New connection" onClick={() => openConnectionDialog('create')}>
             ＋
           </button>
         </div>
       </div>
       <div className="tree" role="tree">
-        {tree.length === 0 && <div className="tree-empty">Geen verbindingen. Klik ＋ om er een toe te voegen.</div>}
+        {tree.length === 0 && <div className="tree-empty">No connections. Click ＋ to add one.</div>}
         {renderNodes(tree, 0)}
       </div>
       {menu && (
@@ -1583,12 +1583,12 @@ export function ObjectExplorer(): React.JSX.Element {
           title={confirm.label}
           message={
             confirm.reasons && confirm.reasons.length > 0
-              ? 'De environment-safety-guard blokkeert deze actie. Alleen met expliciete bevestiging wordt de onderstaande SQL uitgevoerd:'
-              : 'Deze actie kan niet ongedaan worden gemaakt. Weet je zeker dat je door wilt gaan?'
+              ? 'The environment safety guard blocks this action. The SQL below is only executed after explicit confirmation:'
+              : 'This action cannot be undone. Are you sure you want to continue?'
           }
           sql={confirm.target.sql}
           reasons={confirm.reasons}
-          confirmLabel={confirm.confirmed ? 'Toch verwijderen' : 'Verwijderen'}
+          confirmLabel={confirm.confirmed ? 'Delete anyway' : 'Delete'}
           busy={confirm.busy}
           error={confirm.error}
           onConfirm={() => void runDrop(confirm)}
@@ -1597,9 +1597,9 @@ export function ObjectExplorer(): React.JSX.Element {
       )}
       {removeConn && (
         <ConfirmDialog
-          title={`Opgeslagen verbinding '${removeConn.label}' verwijderen?`}
-          message="Alleen de opgeslagen verbinding wordt uit de lijst verwijderd (een open sessie wordt gesloten). De server/database zelf wordt niet gewijzigd."
-          confirmLabel="Verwijderen"
+          title={`Delete saved connection '${removeConn.label}'?`}
+          message="Only the saved connection is removed from the list (an open session is closed). The server/database itself is not changed."
+          confirmLabel="Delete"
           busy={removeConn.busy}
           error={removeConn.error}
           onConfirm={() => void runRemoveConnection(removeConn)}
@@ -1628,15 +1628,15 @@ function nodeTitleFor(node: TreeNode): string {
   switch (node.kind) {
     case 'table':
     case 'view':
-      return 'Klik: kolomdetails · Dubbelklik: SELECT in nieuw tabblad'
+      return 'Click: column details · Double-click: SELECT in new tab'
     case 'server':
       return node.connected
-        ? 'Verbonden — klik om Databases te tonen · Rechtsklik: opties'
-        : 'Niet verbonden — dubbelklik om te verbinden · Rechtsklik: opties'
+        ? 'Connected — click to show Databases · Right-click: options'
+        : 'Not connected — double-click to connect · Right-click: options'
     case 'folder':
-      return 'Klik om uit te klappen · Rechtsklik: opties'
+      return 'Click to expand · Right-click: options'
     case 'database':
-      return 'Klik om uit te klappen · Rechtsklik: opties'
+      return 'Click to expand · Right-click: options'
     default:
       return node.detail ? `${node.label} — ${node.detail}` : node.label
   }
