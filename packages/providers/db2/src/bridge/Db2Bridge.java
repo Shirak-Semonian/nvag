@@ -132,7 +132,7 @@ public class Db2Bridge {
           break;
         }
         default:
-          respondError(out, id, "onbekende op: " + op);
+          respondError(out, id, "unknown op: " + op);
       }
     } catch (Exception e) {
       respondError(out, id, e.getMessage() == null ? e.toString() : e.getMessage());
